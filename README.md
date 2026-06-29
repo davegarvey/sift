@@ -1,7 +1,7 @@
 # Sift
 
-A simple, slick, browser-first RSS reader. All logic runs in the browser tab;
-the server is a stateless pipe that proxies network requests (defeating CORS)
+A simple, browser-first RSS reader. All logic runs in the browser tab;
+the server is a stateless pipe that proxies network requests (CORS-safe)
 and serves the static app shell.
 
 - **Local-only**: subscriptions, items, read/starred state live in IndexedDB.
