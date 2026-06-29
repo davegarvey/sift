@@ -95,33 +95,136 @@ a {
 }
 a:hover { text-decoration: underline; }
 
-/* App shell grid: topbar on top, sidebar | main below. Sidebar becomes a
-   drawer on mobile. When the reading view is active, the sidebar is hidden
-   and the reading view fills the main cell. */
+/* App shell grid: sidebar | main. Sidebar becomes a drawer on mobile.
+   When the reading view is active, the sidebar is hidden and the reading
+   view fills the main cell. */
 .app-shell {
   display: grid;
-  grid-template-areas:
-    "topbar topbar"
-    "sidebar main";
-  grid-template-rows: 48px 1fr;
+  grid-template-areas: "sidebar main";
+  grid-template-rows: 1fr;
   grid-template-columns: 240px 1fr;
   height: 100%;
   width: 100%;
   overflow: hidden;
 }
 
-.app-shell[data-sidebar-hidden="true"] {
-  grid-template-columns: 0 1fr;
-}
+/* Desktop: collapsed sidebar shows as a 44px strip with icon CTAs. */
+@media (min-width: 769px) {
+  .app-shell[data-sidebar-hidden="true"] {
+    grid-template-columns: 44px 1fr;
+  }
 
-.app-shell[data-sidebar-hidden="true"] .sidebar {
-  display: none;
+  .app-shell[data-sidebar-hidden="true"] .sidebar {
+    overflow: visible;
+  }
+
+  .collapsed-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+  }
+
+  .collapsed-brand {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 48px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  .collapsed-brand .sift-mark {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--serif-stack);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--accent);
+    user-select: none;
+  }
+
+  .collapsed-brand .expand-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: var(--subtext);
+  }
+
+  .collapsed-rail:hover .collapsed-brand .sift-mark {
+    display: none;
+  }
+
+  .collapsed-rail:hover .collapsed-brand .expand-icon {
+    display: flex;
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .collapsed-actions-top {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 0;
+  }
+
+  .collapsed-actions-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 0;
+    margin-top: auto;
+  }
+
+  .collapsed-action {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--subtext);
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .collapsed-action:hover {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .collapsed-action:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .collapsed-action .refresh-icon-spinning {
+    color: var(--accent);
+  }
+
+  .collapsed-action .palette-shortcut {
+    font-size: 13px;
+  }
 }
 
 .app-shell[data-reading="true"] {
-  grid-template-areas:
-    "topbar"
-    "main";
+  grid-template-areas: "main";
   grid-template-columns: 1fr;
 }
 
@@ -133,28 +236,80 @@ a:hover { text-decoration: underline; }
   display: none;
 }
 
-/* Sidebar toggle (hamburger) only appears on mobile — desktop uses Cmd+\. */
-.topbar button.sidebar-toggle,
-.topbar .pill.sidebar-toggle {
+/* Lightweight backdrop that closes the drawer when tapping outside. */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 40;
+}
+
+/* Topbar is hidden on desktop. */
+.topbar {
   display: none;
 }
 
+/* Mobile: topbar is a thin fixed bar with hamburger + wordmark. */
 @media (max-width: 768px) {
+  .desktop-only {
+    display: none;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    height: 40px;
+    background: var(--mantle);
+    border-bottom: 1px solid var(--hairline);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 60;
+  }
+
+  .topbar .sidebar-toggle {
+    position: absolute;
+    left: 12px;
+  }
+
+  .topbar .wordmark {
+    font-family: var(--serif-stack);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--accent);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    height: 100%;
+  }
+
+  .sidebar-wordmark {
+    display: none;
+  }
+
+  .sidebar-collapse {
+    display: none;
+  }
+
   .app-shell {
-    grid-template-areas:
-      "topbar"
-      "main";
+    grid-template-areas: "main";
     grid-template-columns: 1fr;
   }
-  /* Reveal the hamburger toggle on mobile. */
-  .topbar button.sidebar-toggle,
-  .topbar .pill.sidebar-toggle {
-    display: inline-flex;
+
+  .app-shell[data-reading="true"] .topbar {
+    display: none;
   }
+
   /* Drawer + backdrop. */
   .app-shell .sidebar {
     position: fixed;
-    inset: 48px auto 0 0;
+    inset: 40px auto 0 0;
     width: 80%;
     max-width: 320px;
     z-index: 50;
@@ -174,101 +329,6 @@ a:hover { text-decoration: underline; }
   }
 }
 
-/* Top chrome. */
-.topbar {
-  grid-area: topbar;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  height: 48px;
-  background: var(--mantle);
-  border-bottom: 1px solid var(--hairline);
-  position: relative;
-  z-index: 10;
-}
-
-.topbar .title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--subtext);
-  user-select: none;
-}
-
-/* Sift wordmark: lowercase italic serif in the Mauve accent. The serif
-   italic echoes the reading-view body typeface, so the wordmark feels
-   of-a-piece with the product. Mauve is the same accent reserved for
-   the unread indicator and active selection — see design D11. */
-.topbar .wordmark {
-  font-family: var(--serif-stack);
-  font-style: italic;
-  font-weight: 600;
-  font-size: 22px;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  color: var(--accent);
-  user-select: none;
-  padding: 2px 2px 2px 0;
-}
-
-/* Lightweight backdrop that closes the drawer when tapping outside. */
-.sidebar-backdrop {
-  display: none;
-  position: fixed;
-  inset: 48px 0 0 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 40;
-}
-
-.topbar .spacer { flex: 1; }
-
-.topbar button,
-.topbar .pill {
-  font-size: 13px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  color: var(--subtext);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.topbar button:hover,
-.topbar .pill:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.topbar .pill kbd {
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--overlay);
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-
-.topbar .refresh-spinning svg { animation: spin 1s linear infinite; }
-
-/* Slicker refresh affordance: the icon itself animates continuously while
-   a refresh is in flight, regardless of where the spinning class ends up.
-   Easing is a touch softer than linear so the rotation feels considered. */
-.refresh-icon-spinning {
-  animation: refresh-spin 0.9s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-  transform-origin: 50% 50%;
-}
-@keyframes refresh-spin {
-  to { transform: rotate(360deg); }
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* When a refresh is spinning, the icon's color shifts to the accent so the
-   affordance actively draws the eye and reads as "busy". */
-.topbar .refresh-pill .refresh-icon-spinning {
-  color: var(--accent);
-}
-
 /* Sidebar. */
 .sidebar {
   grid-area: sidebar;
@@ -279,8 +339,80 @@ a:hover { text-decoration: underline; }
   overflow-y: auto;
 }
 
+/* Sidebar header — wordmark left, collapse button right. */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+}
+
+.sidebar-wordmark {
+  font-family: var(--serif-stack);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+  user-select: none;
+  flex: 1;
+}
+
+.sidebar-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--subtext);
+  flex-shrink: 0;
+}
+
+.sidebar-collapse:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Sidebar action rows (refresh, palette, settings). */
+.sidebar-action {
+  width: 100%;
+  text-align: left;
+  font-size: 14px;
+  padding: 6px 16px;
+  color: var(--subtext);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.sidebar-action:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sidebar-action .refresh-icon-spinning {
+  color: var(--accent);
+}
+
+/* Sidebar add-feed CTA. */
+.sidebar-add-feed {
+  padding: 8px 0 0;
+}
+
+/* Sidebar feed list grows to fill space, pushing footer to bottom. */
 .sidebar .section {
+  flex: 1;
+  overflow-y: auto;
   padding: 8px 0;
+}
+
+/* Bottom-pinned actions (palette, settings). */
+.sidebar-actions-bottom {
+  border-top: 1px solid var(--hairline);
+  padding: 4px 0;
 }
 
 .sidebar .section .heading {
@@ -291,9 +423,7 @@ a:hover { text-decoration: underline; }
   padding: 4px 16px;
 }
 
-.sidebar .feed,
-.sidebar .folder,
-.sidebar .all {
+.sidebar .feed {
   padding: 6px 16px;
   display: flex;
   align-items: center;
@@ -306,45 +436,16 @@ a:hover { text-decoration: underline; }
 }
 
 .sidebar .feed:hover,
-.sidebar .folder:hover,
-.sidebar .all:hover,
-.sidebar .all.active,
-.sidebar .feed.active,
-.sidebar .folder.active {
+.sidebar .feed.active {
   background: var(--surface);
   border-left-color: var(--accent);
 }
 
-.sidebar .feed .title,
-.sidebar .folder .title,
-.sidebar .all .title {
+.sidebar .feed .title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sidebar .unread-count {
-  font-size: 11px;
-  color: var(--accent-text);
-  background: var(--accent-dim);
-  border-radius: 999px;
-  padding: 1px 6px;
-  min-width: 18px;
-  text-align: center;
-}
-
-.sidebar .all {
-  padding-top: 6px;
-  padding-bottom: 6px;
-  margin-bottom: 4px;
-}
-
-/* Add feed affordance: hover state for discoverability. */
-.sidebar .add-feed button:hover,
-.sidebar .add-feed .pill:hover {
-  background: var(--surface);
-  color: var(--text);
 }
 
 .sidebar .feed .error-mark {
@@ -376,13 +477,35 @@ a:hover { text-decoration: underline; }
 }
 .sidebar .feed .error-mark[data-error]:hover::after { opacity: 1; }
 
-.sidebar .add-feed {
-  padding: 8px 16px;
+/* Sidebar feed delete button: hover-reveal on desktop, always-visible on touch.
+   The @media (hover: hover) query targets devices with a hover-capable pointer
+   (i.e. mice), while the fallback covers touch-only devices. */
+.sidebar .feed .delete-btn {
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
+  justify-content: center;
+  border-radius: 4px;
   color: var(--subtext);
+  flex-shrink: 0;
+  opacity: 1;
+}
+@media (hover: hover) {
+  .sidebar .feed .delete-btn {
+    opacity: 0;
+  }
+  .sidebar .feed:hover .delete-btn {
+    opacity: 1;
+  }
+}
+.sidebar .feed .delete-btn:hover,
+.sidebar .feed .delete-btn:focus-visible {
+  color: #d20f39;
+  background: var(--accent-dim);
+}
+.sidebar .feed .delete-btn:focus-visible {
+  opacity: 1;
 }
 
 /* River. */
@@ -402,10 +525,10 @@ a:hover { text-decoration: underline; }
 .river-item {
   padding: 16px 20px;
   border-bottom: 1px solid var(--hairline);
-  display: grid;
-  grid-template-columns: 14px 1fr auto;
+  display: flex;
   gap: 10px;
   cursor: pointer;
+  position: relative;
 }
 
 .river-item:hover,
@@ -413,36 +536,9 @@ a:hover { text-decoration: underline; }
   background: var(--mantle);
 }
 
-.river-item .indicator {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: transparent;
-  align-self: center;
-  margin-top: 4px;
-  opacity: 0;
-  transition: opacity 0.1s ease;
-}
-
-.river-item.unread .indicator {
-  background: var(--accent);
-  opacity: 1;
-}
-
-.river-item:hover .indicator,
-.river-item.focused .indicator {
-  opacity: 1;
-}
-
-.river-item:hover .indicator.tick,
-.river-item.focused .indicator.tick {
-  background: var(--overlay);
-  opacity: 0.4;
-  cursor: pointer;
-}
-
 .river-item .body {
   min-width: 0;
+  flex: 1;
 }
 
 .river-item .meta {
@@ -467,12 +563,35 @@ a:hover { text-decoration: underline; }
 
 .river-item.unread .title {
   color: var(--text);
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.river-item.read {
+  opacity: 0.8;
+}
+
+:root[data-a11y] {
+  --subtext: #5c5f77;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-a11y] {
+    --subtext: #bac2de;
+  }
+}
+
+:root[data-a11y] .river-item.read {
+  opacity: 1;
 }
 
 .river-item.read .title {
   color: var(--subtext);
   font-weight: 400;
+}
+
+.river-item .star-inline {
+  color: var(--accent);
+  margin-left: 6px;
 }
 
 .river-item .excerpt {
@@ -485,16 +604,37 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
 }
 
-.river-item .star {
-  align-self: start;
-  color: var(--accent);
-  opacity: 0.85;
-  font-size: 14px;
-  margin-top: 4px;
+.river-item .actions {
+  position: absolute;
+  right: 20px;
+  top: 16px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.1s ease;
 }
 
-.river-item.has-touch-mark .indicator {
-  transition: transform 0.18s ease;
+.river-item:hover .actions,
+.river-item.focused .actions {
+  opacity: 1;
+}
+
+.river-item .action-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--subtext);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.river-item .action-btn:hover {
+  background: var(--accent-dim);
+  color: var(--accent-text);
 }
 
 /* Reading view. */
@@ -534,7 +674,6 @@ a:hover { text-decoration: underline; }
 
 .reading .reading-chrome .star {
   color: var(--accent);
-  font-size: 16px;
 }
 
 .reading .reading-chrome .star.dim { color: var(--overlay); }
@@ -628,6 +767,64 @@ a:hover { text-decoration: underline; }
 .reading .extraction-notice .open-original {
   margin-left: auto;
   font-weight: 600;
+}
+
+/* Skeleton loading cards (replaces empty state during feed fetch). */
+.skeleton-card {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--hairline);
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 10px;
+}
+.skeleton-card .skeleton-circle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  align-self: center;
+  margin-top: 4px;
+}
+.skeleton-card .skeleton-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skeleton-card .skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--overlay) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+.skeleton-card .skeleton-line.meta { width: 35%; height: 10px; }
+.skeleton-card .skeleton-line.title { width: 70%; height: 14px; }
+.skeleton-card .skeleton-line.excerpt { width: 90%; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Refresh icon spinning animation. */
+.refresh-icon-spinning {
+  animation: refresh-spin 0.9s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  transform-origin: 50% 50%;
+}
+@keyframes refresh-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sidebar per-feed fetching spinner. */
+.sidebar .feed .fetching-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--overlay);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
 }
 
 /* Empty state. */
@@ -726,6 +923,18 @@ a:hover { text-decoration: underline; }
 
 .btn.subtle {
   color: var(--subtext);
+}
+.btn.subtle:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.btn.danger {
+  background: #d20f39;
+  color: #fff;
+}
+.btn.danger:hover {
+  background: #e64553;
 }
 
 /* Command palette. */

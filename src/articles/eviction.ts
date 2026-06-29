@@ -25,7 +25,7 @@ export async function runEviction(): Promise<void> {
 }
 
 async function evictFeed(feedUrl: string): Promise<void> {
-  const items = await listItemsByFeed(feedUrl, { limit: 500 });
+  const items = await listItemsByFeed(feedUrl, 500);
   const now = Date.now();
 
   // Pass 1: drop extractedHtml from items older than the text-only retention.

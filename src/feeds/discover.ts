@@ -1,11 +1,13 @@
 import { fetchFeed, fetchArticleHtml } from './fetch';
-import { parseFeed } from './parse';
+import { parseFeed, type ParsedFeed } from './parse';
 
 export interface DiscoveredFeed {
   url: string;
   title: string;
   /** 3 sample item titles, for the Add Feed confirmation modal. */
   samples: string[];
+  /** Full parsed feed data — reused on subscribe to avoid a second fetch. */
+  parsed: ParsedFeed;
 }
 
 /**
@@ -18,7 +20,7 @@ export interface DiscoveredFeed {
 export async function discoverFeed(url: string): Promise<DiscoveredFeed | null> {
   // 1. Maybe the URL itself is a feed.
   const direct = await tryParse(url);
-  if (direct) return { url, title: direct.title, samples: firstThree(direct) };
+  if (direct) return { url, title: direct.title, samples: firstThree(direct), parsed: direct };
 
   // 2. Maybe the URL is a page that links to one or more feeds.
   const html = await fetchArticleHtml(url);
@@ -27,7 +29,7 @@ export async function discoverFeed(url: string): Promise<DiscoveredFeed | null> 
     for (const candidate of candidates) {
       const parsed = await tryParse(candidate);
       if (parsed) {
-        return { url: candidate, title: parsed.title, samples: firstThree(parsed) };
+        return { url: candidate, title: parsed.title, samples: firstThree(parsed), parsed };
       }
     }
   }

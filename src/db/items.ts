@@ -20,6 +20,32 @@ export async function insertOrUpdateItem(item: Item): Promise<void> {
   }
 }
 
+/**
+ * Upsert many items in a single IndexedDB transaction. Always preserves
+ * user state (read, starred, firstOpenedAt, extractedHtml).
+ */
+export async function bulkUpsertItems(items: Item[]): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('items', 'readwrite');
+  for (const item of items) {
+    const existing = await tx.store.get(item.id);
+    if (existing) {
+      await tx.store.put({
+        ...existing,
+        ...item,
+        read: existing.read,
+        starred: existing.starred,
+        firstOpenedAt: existing.firstOpenedAt,
+        extractedHtml: existing.extractedHtml ?? item.extractedHtml ?? null,
+        id: existing.id,
+      });
+    } else {
+      await tx.store.put(item);
+    }
+  }
+  await tx.done;
+}
+
 export async function getItem(id: string): Promise<Item | undefined> {
   const db = await getDb();
   return db.get('items', id);
@@ -37,29 +63,23 @@ export async function updateItem(
 
 export async function listItemsByFeed(
   feedUrl: string,
-  opts: { unreadOnly?: boolean; limit?: number } = {},
+  limit = 500,
 ): Promise<Item[]> {
   const db = await getDb();
-  // Note: IDB does not accept booleans as index keys, so we filter `read`
-  // manually by walking the by-feed-published index in reverse-chrono order.
   const range = IDBKeyRange.bound([feedUrl, -Infinity], [feedUrl, Infinity]);
   const results: Item[] = [];
   let cursor = await db
     .transaction('items', 'readonly')
     .store.index('by-feed-published')
     .openCursor(range, 'prev');
-  const limit = opts.limit ?? Infinity;
   while (cursor && results.length < limit) {
-    if (!opts.unreadOnly || !cursor.value.read) results.push(cursor.value);
+    results.push(cursor.value);
     cursor = await cursor.continue();
   }
   return results;
 }
 
-export async function listItems(
-  limit = 500,
-  opts: { unreadOnly?: boolean } = {},
-): Promise<Item[]> {
+export async function listItems(limit = 500): Promise<Item[]> {
   const db = await getDb();
   const results: Item[] = [];
   let cursor = await db
@@ -67,7 +87,7 @@ export async function listItems(
     .store.index('by-feed-published')
     .openCursor(null, 'prev');
   while (cursor && results.length < limit) {
-    if (!opts.unreadOnly || !cursor.value.read) results.push(cursor.value);
+    results.push(cursor.value);
     cursor = await cursor.continue();
   }
   return results;

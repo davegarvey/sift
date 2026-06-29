@@ -13,14 +13,13 @@ type ModalKind =
   | { kind: 'palette' }
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
-  | { kind: 'add-feed' };
+  | { kind: 'add-feed' }
+  | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string };
 
 export interface AppState {
   view: ViewKind;
   /** The feed URL the river is currently scoped to; null = All. */
   riverScope: string | null;
-  /** Read filter mode: 'unread' = show only unread, 'all' = show all items. */
-  readFilter: 'unread' | 'all';
   /** "current" item being viewed in the reading view; null when in river. */
   currentItem: Item | null;
   sidebarOpen: boolean;        // mobile drawer state
@@ -37,6 +36,7 @@ interface AppContext {
   settings: () => AppSettings;
   fetching: () => number;
   feedErrors: () => Record<string, string>;
+  fetchingFeeds: () => Set<string>;
   reloadFeeds: () => Promise<Feed[]>;
   reloadItems: () => Promise<Item[]>;
   setRiverScope: (feedUrl: string | null) => void;
@@ -64,7 +64,6 @@ export const AppProvider: ParentComponent = (props) => {
   const [state, setStateInternal] = createStore<AppState>({
     view: 'river',
     riverScope: null,
-    readFilter: 'unread',
     currentItem: null,
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
@@ -81,12 +80,11 @@ export const AppProvider: ParentComponent = (props) => {
     markReadOnScrollPast: true,
     lastRefreshRunAt: null,
     lastFeedUrl: null,
-    readFilter: 'unread',
   });
 
   const reloadFeeds = async () => setFeeds(await listFeeds());
   const reloadItems = async () =>
-    setItems(await listItems(500, { unreadOnly: state.readFilter === 'unread' }));
+    setItems(await listItems(500));
 
   const setRiverScope = (feedUrl: string | null) => {
     setState({ riverScope: feedUrl, focusedIndex: 0, view: 'river' });
@@ -145,6 +143,7 @@ export const AppProvider: ParentComponent = (props) => {
     settings,
     fetching: fetchingState.inFlight,
     feedErrors: fetchingState.feedErrors,
+    fetchingFeeds: fetchingState.fetchingFeeds,
     reloadFeeds,
     reloadItems,
     setRiverScope,
@@ -172,7 +171,7 @@ export const AppProvider: ParentComponent = (props) => {
       s.lastFeedUrl && feeds().some((f) => f.url === s.lastFeedUrl)
         ? s.lastFeedUrl
         : null;
-    setState({ riverScope: validFeed, readFilter: s.readFilter });
+    setState({ riverScope: validFeed });
     await reloadItems();
     startScheduler();
     // After the first refresh sweep, keep feeds/items in sync.
@@ -192,11 +191,13 @@ export const AppProvider: ParentComponent = (props) => {
  */
 export function applyTheme(theme: ThemePreference): void {
   const root = document.documentElement;
+  root.removeAttribute('data-theme');
+  root.removeAttribute('data-a11y');
   if (theme === 'light') {
     root.setAttribute('data-theme', 'light');
   } else if (theme === 'dark') {
     root.setAttribute('data-theme', 'dark');
-  } else {
-    root.removeAttribute('data-theme');
+  } else if (theme === 'accessible') {
+    root.setAttribute('data-a11y', 'true');
   }
 }

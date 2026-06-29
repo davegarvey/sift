@@ -2,7 +2,8 @@ import { createSignal, Show, For, onMount } from 'solid-js';
 import { useApp } from '../state';
 import { discoverFeed } from '../feeds/discover';
 import { upsertFeed } from '../db/feeds';
-import { refreshFeed } from '../feeds/scheduler';
+import { bulkUpsertItems } from '../db/items';
+import { parsedToItems } from '../feeds/parse';
 import type { DiscoveredFeed } from '../feeds/discover';
 
 function looksLikeUrl(s: string): boolean {
@@ -69,15 +70,23 @@ export function AddFeedModal() {
       title: d.title,
       learnedIntervalMs: 60 * 60 * 1000,
       lastFetched: null,
+      lastItemPublishedAt: null,
     });
     ctx.closeModal();
     void ctx.reloadFeeds();
-    void refreshFeed({
-      url: d.url,
-      title: d.title,
-      learnedIntervalMs: 60 * 60 * 1000,
-      lastFetched: null,
-    });
+    const items = parsedToItems(d.parsed, d.url);
+    if (items.length > 0) {
+      await bulkUpsertItems(items);
+      const lastPublished = Math.max(...items.map((i) => i.publishedAt));
+      await upsertFeed({
+        url: d.url,
+        title: d.title,
+        learnedIntervalMs: 60 * 60 * 1000,
+        lastFetched: Date.now(),
+        lastItemPublishedAt: lastPublished ?? null,
+      });
+    }
+    void ctx.reloadItems();
   };
 
   return (

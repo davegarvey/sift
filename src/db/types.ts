@@ -75,14 +75,15 @@ export const TEXTONLY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /** Per-feed size threshold before applying eviction. Default 50 MB. */
 export const FEED_STORAGE_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
-export type ThemePreference = 'system' | 'light' | 'dark';
+export type ThemePreference = 'system' | 'light' | 'dark' | 'accessible';
 
 export interface AppSettings {
   theme: ThemePreference;
   markReadOnScrollPast: boolean;
   lastRefreshRunAt: number | null;
   lastFeedUrl: string | null;
-  readFilter: 'unread' | 'all';
+  /** @deprecated No longer used. Kept for backward compat with persisted settings. */
+  readFilter?: 'unread' | 'all';
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -90,5 +91,4 @@ export const DEFAULT_SETTINGS: AppSettings = {
   markReadOnScrollPast: true,
   lastRefreshRunAt: null,
   lastFeedUrl: null,
-  readFilter: 'unread',
 };

@@ -8,6 +8,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { AddFeedModal } from './components/AddFeedModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
+import { ConfirmUnsubscribeModal } from './components/ConfirmUnsubscribeModal';
 import './styles.css';
 
 function Shell() {
@@ -36,6 +37,21 @@ function Shell() {
       } else if (e.key === 'r') {
         e.preventDefault();
         void ctx.refreshAll();
+      } else if (e.key === 'j') {
+        e.preventDefault();
+        ctx.jumpTo(1);
+        const items = ctx.items();
+        const item = items[ctx.state.focusedIndex];
+        if (item) void ctx.openItem(item);
+      } else if (e.key === 'k') {
+        e.preventDefault();
+        ctx.jumpTo(-1);
+        const items = ctx.items();
+        const item = items[ctx.state.focusedIndex];
+        if (item) void ctx.openItem(item);
+      } else if (e.key === '?') {
+        e.preventDefault();
+        ctx.openModal({ kind: 'shortcuts' });
       }
       return;
     }
@@ -119,6 +135,9 @@ function Shell() {
       </Show>
       <Show when={ctx.state.modal.kind === 'shortcuts'}>
         <Backdrop><ShortcutsOverlay /></Backdrop>
+      </Show>
+      <Show when={ctx.state.modal.kind === 'confirm-unsubscribe'}>
+        <Backdrop><ConfirmUnsubscribeModal /></Backdrop>
       </Show>
     </div>
   );

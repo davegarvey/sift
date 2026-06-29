@@ -1,9 +1,10 @@
 import { For, onMount, onCleanup, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
-import { listItemsByFeed } from '../db/items';
 import { markRead, toggleStar } from '../db/items';
 import type { Item } from '../db/types';
 import { relativeTime } from '../util/time';
+import { Star } from 'lucide-solid';
+import { CircleIcon, CircleCheckIcon } from './Icons';
 
 export function River() {
   const ctx = useApp();
@@ -60,7 +61,7 @@ export function River() {
               clearTimeout(t);
               leaveTimers.delete(id);
             }
-          } else if (hasBeenSeen.has(id) && !leaveTimers.has(id)) {
+          } else if (e.target.isConnected && hasBeenSeen.has(id) && !leaveTimers.has(id)) {
             // Was seen, now scrolled away → start the small delay so fast
             // scrolling past does not race the marking.
             leaveTimers.set(
@@ -141,10 +142,18 @@ export function River() {
     el.addEventListener('pointercancel', cleanup);
   };
 
+  const shouldShowSkeleton = () => {
+    if (visibleItems().length > 0) return false;
+    if (ctx.feeds().length === 0) return false;
+    const fetching = ctx.fetchingFeeds();
+    if (ctx.state.riverScope == null) return fetching.size > 0;
+    return fetching.has(ctx.state.riverScope);
+  };
+
   return (
-    <main class="river" ref={containerRef}>
+    <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })}>
       <div class="river-inner">
-        <For each={visibleItems()} fallback={<EmptyState />}>
+        <For each={visibleItems()} fallback={shouldShowSkeleton() ? <SkeletonState /> : <EmptyState />}>
           {(item, idx) => (
             <article
               class={`river-item ${item.read ? 'read' : 'unread'}`}
@@ -153,37 +162,51 @@ export function River() {
               classList={{ focused: idx() === ctx.state.focusedIndex }}
               onPointerDown={(e) => onStart(e, item)}
               onClick={(e) => {
-                // Don't open if this was the end of a swipe
                 if ((e.currentTarget as HTMLElement).style.transform) return;
                 void ctx.openItem(item);
               }}
               onMouseEnter={() => ctx.setState({ focusedIndex: idx() })}
+              onMouseLeave={() => ctx.setState({ focusedIndex: -1 })}
             >
-              <button
-                class="indicator tick"
-                title={item.read ? 'Mark unread' : 'Mark read'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void markRead(item.id, !item.read).then(() =>
-                    ctx.reloadItems(),
-                  );
-                }}
-                aria-pressed={item.read}
-                aria-label={item.read ? 'Mark unread' : 'Mark read'}
-              />
               <div class="body">
                 <div class="meta">
                   <span class="source">{ctx.feeds().find((f) => f.url === item.feedUrl)?.title ?? ''}</span>
                   <span class="time">{relativeTime(item.publishedAt)}</span>
                 </div>
-                <h3 class="title">{item.title}</h3>
+                <h3 class="title">
+                  {item.title}
+                  <Show when={item.starred}>
+                    <Star size={14} fill="currentColor" class="star-inline" />
+                  </Show>
+                </h3>
                 <Show when={item.excerpt}>
                   <div class="excerpt">{item.excerpt}</div>
                 </Show>
               </div>
-              <Show when={item.starred}>
-                <span class="star">★</span>
-              </Show>
+              <div class="actions">
+                <button
+                  class="action-btn read-toggle"
+                  title={item.read ? 'Mark unread' : 'Mark read'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void markRead(item.id, !item.read).then(() => ctx.reloadItems());
+                  }}
+                  aria-label={item.read ? 'Mark unread' : 'Mark read'}
+                >
+                  {item.read ? <CircleCheckIcon /> : <CircleIcon />}
+                </button>
+                <button
+                  class="action-btn star-toggle"
+                  title={item.starred ? 'Unstar' : 'Star'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void toggleStar(item.id).then(() => ctx.reloadItems());
+                  }}
+                  aria-label={item.starred ? 'Unstar' : 'Star'}
+                >
+                  <Star size={14} fill={item.starred ? 'currentColor' : 'none'} />
+                </button>
+              </div>
             </article>
           )}
         </For>
@@ -192,10 +215,26 @@ export function River() {
   );
 }
 
+function SkeletonState() {
+  return (
+    <For each={Array.from({ length: 6 })}>
+      {() => (
+        <div class="skeleton-card">
+          <div class="skeleton-circle" />
+          <div class="skeleton-body">
+            <div class="skeleton-line meta" />
+            <div class="skeleton-line title" />
+            <div class="skeleton-line excerpt" />
+          </div>
+        </div>
+      )}
+    </For>
+  );
+}
+
 function EmptyState() {
   const ctx = useApp();
   const hasFeeds = ctx.feeds().length > 0;
-  const isUnreadMode = ctx.state.readFilter === 'unread';
 
   if (!hasFeeds) {
     return (
@@ -208,9 +247,7 @@ function EmptyState() {
 
   return (
     <div class="empty-state">
-      <div class="headline">
-        {isUnreadMode ? "You're all caught up." : 'No items yet.'}
-      </div>
+      <div class="headline">No items yet.</div>
       <a class="link" onClick={() => void ctx.refreshAll()}>Check for new items</a>
     </div>
   );

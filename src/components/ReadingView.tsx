@@ -1,5 +1,6 @@
 import { createSignal, onMount, onCleanup, Show } from 'solid-js';
 import { useApp } from '../state';
+import { ArrowLeft, CircleQuestionMark, ExternalLink, Star } from 'lucide-solid';
 import { openItemForReading } from '../articles/service';
 import { toggleStar, markRead } from '../db/items';
 import { relativeTime } from '../util/time';
@@ -46,7 +47,7 @@ export function ReadingView() {
     <main class="reading">
       <div class="reading-chrome">
         <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)">
-          ‹ All
+          <ArrowLeft size={14} /> All
         </button>
         <span class="source">
           {ctx.feeds().find((f) => f.url === ctx.state.currentItem?.feedUrl)?.title ?? ''}
@@ -54,13 +55,13 @@ export function ReadingView() {
           {ctx.state.currentItem ? relativeTime(ctx.state.currentItem.publishedAt) : ''}
         </span>
         <button
-          class={`star ${ctx.state.currentItem?.starred ? '' : 'dim'}`}
+          class="star"
           onClick={() => void toggleStarClick()}
-          title="Star (s)"
+          title={ctx.state.currentItem?.starred ? 'Unstar (s)' : 'Star (s)'}
           aria-pressed={ctx.state.currentItem?.starred ?? false}
-          aria-label="Toggle star"
+          aria-label={ctx.state.currentItem?.starred ? 'Unstar' : 'Star'}
         >
-          ★
+          <Star size={16} fill={ctx.state.currentItem?.starred ? 'currentColor' : 'none'} />
         </button>
         <a
           class="open-original"
@@ -69,8 +70,15 @@ export function ReadingView() {
           rel="noopener noreferrer"
           title="Open original"
         >
-          ↗ open
+          <ExternalLink size={14} />
         </a>
+        <button
+          class="desktop-only"
+          title="Keyboard shortcuts (?)"
+          onClick={() => ctx.openModal({ kind: 'shortcuts' })}
+        >
+          <CircleQuestionMark size={14} />
+        </button>
       </div>
 
       <div class="reading-body" ref={scrollRef}>
@@ -91,7 +99,7 @@ export function ReadingView() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Open original ↗
+                <ExternalLink size={14} />
               </a>
             </div>
           </Show>

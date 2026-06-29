@@ -1,5 +1,6 @@
 import { getDb } from './open';
 import type { Feed } from './types';
+import { deleteItemsByFeed } from './items';
 
 export async function upsertFeed(feed: Feed): Promise<void> {
   const db = await getDb();
@@ -29,4 +30,10 @@ export async function updateFeed(
   const existing = await db.get('feeds', url);
   if (!existing) return;
   await db.put('feeds', { ...existing, ...patch, url });
+}
+
+/** Delete a feed and all its items. This cannot be undone. */
+export async function unsubscribeFeed(url: string): Promise<void> {
+  await deleteItemsByFeed(url);
+  await deleteFeed(url);
 }

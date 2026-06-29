@@ -1,3 +1,4 @@
+import { Search } from 'lucide-solid';
 import { createSignal, For, Show, onMount, onCleanup, createMemo } from 'solid-js';
 import { useApp } from '../state';
 import { searchItems } from '../db/items';
@@ -67,10 +68,7 @@ export function CommandPalette() {
   return (
     <div class="modal palette">
       <div class="palette-input">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8" />
-          <path d="M21 21l-4.35-4.35" />
-        </svg>
+        <Search size={14} />
         <input
           ref={inputRef}
           type="text"

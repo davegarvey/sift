@@ -63,6 +63,7 @@ export function SettingsDrawer() {
               <option value="system">Follow system</option>
               <option value="light">Light</option>
               <option value="dark">Dark</option>
+              <option value="accessible">High contrast</option>
             </select>
           </div>
         </div>
