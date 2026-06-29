@@ -6,15 +6,6 @@ import { bulkUpsertItems } from '../db/items';
 import { parsedToItems } from '../feeds/parse';
 import type { DiscoveredFeed } from '../feeds/discover';
 
-function looksLikeUrl(s: string): boolean {
-  try {
-    const u = new URL(s.startsWith('http') ? s : `https://${s}`);
-    return u.hostname.includes('.');
-  } catch {
-    return false;
-  }
-}
-
 export function AddFeedModal() {
   const ctx = useApp();
   const [url, setUrl] = createSignal('');
@@ -24,23 +15,7 @@ export function AddFeedModal() {
 
   let inputRef: HTMLInputElement | undefined;
 
-  onMount(async () => {
-    // 1. Pre-fill from clipboard if it looks like a URL.
-    // navigator.clipboard.readText() requires a secure context + the
-    // transient-activation that came from the click that opened the modal.
-    // If it fails (or returns nothing URL-like), we silently skip.
-    if (navigator.clipboard?.readText) {
-      try {
-        const clip = await navigator.clipboard.readText();
-        if (clip && looksLikeUrl(clip.trim())) {
-          setUrl(clip.trim());
-        }
-      } catch {
-        // Permission denied or no clipboard access — ignore.
-      }
-    }
-    // 2. Focus the input so the user can paste/confirm immediately. Defer
-    // one frame so the modal is fully painted before focus.
+  onMount(() => {
     requestAnimationFrame(() => inputRef?.focus());
   });
 
@@ -99,6 +74,7 @@ export function AddFeedModal() {
           placeholder="Paste a website or feed URL…"
           value={url()}
           onInput={(e) => setUrl(e.currentTarget.value)}
+          onPaste={() => !discovering() && setTimeout(() => void discover(), 0)}
           onKeyDown={(e) => e.key === 'Enter' && void discover()}
           disabled={!!discovered()}
         />
