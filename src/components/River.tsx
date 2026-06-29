@@ -18,6 +18,7 @@ export function River() {
 
   // Auto navigation via state.focusedIndex and scroll into view on change.
   let lastFocusedEl: HTMLElement | null = null;
+  let mouseNav = false;
   const onFocusChange = () => {
     const list = visibleItems();
     const idx = ctx.state.focusedIndex;
@@ -25,8 +26,12 @@ export function River() {
     const els = containerRef?.querySelectorAll('[data-item-idx]') ?? [];
     const target = els[idx] as HTMLElement | undefined;
     if (target && target !== lastFocusedEl) {
-      target.scrollIntoView({ block: 'nearest' });
+      target.scrollIntoView({
+        behavior: mouseNav ? 'auto' : 'smooth',
+        block: mouseNav ? 'nearest' : 'center',
+      });
       lastFocusedEl = target;
+      mouseNav = false;
     }
   };
 
@@ -93,7 +98,7 @@ export function River() {
                 if ((e.currentTarget as HTMLElement).style.transform) return;
                 void ctx.openItem(item);
               }}
-              onMouseEnter={() => ctx.setState({ focusedIndex: idx() })}
+              onMouseEnter={() => { mouseNav = true; ctx.setState({ focusedIndex: idx() }); }}
               onMouseLeave={() => ctx.setState({ focusedIndex: -1 })}
             >
               <div class="body">

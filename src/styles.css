@@ -514,6 +514,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 .river .river-inner {
@@ -529,11 +530,16 @@ a:hover { text-decoration: underline; }
   gap: 10px;
   cursor: pointer;
   position: relative;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.river-item:hover,
+.river-item:hover {
+  background: var(--mantle);
+}
+
 .river-item.focused {
   background: var(--mantle);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .river-item .body {
@@ -767,6 +773,21 @@ a:hover { text-decoration: underline; }
 .reading .extraction-notice .open-original {
   margin-left: auto;
   font-weight: 600;
+}
+
+.reading .reading-body .reading-content {
+  animation: reading-fade-in 0.2s ease-out;
+}
+
+@keyframes reading-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Skeleton loading cards (replaces empty state during feed fetch). */
