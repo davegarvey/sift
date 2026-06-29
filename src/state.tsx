@@ -77,7 +77,6 @@ export const AppProvider: ParentComponent = (props) => {
   const [items, setItems] = createSignal<Item[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>({
     theme: 'system',
-    markReadOnScrollPast: true,
     lastRefreshRunAt: null,
     lastFeedUrl: null,
   });

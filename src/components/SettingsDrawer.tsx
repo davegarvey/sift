@@ -14,10 +14,6 @@ export function SettingsDrawer() {
     void ctx.saveSettingsPatch({ theme });
   };
 
-  const setMarkRead = (on: boolean) => {
-    void ctx.saveSettingsPatch({ markReadOnScrollPast: on });
-  };
-
   const triggerExport = async () => {
     const opml = serializeOpml(ctx.feeds());
     const blob = new Blob([opml], { type: 'text/xml' });
@@ -65,20 +61,6 @@ export function SettingsDrawer() {
               <option value="dark">Dark</option>
               <option value="accessible">High contrast</option>
             </select>
-          </div>
-        </div>
-
-        <div class="group">
-          <h3>Behavior</h3>
-          <div class="row">
-            <label>Mark items read when I scroll past them</label>
-            <button
-              class={`toggle ${settings().markReadOnScrollPast ? 'on' : ''}`}
-              onClick={() => setMarkRead(!settings().markReadOnScrollPast)}
-              role="switch"
-              aria-checked={settings().markReadOnScrollPast}
-              aria-label="Mark items read when I scroll past them"
-            />
           </div>
         </div>
 

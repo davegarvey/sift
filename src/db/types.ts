@@ -79,7 +79,6 @@ export type ThemePreference = 'system' | 'light' | 'dark' | 'accessible';
 
 export interface AppSettings {
   theme: ThemePreference;
-  markReadOnScrollPast: boolean;
   lastRefreshRunAt: number | null;
   lastFeedUrl: string | null;
   /** @deprecated No longer used. Kept for backward compat with persisted settings. */
@@ -88,7 +87,6 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
-  markReadOnScrollPast: true,
   lastRefreshRunAt: null,
   lastFeedUrl: null,
 };

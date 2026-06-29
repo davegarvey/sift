@@ -1,4 +1,4 @@
-import { For, onMount, onCleanup, Show, createMemo } from 'solid-js';
+import { For, onMount, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
 import { markRead, toggleStar } from '../db/items';
 import type { Item } from '../db/types';
@@ -30,78 +30,8 @@ export function River() {
     }
   };
 
-// Item references for IntersectionObserver-based implicit mark read.
-  // Behavior matches the convention used by NetNewsWire / Reeder / Feedbin /
-  // Feedly: an item is only ever marked read by scroll-past IF it has been
-  // visible to the user at some point ("was seen"). Items rendered below the
-  // fold that the user has never actually seen are NOT marked read.
-  // See design note in tasks.md (group 7, task 7.4 divergence).
-  let observer: IntersectionObserver | null = null;
-  const leaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const hasBeenSeen = new Set<string>();
-
-  const setupObserver = () => {
-    if (!containerRef || !ctx.settings().markReadOnScrollPast) {
-      observer?.disconnect();
-      observer = null;
-      return;
-    }
-    observer?.disconnect();
-    observer = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const id = (e.target as HTMLElement).dataset.itemId!;
-          const item = visibleItems().find((i) => i.id === id);
-          if (!item || item.read) continue;
-          if (e.isIntersecting) {
-            // Mark "seen" and cancel any pending leave-timer.
-            hasBeenSeen.add(id);
-            const t = leaveTimers.get(id);
-            if (t) {
-              clearTimeout(t);
-              leaveTimers.delete(id);
-            }
-          } else if (e.target.isConnected && hasBeenSeen.has(id) && !leaveTimers.has(id)) {
-            // Was seen, now scrolled away → start the small delay so fast
-            // scrolling past does not race the marking.
-            leaveTimers.set(
-              id,
-              setTimeout(() => {
-                void markRead(id).then(() => ctx.reloadItems());
-                leaveTimers.delete(id);
-              }, 500),
-            );
-          }
-        }
-      },
-      { root: containerRef, threshold: 0.01 },
-    );
-    containerRef
-      .querySelectorAll('[data-item-id]')
-      .forEach((el) => observer!.observe(el));
-  };
-
-  // Reset seen set when the river scope changes (filter by feed / All) so
-  // re-rendered items start fresh.
-  // On unmount, dispose observer + pending timers.
-  onCleanup(() => {
-    observer?.disconnect();
-    for (const t of leaveTimers.values()) clearTimeout(t);
-    leaveTimers.clear();
-    hasBeenSeen.clear();
-  });
-
-  // Re-setup observer when items change.
-  const refreshObserver = () => requestAnimationFrame(setupObserver);
-
   onMount(() => {
-    refreshObserver();
     onFocusChange();
-  });
-  // SolidJS doesn't have onUpdated here; use a tiny interval to refresh.
-  onMount(() => {
-    const id = setInterval(refreshObserver, 1000);
-    onCleanup(() => clearInterval(id));
   });
 
   // Render items swipe handler.
