@@ -1,4 +1,4 @@
-import { For, onMount, Show, createMemo } from 'solid-js';
+import { For, Show, createMemo, createEffect } from 'solid-js';
 import { useApp } from '../state';
 import { markRead, toggleStar } from '../db/items';
 import type { Item } from '../db/types';
@@ -30,9 +30,7 @@ export function River() {
     }
   };
 
-  onMount(() => {
-    onFocusChange();
-  });
+  createEffect(onFocusChange);
 
   // Render items swipe handler.
   const onStart = (e: PointerEvent, item: Item) => {
