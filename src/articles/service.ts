@@ -51,7 +51,7 @@ export async function openItemForReading(
   if (!url) {
     return { bodyHtml: item.excerpt, extracted: false, extractionFailed: true };
   }
-  const result = await extractArticle(url);
+  const result = await extractArticle(url, item.thumbnail ?? undefined);
   if (!result) {
     return { bodyHtml: item.excerpt, extracted: false, extractionFailed: true };
   }

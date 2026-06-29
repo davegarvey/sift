@@ -68,7 +68,10 @@ export async function fetchImageAsDataUri(url: string): Promise<string | null> {
   const proxyUrl = `/img?url=${encodeURIComponent(url)}`;
   try {
     const res = await fetch(proxyUrl);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn('fetchImageAsDataUri: HTTP', res.status, 'for', url);
+      return null;
+    }
     const blob = await res.blob();
     const buf = await blob.arrayBuffer();
     const bytes = new Uint8Array(buf);
@@ -78,9 +81,12 @@ export async function fetchImageAsDataUri(url: string): Promise<string | null> {
       bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
     }
     const base64 = btoa(bin);
-    const type = blob.type || 'image/png';
-    return `data:${type};base64,${base64}`;
-  } catch {
+    const type = blob.type;
+    return type
+      ? `data:${type};base64,${base64}`
+      : `data:;base64,${base64}`;
+  } catch (err) {
+    console.warn('fetchImageAsDataUri: network error for', url, err);
     return null;
   }
 }
