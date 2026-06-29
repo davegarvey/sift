@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, Show } from 'solid-js';
+import { createSignal, createEffect, Show } from 'solid-js';
 import { useApp } from '../state';
 import { ArrowLeft, CircleQuestionMark, ExternalLink, Star } from 'lucide-solid';
 import { openItemForReading } from '../articles/service';
@@ -12,23 +12,24 @@ export function ReadingView() {
   const [loading, setLoading] = createSignal(true);
 
   let scrollRef: HTMLDivElement | undefined;
+  let lastItemId: string | undefined;
 
-  onMount(async () => {
+  createEffect(() => {
     const item = ctx.state.currentItem;
-    if (!item) {
-      ctx.closeReading();
-      return;
-    }
+    if (!item || item.id === lastItemId) return;
+    lastItemId = item.id;
+
     if (!item.read) {
       void markRead(item.id).then(() => ctx.reloadItems());
     }
     setLoading(true);
-    const result = await openItemForReading(item.id);
-    setBody(result.bodyHtml);
-    setExtractionFailed(result.extractionFailed);
-    setLoading(false);
-    // Reset scroll on opening.
-    scrollRef?.scrollTo({ top: 0 });
+    void openItemForReading(item.id).then((result) => {
+      if (lastItemId !== item.id) return;
+      setBody(result.bodyHtml);
+      setExtractionFailed(result.extractionFailed);
+      setLoading(false);
+      scrollRef?.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   });
 
   const toggleStarClick = async () => {
@@ -83,31 +84,31 @@ export function ReadingView() {
 
       <div class="reading-body" ref={scrollRef}>
         <Show when={!loading() && ctx.state.currentItem}>
-          <h1 class="reading-title">{ctx.state.currentItem!.title}</h1>
-          <div class="byline">
-            <Show when={ctx.state.currentItem!.author}>
-              by {ctx.state.currentItem!.author}{' · '}
-            </Show>
-            <span>{new Date(ctx.state.currentItem!.publishedAt).toLocaleString()}</span>
-          </div>
-          <Show when={extractionFailed()}>
-            <div class="extraction-notice">
-              <span>Couldn't extract this article.</span>
-              <a
-                class="open-original"
-                href={ctx.state.currentItem!.link ?? '#'}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <ExternalLink size={14} />
-              </a>
+          <div class="reading-content">
+            <h1 class="reading-title">{ctx.state.currentItem!.title}</h1>
+            <div class="byline">
+              <Show when={ctx.state.currentItem!.author}>
+                by {ctx.state.currentItem!.author}{' · '}
+              </Show>
+              <span>{new Date(ctx.state.currentItem!.publishedAt).toLocaleString()}</span>
             </div>
-          </Show>
-          <div innerHTML={body()} />
+            <Show when={extractionFailed()}>
+              <div class="extraction-notice">
+                <span>Couldn't extract this article.</span>
+                <a
+                  class="open-original"
+                  href={ctx.state.currentItem!.link ?? '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink size={14} />
+                </a>
+              </div>
+            </Show>
+            <div innerHTML={body()} />
+          </div>
         </Show>
-        <Show when={loading()}>
-          <p>Loading…</p>
-        </Show>
+
       </div>
     </main>
   );
