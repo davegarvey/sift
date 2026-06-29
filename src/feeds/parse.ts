@@ -16,6 +16,7 @@ export interface ParsedItem {
   publishedAt: number;
   excerpt: string;
   html?: string;
+  thumbnail?: string | null;
 }
 
 /**
@@ -58,10 +59,12 @@ export function parseFeed(xml: string): ParsedFeed | null {
         } else if (link) {
           stableGuid = link;
         }
+        const thumbnail = pickThumbnail(entry);
         const result: Record<string, unknown> = {};
         if (finalHtml) result['_html'] = finalHtml;
         if (author) result['_author'] = author;
         if (stableGuid) result['_guid'] = stableGuid;
+        if (thumbnail) result['_thumbnail'] = thumbnail;
         return result;
       },
     });
@@ -80,6 +83,29 @@ export function parseFeed(xml: string): ParsedFeed | null {
   };
 }
 
+function pickThumbnail(entry: Record<string, unknown>): string | undefined {
+  // RSS media:thumbnail
+  const mediaThumb = entry['media:thumbnail'];
+  if (mediaThumb && typeof mediaThumb === 'object') {
+    const url = (mediaThumb as Record<string, unknown>)['@_url'];
+    if (typeof url === 'string') return url;
+  }
+  // RSS media:content with image type
+  const mediaContent = entry['media:content'];
+  if (mediaContent && typeof mediaContent === 'object') {
+    const mc = mediaContent as Record<string, unknown>;
+    const type = mc['@_type'];
+    const url = mc['@_url'];
+    if (typeof url === 'string' && (typeof type !== 'string' || type.startsWith('image/'))) return url;
+  }
+  // Atom media:thumbnail (href attribute)
+  if (mediaThumb && typeof mediaThumb === 'object') {
+    const href = (mediaThumb as Record<string, unknown>)['@_href'];
+    if (typeof href === 'string') return href;
+  }
+  return undefined;
+}
+
 function pickAuthor(entry: Record<string, unknown>): string | undefined {
   const author = entry['author'];
   if (typeof author === 'string') return author;
@@ -93,7 +119,12 @@ function pickAuthor(entry: Record<string, unknown>): string | undefined {
 }
 
 function mapEntry(entry: FeedEntry): ParsedItem | null {
-  const extra = entry as FeedEntry & { _guid?: string; _html?: string; _author?: string };
+  const extra = entry as FeedEntry & {
+    _guid?: string;
+    _html?: string;
+    _author?: string;
+    _thumbnail?: string;
+  };
   const guid = extra['_guid'] ?? entry.id ?? entry.link ?? '';
   if (!guid) return null;
   const publishedAt = parseDate(entry.published);
@@ -107,6 +138,7 @@ function mapEntry(entry: FeedEntry): ParsedItem | null {
     publishedAt,
     excerpt,
     html,
+    thumbnail: extra['_thumbnail'] ?? null,
   };
 }
 
@@ -135,6 +167,7 @@ export function parsedToItems(parsed: ParsedFeed, feedUrl: string): Item[] {
       updatedAt: p.publishedAt,
       excerpt: p.excerpt,
       html: p.html,
+      thumbnail: p.thumbnail ?? null,
       extractedHtml: null,
       firstOpenedAt: null,
       read: false,

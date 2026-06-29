@@ -41,6 +41,8 @@ export interface Item {
   excerpt: string;
   /** Raw HTML content from the feed (may be the full body or just a summary). */
   html?: string;
+  /** Thumbnail image URL from the feed's media:thumbnail or media:content. */
+  thumbnail?: string | null;
   /** Full-text HTML extracted by Readability (cached). Null until extracted. */
   extractedHtml?: string | null;
   /** Epoch ms of first time the user opened this item; null if never opened. */

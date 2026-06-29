@@ -16,7 +16,10 @@ export interface ExtractResult {
  *
  * Requires a DOM (uses DOMParser). Browser-only by design.
  */
-export async function extractArticle(articleUrl: string): Promise<ExtractResult | null> {
+export async function extractArticle(
+  articleUrl: string,
+  thumbnailUrl?: string,
+): Promise<ExtractResult | null> {
   const html = await fetchArticleHtml(articleUrl);
   if (!html) return null;
 
@@ -37,37 +40,68 @@ export async function extractArticle(articleUrl: string): Promise<ExtractResult 
     return null;
   }
 
-  const inlined = await inlineImages(article.content);
+  const inlined = await inlineImages(article.content, articleUrl);
+  if (!thumbnailUrl) {
+    return { html: inlined, title: article.title ?? undefined };
+  }
+
+  const heroInjected = await injectHeroImage(inlined, thumbnailUrl);
   return {
-    html: inlined,
+    html: heroInjected,
     title: article.title ?? undefined,
   };
 }
 
 /**
+ * If the extracted HTML contains no `<img>` elements, inject the feed's
+ * thumbnail (fetched via `/img?url=`) as a hero image at the top of the
+ * content. Returns the original HTML unchanged when the thumbnail fetch
+ * fails or the content already has images.
+ */
+export async function injectHeroImage(html: string, thumbnailUrl: string): Promise<string> {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  if (doc.querySelector('img')) return html;
+  const dataUri = await fetchImageAsDataUri(thumbnailUrl);
+  if (!dataUri) return html;
+  const hero = doc.createElement('img');
+  hero.setAttribute('src', dataUri);
+  hero.setAttribute('data-original-src', thumbnailUrl);
+  hero.setAttribute('style', 'max-width:100%;height:auto;display:block;margin:0 auto 1em');
+  doc.body.insertBefore(hero, doc.body.firstChild);
+  return doc.body.innerHTML;
+}
+
+/**
  * Inline every `<img>` in the given HTML fragment as a `data:` URI fetched
  * via `/img?url=`. Preserves the original URL as `data-original-src` so
- * that storage eviction can lazily re-inline later. Images that fail to
- * fetch are left in place with their original `src`.
+ * that storage eviction can lazily re-inline later. Fetched images replace
+ * the original `src`; images that fail to fetch have their `src` removed.
+ *
+ * @param html - The HTML fragment to process.
+ * @param articleUrl - Optional article URL used as base for resolving relative image URLs.
  */
-export async function inlineImages(html: string): Promise<string> {
+export async function inlineImages(html: string, articleUrl?: string): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const imgs = Array.from(doc.querySelectorAll('img'));
+  const base = articleUrl ?? document.baseURI;
   await Promise.all(
     imgs.map(async (img) => {
       const src = img.getAttribute('src');
       if (!src) return;
       let absolute: string;
       try {
-        absolute = new URL(src, document.baseURI).toString();
+        absolute = new URL(src, base).toString();
       } catch {
         return;
       }
       img.setAttribute('data-original-src', absolute);
-      // Skip already-inlined data: URIs.
       if (src.startsWith('data:')) return;
       const dataUri = await fetchImageAsDataUri(absolute);
-      if (dataUri) img.setAttribute('src', dataUri);
+      if (dataUri) {
+        img.setAttribute('src', dataUri);
+      } else {
+        img.removeAttribute('src');
+      }
     }),
   );
   return doc.body.innerHTML;
