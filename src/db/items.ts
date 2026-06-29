@@ -56,6 +56,23 @@ export async function listItemsByFeed(
   return results;
 }
 
+export async function listItems(
+  limit = 500,
+  opts: { unreadOnly?: boolean } = {},
+): Promise<Item[]> {
+  const db = await getDb();
+  const results: Item[] = [];
+  let cursor = await db
+    .transaction('items', 'readonly')
+    .store.index('by-feed-published')
+    .openCursor(null, 'prev');
+  while (cursor && results.length < limit) {
+    if (!opts.unreadOnly || !cursor.value.read) results.push(cursor.value);
+    cursor = await cursor.continue();
+  }
+  return results;
+}
+
 export async function listUnreadAcrossFeeds(limit = 200): Promise<Item[]> {
   const db = await getDb();
   // by-feed-read index has [feedUrl, read]; we want all where read === 0.

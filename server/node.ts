@@ -8,5 +8,5 @@ app.use('*', serveStatic({ root: './dist' }));
 
 const port = Number(process.env.PORT) || 8787;
 serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`rss-reader server listening on http://localhost:${info.port}`);
+  console.log(`sift server listening on http://localhost:${info.port}`);
 });

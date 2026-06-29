@@ -61,7 +61,7 @@ export interface DBSchema {
   meta: Meta;
 }
 
-export const DB_NAME = 'rss-reader';
+export const DB_NAME = 'sift';
 export const DB_VERSION = 1;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
@@ -81,10 +81,14 @@ export interface AppSettings {
   theme: ThemePreference;
   markReadOnScrollPast: boolean;
   lastRefreshRunAt: number | null;
+  lastFeedUrl: string | null;
+  readFilter: 'unread' | 'all';
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   markReadOnScrollPast: true,
   lastRefreshRunAt: null,
+  lastFeedUrl: null,
+  readFilter: 'unread',
 };
