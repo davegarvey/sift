@@ -194,9 +194,23 @@ export function River() {
 
 function EmptyState() {
   const ctx = useApp();
+  const hasFeeds = ctx.feeds().length > 0;
+  const isUnreadMode = ctx.state.readFilter === 'unread';
+
+  if (!hasFeeds) {
+    return (
+      <div class="empty-state">
+        <div class="headline">Welcome to Sift</div>
+        <a class="link" onClick={() => ctx.openModal({ kind: 'add-feed' })}>Add your first feed</a>
+      </div>
+    );
+  }
+
   return (
     <div class="empty-state">
-      <div class="headline">You're all caught up.</div>
+      <div class="headline">
+        {isUnreadMode ? "You're all caught up." : 'No items yet.'}
+      </div>
       <a class="link" onClick={() => void ctx.refreshAll()}>Check for new items</a>
     </div>
   );

@@ -133,6 +133,12 @@ a:hover { text-decoration: underline; }
   display: none;
 }
 
+/* Sidebar toggle (hamburger) only appears on mobile — desktop uses Cmd+\. */
+.topbar button.sidebar-toggle,
+.topbar .pill.sidebar-toggle {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .app-shell {
     grid-template-areas:
@@ -141,7 +147,8 @@ a:hover { text-decoration: underline; }
     grid-template-columns: 1fr;
   }
   /* Reveal the hamburger toggle on mobile. */
-  .topbar .sidebar-toggle {
+  .topbar button.sidebar-toggle,
+  .topbar .pill.sidebar-toggle {
     display: inline-flex;
   }
   /* Drawer + backdrop. */
@@ -203,11 +210,6 @@ a:hover { text-decoration: underline; }
   color: var(--accent);
   user-select: none;
   padding: 2px 2px 2px 0;
-}
-
-/* Sidebar toggle (hamburger) only appears on mobile — desktop uses Cmd+\. */
-.topbar .sidebar-toggle {
-  display: none;
 }
 
 /* Lightweight backdrop that closes the drawer when tapping outside. */

@@ -8,8 +8,15 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   const ctx = useApp();
   const [foldersCollapsed, setFoldersCollapsed] = createSignal<Record<string, boolean>>({});
 
-  const navigate = (scope: string | null) => {
-    ctx.setRiverScope(scope);
+  const selectView = (scope: string | null, filter: 'unread' | 'all') => {
+    ctx.setState({ riverScope: scope, readFilter: filter, focusedIndex: 0, view: 'river' });
+    void ctx.saveSettingsPatch({ lastFeedUrl: scope, readFilter: filter });
+    props.onNavigate?.();
+  };
+
+  const selectFeed = (feedUrl: string) => {
+    ctx.setRiverScope(feedUrl);
+    void ctx.saveSettingsPatch({ lastFeedUrl: feedUrl });
     props.onNavigate?.();
   };
 
@@ -36,18 +43,26 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   const unreadCount = (feedUrl: string) =>
     ctx.items().filter((i) => i.feedUrl === feedUrl && !i.read).length;
   const totalUnread = () => ctx.items().filter((i) => !i.read).length;
+  const allActive = () => ctx.state.riverScope === null && ctx.state.readFilter === 'all';
+  const unreadActive = () => ctx.state.riverScope === null && ctx.state.readFilter === 'unread';
 
   return (
     <nav class="sidebar" aria-label="Feeds">
       <div class="section">
         <div
-          class={`all ${ctx.state.riverScope === null ? 'active' : ''}`}
-          onClick={() => navigate(null)}
+          class={`all ${unreadActive() ? 'active' : ''}`}
+          onClick={() => selectView(null, 'unread')}
         >
-          <span class="title">All</span>
+          <span class="title">Unread</span>
           <Show when={totalUnread() > 0}>
             <span class="unread-count">{totalUnread()}</span>
           </Show>
+        </div>
+        <div
+          class={`all ${allActive() ? 'active' : ''}`}
+          onClick={() => selectView(null, 'all')}
+        >
+          <span class="title">All</span>
         </div>
       </div>
 
@@ -70,7 +85,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
                 <Show when={!foldersCollapsed()[folder]}>
                   <For each={grouped().map.get(folder)}>
                     {(feed) => (
-                      <FeedRow feed={feed} unread={unreadCount(feed.url)} errors={ctx.feedErrors()} active={ctx.state.riverScope === feed.url} onClick={() => navigate(feed.url)} />
+                      <FeedRow feed={feed} unread={unreadCount(feed.url)} errors={ctx.feedErrors()} active={ctx.state.riverScope === feed.url} onClick={() => selectFeed(feed.url)} />
                     )}
                   </For>
                 </Show>
@@ -85,7 +100,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
           <div class="heading">Feeds</div>
           <For each={grouped().unclassified}>
             {(feed) => (
-              <FeedRow feed={feed} unread={unreadCount(feed.url)} errors={ctx.feedErrors()} active={ctx.state.riverScope === feed.url} onClick={() => navigate(feed.url)} />
+              <FeedRow feed={feed} unread={unreadCount(feed.url)} errors={ctx.feedErrors()} active={ctx.state.riverScope === feed.url} onClick={() => selectFeed(feed.url)} />
             )}
           </For>
         </div>

@@ -2,7 +2,7 @@ import { createSignal, createContext, useContext } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { listFeeds } from './db/feeds';
-import { listUnreadAcrossFeeds, markRead } from './db/items';
+import { listItems, markRead } from './db/items';
 import type { Feed, Item } from './db/types';
 import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
 import { refreshStaleFeeds, fetchingState, startScheduler } from './feeds/scheduler';
@@ -19,6 +19,8 @@ export interface AppState {
   view: ViewKind;
   /** The feed URL the river is currently scoped to; null = All. */
   riverScope: string | null;
+  /** Read filter mode: 'unread' = show only unread, 'all' = show all items. */
+  readFilter: 'unread' | 'all';
   /** "current" item being viewed in the reading view; null when in river. */
   currentItem: Item | null;
   sidebarOpen: boolean;        // mobile drawer state
@@ -62,6 +64,7 @@ export const AppProvider: ParentComponent = (props) => {
   const [state, setStateInternal] = createStore<AppState>({
     view: 'river',
     riverScope: null,
+    readFilter: 'unread',
     currentItem: null,
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
@@ -77,10 +80,13 @@ export const AppProvider: ParentComponent = (props) => {
     theme: 'system',
     markReadOnScrollPast: true,
     lastRefreshRunAt: null,
+    lastFeedUrl: null,
+    readFilter: 'unread',
   });
 
   const reloadFeeds = async () => setFeeds(await listFeeds());
-  const reloadItems = async () => setItems(await listUnreadAcrossFeeds());
+  const reloadItems = async () =>
+    setItems(await listItems(500, { unreadOnly: state.readFilter === 'unread' }));
 
   const setRiverScope = (feedUrl: string | null) => {
     setState({ riverScope: feedUrl, focusedIndex: 0, view: 'river' });
@@ -160,6 +166,13 @@ export const AppProvider: ParentComponent = (props) => {
     setSettings(s);
     applyTheme(s.theme);
     await reloadFeeds();
+    // Restore last sidebar selection from persisted setting, falling
+    // back to all-feeds view if the saved feed no longer exists.
+    const validFeed =
+      s.lastFeedUrl && feeds().some((f) => f.url === s.lastFeedUrl)
+        ? s.lastFeedUrl
+        : null;
+    setState({ riverScope: validFeed, readFilter: s.readFilter });
     await reloadItems();
     startScheduler();
     // After the first refresh sweep, keep feeds/items in sync.
