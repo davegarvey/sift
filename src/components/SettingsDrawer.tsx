@@ -1,3 +1,4 @@
+import { ExternalLink } from 'lucide-solid';
 import { Show, For } from 'solid-js';
 import { useApp, applyTheme } from '../state';
 import type { ThemePreference } from '../db/types';
@@ -88,6 +89,10 @@ export function SettingsDrawer() {
           <p style={{ "font-size": "12px", color: "var(--subtext)", "line-height": "1.5" }}>
             Sift — a browser-first RSS reader. MIT licensed. Local-only storage.
           </p>
+          <a href="https://github.com/davegarvey/sift" target="_blank" rel="noopener noreferrer"
+             style={{ "font-size": "12px", "line-height": "1.5" }}>
+            View source on GitHub <ExternalLink size={12} />
+          </a>
         </div>
       </div>
       <div class="modal-footer">
