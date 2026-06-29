@@ -19,6 +19,20 @@ export function AddFeedModal() {
     requestAnimationFrame(() => inputRef?.focus());
   });
 
+  const urlError = () => {
+    const raw = url().trim();
+    if (!raw) return null;
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return 'URL must start with http:// or https://';
+      }
+      return null;
+    } catch {
+      return 'Enter a valid URL';
+    }
+  };
+
   const discover = async () => {
     setError(null);
     setDiscovered(null);
@@ -78,6 +92,9 @@ export function AddFeedModal() {
           onKeyDown={(e) => e.key === 'Enter' && void discover()}
           disabled={!!discovered()}
         />
+        <Show when={!discovering() && !error() && urlError()}>
+          <p class="error" style="margin: 4px 0 0 0">{urlError()}</p>
+        </Show>
         <Show when={discovering()}>
           <p style={{ "font-size": "13px", color: "var(--subtext)", margin: "8px 0" }}>
             Discovering…
@@ -108,7 +125,7 @@ export function AddFeedModal() {
           <button class="btn primary" onClick={() => void subscribe()}>Subscribe</button>
         </Show>
         <Show when={!discovered() && !error()}>
-          <button class="btn primary" onClick={() => void discover()} disabled={discovering() || !url().trim()}>
+          <button class="btn primary" onClick={() => void discover()} disabled={discovering() || !url().trim() || !!urlError()}>
             Discover
           </button>
         </Show>
