@@ -2,7 +2,7 @@ import { createSignal, createContext, useContext } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { listFeeds } from './db/feeds';
-import { listItems, markRead } from './db/items';
+import { listItems, listItemsByFeed, markRead } from './db/items';
 import type { Feed, Item } from './db/types';
 import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
 import { refreshStaleFeeds, fetchingState, startScheduler } from './feeds/scheduler';
@@ -38,7 +38,7 @@ interface AppContext {
   feedErrors: () => Record<string, string>;
   fetchingFeeds: () => Set<string>;
   reloadFeeds: () => Promise<Feed[]>;
-  reloadItems: () => Promise<Item[]>;
+  reloadItems: () => Promise<void>;
   setRiverScope: (feedUrl: string | null) => void;
   openItem: (item: Item) => Promise<void>;
   closeReading: () => void;
@@ -82,8 +82,13 @@ export const AppProvider: ParentComponent = (props) => {
   });
 
   const reloadFeeds = async () => setFeeds(await listFeeds());
-  const reloadItems = async () =>
-    setItems(await listItems(500));
+  const reloadItems = async () => {
+    if (state.riverScope != null) {
+      setItems(await listItemsByFeed(state.riverScope, 500));
+    } else {
+      setItems(await listItems(500));
+    }
+  };
 
   const setRiverScope = (feedUrl: string | null) => {
     setState({ riverScope: feedUrl, focusedIndex: 0, view: 'river' });

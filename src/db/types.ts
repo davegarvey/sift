@@ -64,7 +64,7 @@ export interface DBSchema {
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;

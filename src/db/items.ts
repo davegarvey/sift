@@ -84,7 +84,7 @@ export async function listItems(limit = 500): Promise<Item[]> {
   const results: Item[] = [];
   let cursor = await db
     .transaction('items', 'readonly')
-    .store.index('by-feed-published')
+    .store.index('by-published')
     .openCursor(null, 'prev');
   while (cursor && results.length < limit) {
     results.push(cursor.value);

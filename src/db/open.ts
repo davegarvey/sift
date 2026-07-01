@@ -12,6 +12,7 @@ interface RssReaderDB extends DBSchema {
     indexes: {
       'by-feed-published': [string, number];
       'by-guid': string;
+      'by-published': number;
     };
   };
   meta: {
@@ -25,7 +26,7 @@ let dbPromise: Promise<IDBPDatabase<RssReaderDB>> | null = null;
 export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
   if (!dbPromise) {
     dbPromise = openDB<RssReaderDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, _oldVersion, _newVersion, transaction) {
         if (!db.objectStoreNames.contains('feeds')) {
           db.createObjectStore('feeds', { keyPath: 'url' });
         }
@@ -40,6 +41,13 @@ export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
         }
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta', { keyPath: 'key' });
+        }
+        // v2: add by-published index for global chronological queries
+        if (_oldVersion < 2) {
+          const store = transaction.objectStore('items');
+          if (!store.indexNames.contains('by-published')) {
+            store.createIndex('by-published', 'publishedAt');
+          }
         }
       },
     });
