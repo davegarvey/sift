@@ -97,8 +97,17 @@ function Shell() {
   };
 
   const onKey = (e: KeyboardEvent) => nav(e);
-  onMount(() => window.addEventListener('keydown', onKey));
-  onCleanup(() => window.removeEventListener('keydown', onKey));
+  const onPop = () => {
+    if (ctx.state.view === 'reading') ctx.closeReading();
+  };
+  onMount(() => {
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('popstate', onPop);
+  });
+  onCleanup(() => {
+    window.removeEventListener('keydown', onKey);
+    window.removeEventListener('popstate', onPop);
+  });
 
   const reading = () => ctx.state.view === 'reading';
   const sidebarHiddenAttr = () => String(ctx.state.sidebarHiddenDesktop && !reading());

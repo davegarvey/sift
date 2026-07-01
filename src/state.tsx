@@ -96,6 +96,7 @@ export const AppProvider: ParentComponent = (props) => {
 
   const openItem = async (item: Item) => {
     setState({ view: 'reading', currentItem: item, sidebarOpen: false });
+    history.pushState(null, '');
     if (!item.read) {
       await markRead(item.id);
       // Optimistic: caller can reload items when needed.
