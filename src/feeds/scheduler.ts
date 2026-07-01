@@ -1,6 +1,7 @@
 import { createSignal } from 'solid-js';
 import { listFeeds, updateFeed, upsertFeed } from '../db/feeds';
 import { bulkUpsertItems } from '../db/items';
+import { runEviction } from '../articles/eviction';
 import { fetchFeed } from './fetch';
 import { parseFeed, parsedToItems } from './parse';
 import type { Feed } from '../db/types';
@@ -54,6 +55,7 @@ export async function refreshStaleFeeds(forceAll = false): Promise<void> {
     return f.lastFetched + f.learnedIntervalMs < now;
   });
   await mapConcurrent(stale, (f) => refreshFeed(f), 4);
+  void runEviction();
 }
 
 /** Run async tasks with at most `concurrency` in-flight at once. */
