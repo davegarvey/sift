@@ -2,7 +2,7 @@
 
 Sift — a simple, slick, browser-first RSS reader.
 
-## Build / lint / test commands
+## Build / lint / test / deploy commands
 
 - `npm run dev` — start Vite dev server (with HMR and the Hono proxy mounted as middleware) on http://localhost:8787
 - `npm run build` — produce `dist/` containing the static bundle
@@ -10,6 +10,7 @@ Sift — a simple, slick, browser-first RSS reader.
 - `npm run typecheck` — `tsc --noEmit` (zero errors required)
 - `npm run lint` — `eslint . --max-warnings=0`
 - `npm test` — `vitest run`
+- `npm run deploy` — `git pull && vite build && wrangler deploy` (always deploy via this script — it pulls the latest before building)
 
 ## Architecture
 
