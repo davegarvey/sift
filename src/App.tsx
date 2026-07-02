@@ -103,6 +103,14 @@ function Shell() {
   onMount(() => {
     window.addEventListener('keydown', onKey);
     window.addEventListener('popstate', onPop);
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (ctx.state.view === 'river') {
+          window.location.reload();
+        }
+      });
+    }
   });
   onCleanup(() => {
     window.removeEventListener('keydown', onKey);
