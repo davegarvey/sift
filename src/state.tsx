@@ -26,6 +26,8 @@ export interface AppState {
   sidebarHiddenDesktop: boolean; // Cmd+\ toggle on desktop
   focusedIndex: number;       // keyboard focus in the river
   modal: ModalKind;
+  /** Item ID to restore focus to when returning to the river. */
+  returnToItemId: string | null;
 }
 
 interface AppContext {
@@ -72,6 +74,7 @@ export const AppProvider: ParentComponent = (props) => {
     sidebarHiddenDesktop: false,
     focusedIndex: 0,
     modal: { kind: 'none' },
+    returnToItemId: null,
   });
 
   const setState = (patch: Partial<AppState>) => setStateInternal(patch as Partial<AppState>);
@@ -165,7 +168,7 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const openItem = async (item: Item) => {
-    setState({ view: 'reading', currentItem: item, sidebarOpen: false });
+    setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id });
     history.pushState(null, '');
     if (!item.read) {
       await markRead(item.id);
