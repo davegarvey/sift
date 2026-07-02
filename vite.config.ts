@@ -3,6 +3,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import solid from 'vite-plugin-solid';
 import { VitePWA } from 'vite-plugin-pwa';
 import { createApp } from './server/handle.ts';
+import { Relay } from './server/relay.ts';
+import { loadEnv } from './server/env.ts';
+
+loadEnv();
 
 // In dev, Vite serves the Solid app and we mount the Hono proxy routes as
 // connect-style middleware so the browser talks to one server.
@@ -10,7 +14,10 @@ function honoDevMiddleware() {
   return {
     name: 'hono-proxy-dev',
     configureServer(server: ViteDevServer) {
-      const devApp = createApp();
+      const mcpEnabled = process.env.MCP_ENABLED === 'true';
+      const relay = mcpEnabled ? new Relay() : undefined;
+      const devApp = createApp(relay);
+      console.log(mcpEnabled ? 'MCP server enabled — http://localhost:8787/mcp' : 'MCP server disabled — set MCP_ENABLED=true in .env to enable');
       server.middlewares.use(
         async (
           req: IncomingMessage,
@@ -21,14 +28,27 @@ function honoDevMiddleware() {
           if (
             url.startsWith('/feed') ||
             url.startsWith('/article') ||
-            url.startsWith('/img')
+            url.startsWith('/img') ||
+            url.startsWith('/api') ||
+            url.startsWith('/mcp')
           ) {
-            try {
-              const host = req.headers.host ?? 'localhost';
-              const request = new Request(`http://${host}${url}`, {
-                method: req.method ?? 'GET',
-                headers: req.headers as unknown as Headers,
-              });
+              try {
+                const host = req.headers.host ?? 'localhost';
+                let bodyInit: BodyInit | undefined;
+                const method = req.method ?? 'GET';
+                if (method !== 'GET' && method !== 'HEAD') {
+                  bodyInit = await new Promise<string>((resolve, reject) => {
+                    const chunks: Buffer[] = [];
+                    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+                    req.on('end', () => resolve(Buffer.concat(chunks).toString()));
+                    req.on('error', reject);
+                  });
+                }
+                const request = new Request(`http://${host}${url}`, {
+                  method,
+                  headers: req.headers as unknown as Headers,
+                  body: bodyInit,
+                });
               const response = await devApp.fetch(request);
               const headers: Record<string, string> = {};
               response.headers.forEach((value, key) => {
@@ -36,12 +56,10 @@ function honoDevMiddleware() {
               });
               res.writeHead(response.status, headers);
               if (response.body) {
-                const reader = (response.body as ReadableStream<Uint8Array>).getReader();
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  res.write(value);
-                }
+                const { Readable } = await import('stream');
+                const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
+                nodeStream.pipe(res);
+                return;
               }
               res.end();
             } catch (err) {

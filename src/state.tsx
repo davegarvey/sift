@@ -1,7 +1,7 @@
 import { createSignal, createContext, useContext } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { listFeeds } from './db/feeds';
+import { listFeeds, upsertFeed, unsubscribeFeed } from './db/feeds';
 import { listItems, listItemsByFeed, markRead } from './db/items';
 import type { Feed, Item } from './db/types';
 import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
@@ -50,6 +50,9 @@ interface AppContext {
   refreshAll: () => Promise<void>;
   toggleStar: (item: Item) => Promise<void>;
   saveSettingsPatch: (patch: Partial<AppSettings>) => Promise<void>;
+  mcpAvailable: () => boolean;
+  mcpConnected: () => boolean;
+  mcpNotifySync: () => Promise<void>;
 }
 
 const Ctx = createContext<AppContext>();
@@ -79,7 +82,74 @@ export const AppProvider: ParentComponent = (props) => {
     theme: 'system',
     lastRefreshRunAt: null,
     lastFeedUrl: null,
+    mcpEnabled: false,
   });
+
+  const [mcpAvailable, setMcpAvailable] = createSignal(false);
+  const [mcpConnected, setMcpConnected] = createSignal(false);
+  let mcpEventSource: EventSource | null = null;
+
+  const startMcp = () => {
+    if (mcpEventSource) return;
+    mcpEventSource = new EventSource('/api/events');
+
+    mcpEventSource.addEventListener('add-feed', async (e) => {
+      const data = JSON.parse(e.data);
+      if (typeof data.feed?.url !== 'string') return;
+      await upsertFeed(data.feed as Feed);
+      await reloadFeeds();
+      await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'ack', id: data.id }),
+      });
+    });
+
+    mcpEventSource.addEventListener('remove-feed', async (e) => {
+      const data = JSON.parse(e.data);
+      if (typeof data.url !== 'string') return;
+      await unsubscribeFeed(data.url);
+      if (state.riverScope === data.url) {
+        setState({ riverScope: null });
+      }
+      await reloadFeeds();
+      await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'ack', id: data.id }),
+      });
+    });
+
+    mcpEventSource.addEventListener('keepalive', () => {});
+
+    mcpEventSource.onopen = () => {
+      setMcpConnected(true);
+      void mcpNotifySync();
+    };
+
+    mcpEventSource.onerror = () => {
+      setMcpConnected(false);
+    };
+  };
+
+  const stopMcp = () => {
+    if (mcpEventSource) {
+      mcpEventSource.close();
+      mcpEventSource = null;
+    }
+    setMcpConnected(false);
+  };
+
+  const mcpNotifySync = async () => {
+    const es = mcpEventSource;
+    if (!es || es.readyState !== EventSource.OPEN) return;
+    const feeds = await listFeeds();
+    await fetch('/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'sync', feeds }),
+    });
+  };
 
   const reloadFeeds = async () => setFeeds(await listFeeds());
   const reloadItems = async () => {
@@ -138,6 +208,13 @@ export const AppProvider: ParentComponent = (props) => {
     const next = { ...settings(), ...patch };
     setSettings(next);
     await saveSettings(next);
+    if ('mcpEnabled' in patch) {
+      if (patch.mcpEnabled && mcpAvailable()) {
+        startMcp();
+      } else if (!patch.mcpEnabled) {
+        stopMcp();
+      }
+    }
   };
 
   const value: AppContext = {
@@ -162,6 +239,9 @@ export const AppProvider: ParentComponent = (props) => {
     refreshAll,
     toggleStar,
     saveSettingsPatch,
+    mcpAvailable,
+    mcpConnected,
+    mcpNotifySync,
   };
 
   // Boot: load settings + initial feeds/items, then kick the scheduler.
@@ -169,6 +249,18 @@ export const AppProvider: ParentComponent = (props) => {
     const s = await getSettings();
     setSettings(s);
     applyTheme(s.theme);
+
+    try {
+      const capRes = await fetch('/api/capabilities');
+      if (capRes.ok) {
+        const cap: { mcp?: boolean } = await capRes.json() as { mcp?: boolean };
+        if (cap.mcp === true) {
+          setMcpAvailable(true);
+          if (s.mcpEnabled) startMcp();
+        }
+      }
+    } catch {}
+
     await reloadFeeds();
     // Restore last sidebar selection from persisted setting, falling
     // back to all-feeds view if the saved feed no longer exists.

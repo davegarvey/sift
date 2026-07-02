@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "./.opencode/plugins/crit.ts"
+  ],
+  "mcp": {
+    "sift": {
+      "type": "remote",
+      "url": "http://localhost:8787/mcp",
+      "enabled": true
+    }
+  }
+}

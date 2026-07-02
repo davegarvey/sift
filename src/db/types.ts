@@ -85,10 +85,12 @@ export interface AppSettings {
   lastFeedUrl: string | null;
   /** @deprecated No longer used. Kept for backward compat with persisted settings. */
   readFilter?: 'unread' | 'all';
+  mcpEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   lastRefreshRunAt: null,
   lastFeedUrl: null,
+  mcpEnabled: false,
 };
