@@ -34,16 +34,16 @@ export async function openItemForReading(
     await updateItem(item.id, { firstOpenedAt: Date.now() });
   }
 
-  // Path 1: cached extract.
-  if (item.extractedHtml != null && item.extractedHtml.length > 0) {
-    return { bodyHtml: item.extractedHtml, extracted: true, extractionFailed: false };
+  // Path 1: feed included full content — prefer the feed's own HTML over
+  // a cached Readability extraction (which may have been extracted from the
+  // linked URL when the feed didn't provide full content at parse time).
+  if (item.html && item.html.length > 0) {
+    return { bodyHtml: item.html, extracted: true, extractionFailed: false };
   }
 
-  // Path 2: feed included full content — use it directly without an upstream call.
-  if (item.html && item.html.length > 0) {
-    // Treat feed-supplied HTML as already extracted (no Readability pass needed).
-    // Reading view renders it as-is.
-    return { bodyHtml: item.html, extracted: true, extractionFailed: false };
+  // Path 2: cached Readability extract.
+  if (item.extractedHtml != null && item.extractedHtml.length > 0) {
+    return { bodyHtml: item.extractedHtml, extracted: true, extractionFailed: false };
   }
 
   // Path 3: extract via Readability + proxy.

@@ -12,7 +12,7 @@ export async function insertOrUpdateItem(item: Item): Promise<void> {
       read: existing.read,
       starred: existing.starred,
       firstOpenedAt: existing.firstOpenedAt,
-      extractedHtml: existing.extractedHtml ?? item.extractedHtml ?? null,
+      extractedHtml: item.html ? null : (existing.extractedHtml ?? null),
       id: existing.id,
     });
   } else {
@@ -36,7 +36,10 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
         read: existing.read,
         starred: existing.starred,
         firstOpenedAt: existing.firstOpenedAt,
-        extractedHtml: existing.extractedHtml ?? item.extractedHtml ?? null,
+        // When the feed now provides full HTML (where it didn't before —
+        // e.g. due to a parser fix), discard any stale extractedHtml that was
+        // cached from a fallback Readability extraction on the linked URL.
+        extractedHtml: item.html ? null : (existing.extractedHtml ?? null),
         id: existing.id,
       });
     } else {
