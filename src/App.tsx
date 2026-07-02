@@ -114,6 +114,21 @@ function Shell() {
           window.location.reload();
         }
       });
+
+      // Hourly SW update check — falls back to the browser's natural
+      // navigation-triggered checks for long-running sessions.
+      navigator.serviceWorker.ready.then((reg) => {
+        const swUrl = reg.active?.scriptURL ?? '/sw.js';
+        const swInterval = setInterval(async () => {
+          if (reg.installing || !navigator.onLine) return;
+          const resp = await fetch(swUrl, {
+            cache: 'no-store',
+            headers: { 'cache-control': 'no-cache' },
+          });
+          if (resp.ok) await reg.update();
+        }, 3_600_000);
+        onCleanup(() => clearInterval(swInterval));
+      });
     }
   });
   onCleanup(() => {

@@ -32,7 +32,7 @@
   "private": true,
   "scripts": {
     "build": "vite build",
-    "deploy": "wrangler deploy",
+    "deploy": "git pull && vite build && wrangler deploy",
     "dev": "vite",
     "lint": "eslint . --max-warnings=0",
     "preview": "vite preview",
