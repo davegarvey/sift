@@ -3,6 +3,10 @@ import { getItem, updateItem } from '../db/items';
 import { extractArticle, reinlineImages } from './extract';
 import { runEviction } from './eviction';
 
+function processLinks(html: string): string {
+  return html.replace(/<a(?=\s|>)(?![^>]*\btarget\s*=)/gi, '<a target="_blank" rel="noopener noreferrer"');
+}
+
 /**
  * High-level "open an item in the reading view" service.
  *
@@ -38,12 +42,12 @@ export async function openItemForReading(
   // a cached Readability extraction (which may have been extracted from the
   // linked URL when the feed didn't provide full content at parse time).
   if (item.html && item.html.length > 0) {
-    return { bodyHtml: item.html, extracted: true, extractionFailed: false };
+    return { bodyHtml: processLinks(item.html), extracted: true, extractionFailed: false };
   }
 
   // Path 2: cached Readability extract.
   if (item.extractedHtml != null && item.extractedHtml.length > 0) {
-    return { bodyHtml: item.extractedHtml, extracted: true, extractionFailed: false };
+    return { bodyHtml: processLinks(item.extractedHtml), extracted: true, extractionFailed: false };
   }
 
   // Path 3: extract via Readability + proxy.
@@ -56,7 +60,7 @@ export async function openItemForReading(
     return { bodyHtml: item.excerpt, extracted: false, extractionFailed: true };
   }
   await updateItem(item.id, { extractedHtml: result.html });
-  return { bodyHtml: result.html, extracted: true, extractionFailed: false };
+  return { bodyHtml: processLinks(result.html), extracted: true, extractionFailed: false };
 }
 
 /**
