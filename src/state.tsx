@@ -43,7 +43,7 @@ interface AppContext {
   reloadItems: () => Promise<void>;
   setRiverScope: (feedUrl: string | null) => void;
   openItem: (item: Item) => Promise<void>;
-  closeReading: () => void;
+  closeReading: () => Promise<void>;
   toggleSidebar: () => void;
   toggleSidebarDesktop: () => void;
   openModal: (modal: ModalKind) => void;
@@ -176,9 +176,13 @@ export const AppProvider: ParentComponent = (props) => {
     }
   };
 
-  const closeReading = () => {
+  const closeReading = async () => {
+    try {
+      await reloadItems();
+    } catch {
+      // reload failure is non-fatal; still switch back to river
+    }
     setState({ view: 'river', currentItem: null });
-    void reloadItems();
   };
 
   const toggleSidebar = () => setState({ sidebarOpen: !state.sidebarOpen });
