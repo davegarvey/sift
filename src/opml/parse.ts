@@ -83,14 +83,25 @@ function sequentialScan(xml: string): ParsedSubscription[] {
   return out;
 }
 
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+}
+
 function parseAttrs(tag: string): Record<string, string> {
   const attrs: Record<string, string> = {};
   let m: RegExpExecArray | null;
   ATTR_RE.lastIndex = 0;
   while ((m = ATTR_RE.exec(tag)) !== null) {
     const key = m[1].toLowerCase();
-    const val = m[2] ?? m[3] ?? '';
-    attrs[key] = val;
+    const val = (m[2] ?? m[3] ?? '');
+    attrs[key] = decodeXmlEntities(val);
   }
   return attrs;
 }
