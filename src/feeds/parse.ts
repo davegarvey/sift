@@ -39,7 +39,7 @@ export function parseFeed(xml: string): ParsedFeed | null {
         const contentField = entry['content'];
         const content =
           contentField && typeof contentField === 'object'
-            ? (contentField as Record<string, unknown>)['_']
+            ? (contentField as Record<string, unknown>)['#text'] ?? (contentField as Record<string, unknown>)['_text'] ?? (contentField as Record<string, unknown>)['_cdata'] ?? (contentField as Record<string, unknown>)['$t']
             : contentField;
         const html = typeof content === 'string' ? content : '';
         const finalHtml = typeof contentEncoded === 'string' ? contentEncoded : html;
