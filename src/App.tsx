@@ -49,6 +49,10 @@ function Shell() {
         const items = ctx.items();
         const item = items[ctx.state.focusedIndex];
         if (item) void ctx.openItem(item);
+      } else if (e.key === 'o') {
+        e.preventDefault();
+        const item = ctx.state.currentItem;
+        if (item?.link) window.open(item.link, '_blank', 'noopener,noreferrer');
       } else if (e.key === '?') {
         e.preventDefault();
         ctx.openModal({ kind: 'shortcuts' });
