@@ -37,6 +37,16 @@ export function River() {
 
   createEffect(onFocusChange);
 
+  // When returning from reading view, restore focus to the item that was opened.
+  createEffect(() => {
+    const items = visibleItems();
+    const returnToId = ctx.state.returnToItemId;
+    if (returnToId == null) return;
+    const idx = items.findIndex((i) => i.id === returnToId);
+    if (idx === -1) return;
+    ctx.setState({ focusedIndex: idx, returnToItemId: null });
+  });
+
   // Render items swipe handler.
   const onStart = (e: PointerEvent, item: Item) => {
     const startX = e.clientX, startY = e.clientY;
