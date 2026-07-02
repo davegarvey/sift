@@ -63,6 +63,7 @@ export function AddFeedModal() {
     });
     ctx.closeModal();
     void ctx.reloadFeeds();
+    void ctx.mcpNotifySync();
     const items = parsedToItems(d.parsed, d.url);
     if (items.length > 0) {
       await bulkUpsertItems(items);

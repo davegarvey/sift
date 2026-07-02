@@ -1,5 +1,6 @@
-import { ExternalLink } from 'lucide-solid';
-import { Show, For } from 'solid-js';
+import { ExternalLink, Check, Copy } from 'lucide-solid';
+import { version } from '../../package.json';
+import { Show, For, createSignal, createMemo } from 'solid-js';
 import { useApp, applyTheme } from '../state';
 import type { ThemePreference } from '../db/types';
 import { serializeOpml } from '../opml/serialize';
@@ -40,6 +41,7 @@ export function SettingsDrawer() {
     if (confirm(`Import ${preview.newSubscriptions.length} feeds? (${preview.skipped} already subscribed, ${preview.total} total found)`)) {
       await applyMerge(preview);
       await ctx.reloadFeeds();
+      void ctx.mcpNotifySync();
       void ctx.refreshAll();
     }
     input.value = '';
@@ -84,20 +86,68 @@ export function SettingsDrawer() {
           </div>
         </div>
 
+        <Show when={ctx.mcpAvailable()}>
+          <div class="group">
+            <h3>MCP Server</h3>
+            <div class="row">
+              <label>Enable MCP</label>
+              <input
+                type="checkbox"
+                checked={settings().mcpEnabled}
+                onChange={(e) => void ctx.saveSettingsPatch({ mcpEnabled: e.currentTarget.checked })}
+              />
+            </div>
+            <Show when={settings().mcpEnabled}>
+              <div style={{ padding: "0 0 8px", "font-size": "12px", color: "var(--subtext)" }}>
+                <div style={{ "margin-bottom": "4px" }}>
+                  Endpoint: <code style={{ "font-size": "12px" }}>http://{window.location.host}/mcp</code>
+                </div>
+                <CopyMcpConfigButton />
+              </div>
+            </Show>
+          </div>
+        </Show>
+
         <div class="group">
           <h3>About</h3>
-          <p style={{ "font-size": "12px", color: "var(--subtext)", "line-height": "1.5" }}>
+          <p style={{ color: "var(--subtext)", "line-height": "1.5" }}>
             Sift — a browser-first RSS reader. MIT licensed. Local-only storage.
           </p>
           <a href="https://github.com/davegarvey/sift" target="_blank" rel="noopener noreferrer"
-             style={{ "font-size": "12px", "line-height": "1.5" }}>
+             style={{ "line-height": "1.5" }}>
             View source on GitHub <ExternalLink size={12} />
           </a>
         </div>
       </div>
       <div class="modal-footer">
+        <span style={{ color: "var(--overlay)", "margin-right": "auto" }}>v{version}</span>
         <button class="btn primary" onClick={() => ctx.closeModal()}>Done</button>
       </div>
     </div>
+  );
+}
+
+function CopyMcpConfigButton() {
+  const [copied, setCopied] = createSignal(false);
+  const config = createMemo(() => JSON.stringify({
+    mcpServers: {
+      sift: {
+        type: 'sse',
+        url: `${window.location.protocol}//${window.location.host}/mcp`,
+      },
+    },
+  }, null, 2));
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(config());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button class="btn subtle" style={{ display: 'inline-flex', 'align-items': 'center', gap: '4px' }} onClick={handleCopy}>
+      {copied() ? <Check size={12} /> : <Copy size={12} />}
+      {copied() ? 'Copied!' : 'Copy MCP Config'}
+    </button>
   );
 }

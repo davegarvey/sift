@@ -11,6 +11,7 @@ export function ConfirmUnsubscribeModal() {
     await unsubscribeFeed(feedUrl);
     await ctx.reloadFeeds();
     await ctx.reloadItems();
+    void ctx.mcpNotifySync();
     if (ctx.state.riverScope === feedUrl) {
       ctx.setRiverScope(null);
     }

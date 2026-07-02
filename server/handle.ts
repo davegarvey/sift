@@ -1,88 +1,26 @@
 import { Hono, type Env } from 'hono';
 import { etag } from 'hono/etag';
+import {
+  getUpstreamUrl,
+  fetchUpstream,
+  badRequest,
+  badGateway,
+  assertNoUrlLog,
+} from './fetch';
+import { Relay, sseResponse } from './relay';
+import { McpHandler } from './mcp';
 
-/**
- * Hono environment type. Adapters can extend this with runtime-specific
- * bindings (e.g., Cloudflare Workers Assets). The shared app itself only
- * needs the empty base type.
- */
 export type AppEnv = Env;
 
-/**
- * Read the upstream URL from a `?url=` query param, validate it, and return it.
- * Returns null if the param is missing or malformed.
- *
- * IMPORTANT: this proxy must NEVER log the upstream URL anywhere persistent.
- * See the `assertNoUrlLog()` guard at the bottom of this file.
- */
-function getUpstreamUrl(reqUrl: string): string | null {
-  try {
-    const url = new URL(reqUrl);
-    const raw = url.searchParams.get('url');
-    if (!raw) return null;
-    let parsed: URL;
-    try {
-      parsed = new URL(raw);
-    } catch {
-      // raw might be URL-encoded
-      parsed = new URL(decodeURIComponent(raw));
-    }
-    // Only http(s) is proxied; no file:// or other schemes.
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    return parsed.toString();
-  } catch {
-    return null;
+export function createApp<E extends Env = AppEnv>(relay?: Relay): Hono<E> {
+  if (!relay && typeof process !== 'undefined' && process.env?.MCP_ENABLED === 'true') {
+    relay = new Relay();
   }
-}
-
-const UPSTREAM_TIMEOUT_MS = 15_000;
-const READER_USER_AGENT = 'sift/0.0 (+https://github.com/dave/sift)';
-
-/**
- * Fetch an upstream URL with a single descriptive User-Agent and a timeout.
- * The upstream URL is never logged.
- */
-async function fetchUpstream(upstream: string, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers);
-  headers.set('User-Agent', READER_USER_AGENT);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-  try {
-    return await fetch(upstream, { ...init, headers, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function badRequest(message: string): Response {
-  return new Response(message, { status: 400 });
-}
-
-function badGateway(message: string): Response {
-  return new Response(message, { status: 502 });
-}
-
-/**
- * Privacy guard: ensures the upstream URL never appears in any log output.
- * Visible as a no-op assertion in code so the privacy posture is explicit.
- *
- * To enable debug logging of request metadata (status, timing) WITHOUT the
- * upstream URL when developing locally, set `DEBUG_PROXY=1` in the env.
- */
-export function assertNoUrlLog(_input: unknown): void {
-  // No-op by design. Tests can mock this to assert that no URL is ever logged.
-  // The proxy endpoints below MUST NOT log the `url` query parameter.
-  // Reuse this assertion in tests to encode the privacy contract.
-}
-
-/**
- * Build the shared Hono application. The same `app` runs unchanged across
- * Node (`server/node.ts`), Bun (`server/bun.ts`), and Cloudflare Workers
- * (`server/worker.ts`). Each adapter provides `serveStatic` for that runtime.
- */
-export function createApp<E extends Env = AppEnv>(): Hono<E> {
+  const mcpEnabled = relay !== undefined;
   const app = new Hono<E>();
-  app.use('*', etag());
+  app.use('/feed', etag());
+  app.use('/article', etag());
+  app.use('/img', etag());
 
   /**
    * GET /feed?url=<encoded>
@@ -186,6 +124,36 @@ export function createApp<E extends Env = AppEnv>(): Hono<E> {
     headers.set('Cache-Control', 'public, max-age=86400');
     return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
   });
+
+  if (mcpEnabled && relay) {
+    const mcp = new McpHandler(relay);
+
+    app.get('/api/capabilities', (c) => c.json({ mcp: true }));
+
+    app.get('/api/events', () => sseResponse(relay));
+
+    app.post('/api/events', async (c) => {
+      const body = await c.req.json<Record<string, unknown>>();
+      const kind = body.kind;
+      if (kind === 'sync' && Array.isArray(body.feeds)) {
+        relay.handleSync(body.feeds as import('../src/db/types').Feed[]);
+        return c.body(null, 204);
+      }
+      if (kind === 'ack' && typeof body.id === 'string') {
+        relay.handleAck(body.id);
+        return c.body(null, 204);
+      }
+      return c.text('Invalid request', 400);
+    });
+
+    app.get('/mcp', () => mcp.handleSse());
+
+    app.post('/mcp/message', async (c) => {
+      const sessionId = c.req.query('sessionId') ?? '';
+      const body = await c.req.json();
+      return mcp.handleMessage(sessionId, body);
+    });
+  }
 
   // Static serving: served by adapter-supplied middleware below.
   // The adapter calls `app.use('/assets/*', serveStatic(...))` and
