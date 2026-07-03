@@ -2,6 +2,7 @@
   "dependencies": {
     "@extractus/feed-extractor": "^7.2.1",
     "@hono/node-server": "^2.0.6",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
     "hono": "^4.12.27",
     "idb": "^8.0.3",

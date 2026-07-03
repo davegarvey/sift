@@ -8,7 +8,7 @@ import {
   assertNoUrlLog,
 } from './fetch';
 import { Relay, sseResponse } from './relay';
-import { McpHandler } from './mcp';
+import { handleMcpRequest } from './mcp';
 
 export type AppEnv = Env;
 
@@ -126,8 +126,6 @@ export function createApp<E extends Env = AppEnv>(relay?: Relay): Hono<E> {
   });
 
   if (mcpEnabled && relay) {
-    const mcp = new McpHandler(relay);
-
     app.get('/api/capabilities', (c) => c.json({ mcp: true }));
 
     app.get('/api/events', () => sseResponse(relay));
@@ -146,12 +144,26 @@ export function createApp<E extends Env = AppEnv>(relay?: Relay): Hono<E> {
       return c.text('Invalid request', 400);
     });
 
-    app.get('/mcp', () => mcp.handleSse());
-
-    app.post('/mcp/message', async (c) => {
-      const sessionId = c.req.query('sessionId') ?? '';
-      const body = await c.req.json();
-      return mcp.handleMessage(sessionId, body);
+    app.all('/mcp', async (c) => {
+      const raw = c.req.raw;
+      const headers = new Headers(raw.headers);
+      if (raw.method === 'POST') {
+        if (!headers.has('accept') || !headers.get('accept')!.includes('application/json')) {
+          const existing = headers.get('accept') || '';
+          headers.set('accept', existing
+            ? `${existing}, application/json`
+            : 'application/json');
+        }
+        if (!headers.get('accept')!.includes('text/event-stream')) {
+          headers.set('accept', `${headers.get('accept')}, text/event-stream`);
+        }
+      }
+      const request = new Request(raw.url, {
+        method: raw.method,
+        headers,
+        body: raw.method === 'GET' ? undefined : await raw.blob(),
+      });
+      return handleMcpRequest(request, relay);
     });
   }
 
