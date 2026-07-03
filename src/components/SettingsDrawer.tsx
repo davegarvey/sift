@@ -129,17 +129,9 @@ export function SettingsDrawer() {
 function McpUrlBar() {
   const [copied, setCopied] = createSignal(false);
   const mcpEndpoint = createMemo(() => `${window.location.protocol}//${window.location.host}/mcp`);
-  const config = createMemo(() => JSON.stringify({
-    mcpServers: {
-      sift: {
-        type: 'sse',
-        url: mcpEndpoint(),
-      },
-    },
-  }, null, 2));
 
   const handleCopy = () => {
-    void navigator.clipboard.writeText(config());
+    void navigator.clipboard.writeText(mcpEndpoint());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -147,7 +139,7 @@ function McpUrlBar() {
   return (
     <div class="mcp-url-bar">
       <span class="mcp-url-bar__url">{mcpEndpoint()}</span>
-      <button class="mcp-url-bar__copy" onClick={handleCopy} aria-label="Copy MCP config">
+      <button class="mcp-url-bar__copy" onClick={handleCopy} aria-label="Copy MCP URL">
         {copied() ? <Check size={14} /> : <Copy size={14} />}
       </button>
     </div>
