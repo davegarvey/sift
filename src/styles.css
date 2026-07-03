@@ -1089,6 +1089,44 @@ a:hover { text-decoration: underline; }
 }
 .settings .toggle.on::after { background: var(--crust); transform: translateX(16px); }
 
+.settings .mcp-url-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 10px;
+  margin: 0 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--base);
+  font-size: 12px;
+}
+
+.settings .mcp-url-bar__url {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings .mcp-url-bar__copy {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--subtext);
+  cursor: pointer;
+}
+
+.settings .mcp-url-bar__copy:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
 /* Shortcuts overlay. */
 .shortcuts-list { padding: 0; }
 
