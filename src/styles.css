@@ -662,15 +662,18 @@ a:hover { text-decoration: underline; }
   position: sticky;
   top: 0;
   z-index: 5;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .reading .reading-chrome .back {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--subtext);
 }
 
 .reading .reading-chrome .source {
-  font-size: 12px;
   color: var(--subtext);
   flex: 1;
   overflow: hidden;
@@ -679,15 +682,23 @@ a:hover { text-decoration: underline; }
 }
 
 .reading .reading-chrome .star {
+  display: inline-flex;
+  align-items: center;
   color: var(--accent);
 }
 
 .reading .reading-chrome .star.dim { color: var(--overlay); }
 
 .reading .reading-chrome .open-original {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
   color: var(--subtext);
   text-decoration: none;
+}
+
+.reading .reading-chrome .desktop-only {
+  display: inline-flex;
+  align-items: center;
 }
 
 .reading .reading-body {
