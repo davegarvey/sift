@@ -62,7 +62,7 @@ export function ReadingView() {
           aria-pressed={ctx.state.currentItem?.starred ?? false}
           aria-label={ctx.state.currentItem?.starred ? 'Unstar' : 'Star'}
         >
-          <Star size={16} fill={ctx.state.currentItem?.starred ? 'currentColor' : 'none'} />
+          <Star size={14} fill={ctx.state.currentItem?.starred ? 'currentColor' : 'none'} />
         </button>
         <a
           class="open-original"
