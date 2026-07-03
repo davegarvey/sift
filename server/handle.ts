@@ -148,6 +148,9 @@ export function createApp<E extends Env = AppEnv>(relay?: Relay): Hono<E> {
       const raw = c.req.raw;
       const headers = new Headers(raw.headers);
       if (raw.method === 'POST') {
+        // SDK's transport requires Accept header to advertise support for
+        // both application/json and text/event-stream. Ensure they're present
+        // so clients like OpenCode (which may send */*) are not rejected.
         if (!headers.has('accept') || !headers.get('accept')!.includes('application/json')) {
           const existing = headers.get('accept') || '';
           headers.set('accept', existing
