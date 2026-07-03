@@ -91,19 +91,18 @@ export function SettingsDrawer() {
             <h3>MCP Server</h3>
             <div class="row">
               <label>Enable MCP</label>
-              <input
-                type="checkbox"
-                checked={settings().mcpEnabled}
-                onChange={(e) => void ctx.saveSettingsPatch({ mcpEnabled: e.currentTarget.checked })}
+              <div
+                class="toggle"
+                classList={{ on: settings().mcpEnabled }}
+                onClick={() => void ctx.saveSettingsPatch({ mcpEnabled: !settings().mcpEnabled })}
+                role="switch"
+                aria-checked={settings().mcpEnabled}
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' || e.key === ' ' ? (e.preventDefault(), void ctx.saveSettingsPatch({ mcpEnabled: !settings().mcpEnabled })) : null}
               />
             </div>
             <Show when={settings().mcpEnabled}>
-              <div style={{ padding: "0 0 8px", "font-size": "12px", color: "var(--subtext)" }}>
-                <div style={{ "margin-bottom": "4px" }}>
-                  Endpoint: <code style={{ "font-size": "12px" }}>http://{window.location.host}/mcp</code>
-                </div>
-                <CopyMcpConfigButton />
-              </div>
+              <McpUrlBar />
             </Show>
           </div>
         </Show>
@@ -127,13 +126,14 @@ export function SettingsDrawer() {
   );
 }
 
-function CopyMcpConfigButton() {
+function McpUrlBar() {
   const [copied, setCopied] = createSignal(false);
+  const mcpEndpoint = createMemo(() => `${window.location.protocol}//${window.location.host}/mcp`);
   const config = createMemo(() => JSON.stringify({
     mcpServers: {
       sift: {
         type: 'sse',
-        url: `${window.location.protocol}//${window.location.host}/mcp`,
+        url: mcpEndpoint(),
       },
     },
   }, null, 2));
@@ -145,9 +145,11 @@ function CopyMcpConfigButton() {
   };
 
   return (
-    <button class="btn subtle" style={{ display: 'inline-flex', 'align-items': 'center', gap: '4px' }} onClick={handleCopy}>
-      {copied() ? <Check size={12} /> : <Copy size={12} />}
-      {copied() ? 'Copied!' : 'Copy MCP Config'}
-    </button>
+    <div class="mcp-url-bar">
+      <span class="mcp-url-bar__url">{mcpEndpoint()}</span>
+      <button class="mcp-url-bar__copy" onClick={handleCopy} aria-label="Copy MCP config">
+        {copied() ? <Check size={14} /> : <Copy size={14} />}
+      </button>
+    </div>
   );
 }
