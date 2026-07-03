@@ -1,40 +1,34 @@
-import { fetchUpstream } from './fetch';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Relay } from './relay';
-import { parseFeed, parsedToItems } from '../src/feeds/parse';
+import { fetchUpstream } from './fetch';
+import { parseFeed } from '../src/feeds/parse';
 import { findAlternateFeeds } from '../src/feeds/discover';
 import type { Feed } from '../src/db/types';
 
-const PROTOCOL_VERSION = '2024-11-05';
-const SERVER_NAME = 'sift-mcp';
-const SERVER_VERSION = '0.1.0';
-
-type JsonRpcRequest = {
-  jsonrpc: '2.0';
-  id?: number | string;
-  method: string;
-  params?: Record<string, unknown>;
-};
-
-type JsonRpcResponse = {
-  jsonrpc: '2.0';
-  id: number | string | null;
-} & ({ result: unknown } | { error: { code: number; message: string; data?: unknown } });
-
-type McpConn = {
-  controller: ReadableStreamDefaultController;
+type Discovered = {
+  url: string;
+  title: string;
+  htmlUrl?: string;
+  samples: string[];
 };
 
 const toolDefinitions = [
   {
     name: 'list_feeds',
     description: 'List all subscribed RSS feeds',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object' as const, properties: {} },
   },
   {
     name: 'get_feed',
     description: 'Get details of a specific feed by URL',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         url: { type: 'string', description: 'Feed URL' },
       },
@@ -45,7 +39,7 @@ const toolDefinitions = [
     name: 'discover_feed',
     description: 'Check if a URL is a valid RSS/Atom feed and return a preview without subscribing',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         url: { type: 'string', description: 'URL to check' },
       },
@@ -56,7 +50,7 @@ const toolDefinitions = [
     name: 'add_feed',
     description: 'Subscribe to an RSS/Atom feed by URL. Auto-discovers if the URL is a web page with feed links.',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         url: { type: 'string', description: 'Feed or website URL' },
       },
@@ -67,7 +61,7 @@ const toolDefinitions = [
     name: 'remove_feed',
     description: 'Unsubscribe from a feed by URL',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         url: { type: 'string', description: 'Feed URL' },
       },
@@ -78,7 +72,7 @@ const toolDefinitions = [
     name: 'get_feed_items',
     description: 'Fetch the latest items from a feed',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         url: { type: 'string', description: 'Feed URL' },
         limit: { type: 'number', description: 'Maximum items to return (default 20)' },
@@ -88,261 +82,153 @@ const toolDefinitions = [
   },
 ];
 
-type Discovered = {
-  url: string;
-  title: string;
-  htmlUrl?: string;
-  samples: string[];
-};
+function textResult(content: string, isError?: boolean): CallToolResult {
+  return { content: [{ type: 'text' as const, text: content }], ...(isError ? { isError: true } : {}) };
+}
 
-export class McpHandler {
-  private relay: Relay;
-  private conns = new Map<string, McpConn>();
-  private nextSession = 1;
+export function createMcpServer(relay: Relay): Server {
+  const server = new Server(
+    { name: 'sift-mcp', version: '0.1.0' },
+    { capabilities: { tools: {} } },
+  );
 
-  constructor(relay: Relay) {
-    this.relay = relay;
-  }
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: toolDefinitions,
+  }));
 
-  handleSse(): Response {
-    const sessionId = String(this.nextSession++);
-    const conns = this.conns;
-    let started = false;
-
-    const stream = new ReadableStream({
-      start(controller) {
-        started = true;
-        const conn: McpConn = { controller };
-        conns.set(sessionId, conn);
-        const endpoint = `/mcp/message?sessionId=${sessionId}`;
-        controller.enqueue(new TextEncoder().encode(`event: endpoint\ndata: ${endpoint}\n\n`));
-      },
-      cancel() {
-        if (started) conns.delete(sessionId);
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
-  }
-
-  async handleMessage(sessionId: string, body: unknown): Promise<Response> {
-    const conn = this.conns.get(sessionId);
-    if (!conn) {
-      return new Response(JSON.stringify({ error: 'Invalid session' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    const req = body as JsonRpcRequest;
-    if (req.jsonrpc !== '2.0') {
-      await this.sendResponse(conn, {
-        jsonrpc: '2.0',
-        id: req.id ?? null,
-        error: { code: -32600, message: 'Invalid Request: must use JSON-RPC 2.0' },
-      });
-      return new Response(null, { status: 202 });
-    }
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
 
     try {
-      const result = await this.dispatch(req);
-      await this.sendResponse(conn, {
-        jsonrpc: '2.0',
-        id: req.id ?? null,
-        result,
-      });
-    } catch (err) {
-      await this.sendResponse(conn, {
-        jsonrpc: '2.0',
-        id: req.id ?? null,
-        error: {
-          code: -32603,
-          message: err instanceof Error ? err.message : 'Internal error',
-        },
-      });
-    }
-
-    return new Response(null, { status: 202 });
-  }
-
-  private async sendResponse(conn: McpConn, msg: JsonRpcResponse): Promise<void> {
-    const text = `data: ${JSON.stringify(msg)}\n\n`;
-    conn.controller.enqueue(new TextEncoder().encode(text));
-  }
-
-  private async dispatch(req: JsonRpcRequest): Promise<unknown> {
-    switch (req.method) {
-      case 'initialize':
-        return this.handleInitialize(req.params);
-      case 'notifications/initialized':
-        return undefined;
-      case 'tools/list':
-        return this.handleListTools();
-      case 'tools/call':
-        return this.handleCallTool(req.params);
-      default:
-        throw new Error(`Unknown method: ${req.method}`);
-    }
-  }
-
-  private handleInitialize(_params?: Record<string, unknown>): unknown {
-    return {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: { tools: {} },
-      serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-    };
-  }
-
-  private handleListTools(): unknown {
-    return { tools: toolDefinitions };
-  }
-
-  private async handleCallTool(params?: Record<string, unknown>): Promise<unknown> {
-    if (!params || typeof params.name !== 'string') {
-      throw new Error('Missing tool name');
-    }
-
-    const name = params.name;
-    const args = (params.arguments as Record<string, unknown>) ?? {};
-
-    switch (name) {
-      case 'list_feeds':
-        return this.callListFeeds();
-      case 'get_feed':
-        return this.callGetFeed(args);
-      case 'discover_feed':
-        return this.callDiscoverFeed(args);
-      case 'add_feed':
-        return this.callAddFeed(args);
-      case 'remove_feed':
-        return this.callRemoveFeed(args);
-      case 'get_feed_items':
-        return this.callGetFeedItems(args);
-      default:
-        throw new Error(`Unknown tool: ${name}`);
-    }
-  }
-
-  private callListFeeds(): unknown {
-    const feeds = this.relay.getFeeds();
-    return { content: [{ type: 'text', text: JSON.stringify(feeds, null, 2) }] };
-  }
-
-  private callGetFeed(args: Record<string, unknown>): unknown {
-    const url = String(args.url ?? '');
-    if (!url) throw new Error('url is required');
-    const feed = this.relay.getFeed(url);
-    if (!feed) {
-      return { content: [{ type: 'text', text: `Feed not found: ${url}` }], isError: true };
-    }
-    return { content: [{ type: 'text', text: JSON.stringify(feed, null, 2) }] };
-  }
-
-  private async callDiscoverFeed(args: Record<string, unknown>): Promise<unknown> {
-    const url = String(args.url ?? '');
-    if (!url) throw new Error('url is required');
-
-    const discovered = await this.discover(url);
-    if (!discovered) {
-      return { content: [{ type: 'text', text: `Could not find a feed at: ${url}` }], isError: true };
-    }
-    return {
-      content: [{ type: 'text', text: JSON.stringify(discovered, null, 2) }],
-    };
-  }
-
-  private async callAddFeed(args: Record<string, unknown>): Promise<unknown> {
-    const url = String(args.url ?? '');
-    if (!url) throw new Error('url is required');
-
-    const discovered = await this.discover(url);
-    if (!discovered) {
-      return { content: [{ type: 'text', text: `Could not find a feed at: ${url}` }], isError: true };
-    }
-
-    const feed: Feed = {
-      url: discovered.url,
-      title: discovered.title,
-      htmlUrl: discovered.htmlUrl,
-      lastFetched: null,
-      learnedIntervalMs: 60 * 60 * 1000,
-      lastError: null,
-      lastItemPublishedAt: null,
-    };
-
-    await this.relay.relayAddFeed(feed);
-    return { content: [{ type: 'text', text: JSON.stringify(feed, null, 2) }] };
-  }
-
-  private async callRemoveFeed(args: Record<string, unknown>): Promise<unknown> {
-    const url = String(args.url ?? '');
-    if (!url) throw new Error('url is required');
-    await this.relay.relayRemoveFeed(url);
-    return { content: [{ type: 'text', text: `Unsubscribed from: ${url}` }] };
-  }
-
-  private async callGetFeedItems(args: Record<string, unknown>): Promise<unknown> {
-    const url = String(args.url ?? '');
-    if (!url) throw new Error('url is required');
-    const limit = typeof args.limit === 'number' ? args.limit : 20;
-
-    let res: Response;
-    try {
-      res = await fetchUpstream(url);
-    } catch {
-      return { content: [{ type: 'text', text: `Failed to fetch feed: ${url}` }], isError: true };
-    }
-
-    if (!res.ok) {
-      return { content: [{ type: 'text', text: `HTTP ${res.status} fetching feed: ${url}` }], isError: true };
-    }
-
-    const xml = await res.text();
-    const parsed = parseFeed(xml);
-    if (!parsed) {
-      return { content: [{ type: 'text', text: `Failed to parse feed XML from: ${url}` }], isError: true };
-    }
-
-    const items = parsed.items.slice(0, limit).map((i) => ({
-      title: i.title,
-      link: i.link,
-      author: i.author,
-      publishedAt: i.publishedAt,
-      excerpt: i.excerpt.slice(0, 300),
-    }));
-
-    return { content: [{ type: 'text', text: JSON.stringify({ title: parsed.title, items }, null, 2) }] };
-  }
-
-  private async discover(url: string): Promise<Discovered | null> {
-    const direct = await tryParse(url);
-    if (direct) return { url, title: direct.title, htmlUrl: direct.htmlUrl, samples: firstThree(direct) };
-
-    let html: string;
-    try {
-      const res = await fetchUpstream(url);
-      if (!res.ok) return null;
-      html = await res.text();
-    } catch {
-      return null;
-    }
-
-    const candidates = findAlternateFeeds(html, url);
-    for (const candidate of candidates) {
-      const parsed = await tryParse(candidate);
-      if (parsed) {
-        return { url: candidate, title: parsed.title, htmlUrl: parsed.htmlUrl, samples: firstThree(parsed) };
+      switch (name) {
+        case 'list_feeds':
+          return textResult(JSON.stringify(relay.getFeeds(), null, 2));
+        case 'get_feed':
+          return handleGetFeed(relay, args ?? {});
+        case 'discover_feed':
+          return await handleDiscoverFeed(args ?? {});
+        case 'add_feed':
+          return await handleAddFeed(relay, args ?? {});
+        case 'remove_feed':
+          return await handleRemoveFeed(relay, args ?? {});
+        case 'get_feed_items':
+          return await handleGetFeedItems(args ?? {});
+        default:
+          return textResult(`Unknown tool: ${name}`, true);
       }
+    } catch (err) {
+      return textResult(err instanceof Error ? err.message : 'Internal error', true);
     }
+  });
 
+  return server;
+}
+
+export async function handleMcpRequest(request: Request, relay: Relay): Promise<Response> {
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    enableJsonResponse: true,
+  });
+  const server = createMcpServer(relay);
+  await server.connect(transport);
+  return transport.handleRequest(request);
+}
+
+function handleGetFeed(relay: Relay, args: Record<string, unknown>): CallToolResult {
+  const url = String(args.url ?? '');
+  if (!url) return textResult('url is required', true);
+  const feed = relay.getFeed(url);
+  if (!feed) return textResult(`Feed not found: ${url}`, true);
+  return textResult(JSON.stringify(feed, null, 2));
+}
+
+async function handleDiscoverFeed(args: Record<string, unknown>): Promise<CallToolResult> {
+  const url = String(args.url ?? '');
+  if (!url) return textResult('url is required', true);
+
+  const discovered = await discover(url);
+  if (!discovered) return textResult(`Could not find a feed at: ${url}`, true);
+  return textResult(JSON.stringify(discovered, null, 2));
+}
+
+async function handleAddFeed(relay: Relay, args: Record<string, unknown>): Promise<CallToolResult> {
+  const url = String(args.url ?? '');
+  if (!url) return textResult('url is required', true);
+
+  const discovered = await discover(url);
+  if (!discovered) return textResult(`Could not find a feed at: ${url}`, true);
+
+  const feed: Feed = {
+    url: discovered.url,
+    title: discovered.title,
+    htmlUrl: discovered.htmlUrl,
+    lastFetched: null,
+    learnedIntervalMs: 60 * 60 * 1000,
+    lastError: null,
+    lastItemPublishedAt: null,
+  };
+
+  await relay.relayAddFeed(feed);
+  return textResult(JSON.stringify(feed, null, 2));
+}
+
+async function handleRemoveFeed(relay: Relay, args: Record<string, unknown>): Promise<CallToolResult> {
+  const url = String(args.url ?? '');
+  if (!url) return textResult('url is required', true);
+  await relay.relayRemoveFeed(url);
+  return textResult(`Unsubscribed from: ${url}`);
+}
+
+async function handleGetFeedItems(args: Record<string, unknown>): Promise<CallToolResult> {
+  const url = String(args.url ?? '');
+  if (!url) return textResult('url is required', true);
+  const limit = typeof args.limit === 'number' ? args.limit : 20;
+
+  let res: Response;
+  try {
+    res = await fetchUpstream(url);
+  } catch {
+    return textResult(`Failed to fetch feed: ${url}`, true);
+  }
+
+  if (!res.ok) return textResult(`HTTP ${res.status} fetching feed: ${url}`, true);
+
+  const xml = await res.text();
+  const parsed = parseFeed(xml);
+  if (!parsed) return textResult(`Failed to parse feed XML from: ${url}`, true);
+
+  const items = parsed.items.slice(0, limit).map((i) => ({
+    title: i.title,
+    link: i.link,
+    author: i.author,
+    publishedAt: i.publishedAt,
+    excerpt: i.excerpt.slice(0, 300),
+  }));
+
+  return textResult(JSON.stringify({ title: parsed.title, items }, null, 2));
+}
+
+async function discover(url: string): Promise<Discovered | null> {
+  const direct = await tryParse(url);
+  if (direct) return { url, title: direct.title, htmlUrl: direct.htmlUrl, samples: firstThree(direct) };
+
+  let html: string;
+  try {
+    const res = await fetchUpstream(url);
+    if (!res.ok) return null;
+    html = await res.text();
+  } catch {
     return null;
   }
+
+  const candidates = findAlternateFeeds(html, url);
+  for (const candidate of candidates) {
+    const parsed = await tryParse(candidate);
+    if (parsed) {
+      return { url: candidate, title: parsed.title, htmlUrl: parsed.htmlUrl, samples: firstThree(parsed) };
+    }
+  }
+
+  return null;
 }
 
 async function tryParse(url: string) {
