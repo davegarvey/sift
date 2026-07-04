@@ -30,6 +30,17 @@ export async function extractArticle(
     return null;
   }
 
+  // Grab og:image before Readability mutates the document (it strips <head>).
+  const ogUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
+
+  // Set a <base> tag so Readability's _fixRelativeUris resolves relative
+  // URLs against the article's URL, not the Sift page's origin.
+  if (!doc.querySelector('base')) {
+    const baseEl = doc.createElement('base');
+    baseEl.setAttribute('href', articleUrl);
+    doc.head.insertBefore(baseEl, doc.head.firstChild);
+  }
+
   let article;
   try {
     article = new Readability(doc).parse();
@@ -41,11 +52,16 @@ export async function extractArticle(
   }
 
   const inlined = await inlineImages(article.content, articleUrl);
-  if (!thumbnailUrl) {
+
+  // Determine hero image: prefer og:image from the article over the feed
+  // thumbnail (which for video pages is often a low-res poster).
+  const heroUrl = ogUrl ?? thumbnailUrl;
+
+  if (!heroUrl) {
     return { html: inlined, title: article.title ?? undefined };
   }
 
-  const heroInjected = await injectHeroImage(inlined, thumbnailUrl);
+  const heroInjected = await injectHeroImage(inlined, heroUrl);
   return {
     html: heroInjected,
     title: article.title ?? undefined,
