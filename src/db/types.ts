@@ -77,10 +77,11 @@ export const TEXTONLY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /** Per-feed size threshold before applying eviction. Default 50 MB. */
 export const FEED_STORAGE_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
-export type ThemePreference = 'system' | 'light' | 'dark' | 'accessible';
+export type ThemePreference = 'system' | 'light' | 'dark';
 
 export interface AppSettings {
   theme: ThemePreference;
+  highContrast: boolean;
   lastRefreshRunAt: number | null;
   lastFeedUrl: string | null;
   /** @deprecated No longer used. Kept for backward compat with persisted settings. */
@@ -90,6 +91,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
+  highContrast: false,
   lastRefreshRunAt: null,
   lastFeedUrl: null,
   mcpEnabled: false,

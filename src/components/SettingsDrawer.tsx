@@ -1,7 +1,7 @@
 import { ExternalLink, Check, Copy } from 'lucide-solid';
 import { version } from '../../package.json';
 import { Show, For, createSignal, createMemo } from 'solid-js';
-import { useApp, applyTheme } from '../state';
+import { useApp } from '../state';
 import type { ThemePreference } from '../db/types';
 import { serializeOpml } from '../opml/serialize';
 import { parseOpml } from '../opml/parse';
@@ -12,7 +12,6 @@ export function SettingsDrawer() {
   const settings = ctx.settings;
 
   const setTheme = (theme: ThemePreference) => {
-    applyTheme(theme);
     void ctx.saveSettingsPatch({ theme });
   };
 
@@ -62,8 +61,19 @@ export function SettingsDrawer() {
               <option value="system">Follow system</option>
               <option value="light">Light</option>
               <option value="dark">Dark</option>
-              <option value="accessible">High contrast</option>
             </select>
+          </div>
+          <div class="row">
+            <label>High contrast</label>
+            <div
+              class="toggle"
+              classList={{ on: settings().highContrast }}
+              onClick={() => void ctx.saveSettingsPatch({ highContrast: !settings().highContrast })}
+              role="switch"
+              aria-checked={settings().highContrast}
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' || e.key === ' ' ? (e.preventDefault(), void ctx.saveSettingsPatch({ highContrast: !settings().highContrast })) : null}
+            />
           </div>
         </div>
 

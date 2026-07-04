@@ -83,6 +83,7 @@ export const AppProvider: ParentComponent = (props) => {
   const [items, setItems] = createSignal<Item[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>({
     theme: 'system',
+    highContrast: false,
     lastRefreshRunAt: null,
     lastFeedUrl: null,
     mcpEnabled: false,
@@ -215,6 +216,9 @@ export const AppProvider: ParentComponent = (props) => {
     const next = { ...settings(), ...patch };
     setSettings(next);
     await saveSettings(next);
+    if ('theme' in patch || 'highContrast' in patch) {
+      applyTheme(next.theme, next.highContrast);
+    }
     if ('mcpEnabled' in patch) {
       if (patch.mcpEnabled && mcpAvailable()) {
         startMcp();
@@ -255,7 +259,7 @@ export const AppProvider: ParentComponent = (props) => {
   void (async () => {
     const s = await getSettings();
     setSettings(s);
-    applyTheme(s.theme);
+    applyTheme(s.theme, s.highContrast);
 
     try {
       const capRes = await fetch('/api/capabilities');
@@ -289,19 +293,21 @@ export const AppProvider: ParentComponent = (props) => {
 };
 
 /**
- * Apply the theme by setting `data-theme` on <html>. When the preference
- * is `system`, we leave the attribute unset and let the `@media
- * (prefers-color-scheme: dark)` rule do the work.
+ * Apply the theme and high-contrast mode by setting `data-theme` and
+ * `data-a11y` on <html>. When the preference is `system`, we leave
+ * `data-theme` unset and let the `@media (prefers-color-scheme: dark)`
+ * rule do the work.
  */
-export function applyTheme(theme: ThemePreference): void {
+export function applyTheme(theme: ThemePreference, highContrast: boolean): void {
   const root = document.documentElement;
   root.removeAttribute('data-theme');
   root.removeAttribute('data-a11y');
+  if (highContrast) {
+    root.setAttribute('data-a11y', 'true');
+  }
   if (theme === 'light') {
     root.setAttribute('data-theme', 'light');
   } else if (theme === 'dark') {
     root.setAttribute('data-theme', 'dark');
-  } else if (theme === 'accessible') {
-    root.setAttribute('data-a11y', 'true');
   }
 }
