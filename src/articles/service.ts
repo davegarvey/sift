@@ -3,8 +3,36 @@ import { getItem, updateItem } from '../db/items';
 import { extractArticle, reinlineImages } from './extract';
 import { runEviction } from './eviction';
 
-function processLinks(html: string): string {
-  return html.replace(/<a(?=\s|>)(?![^>]*\btarget\s*=)/gi, '<a target="_blank" rel="noopener noreferrer"');
+function processLinks(html: string, baseUrl?: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const links = Array.from(doc.querySelectorAll('a[href]'));
+  for (const link of links) {
+    const href = link.getAttribute('href');
+    if (!href) continue;
+    if (baseUrl) {
+      try {
+        const resolved = new URL(href, baseUrl);
+        const resolvedStr = resolved.toString();
+        if (resolvedStr !== href) {
+          // Relative URL resolved correctly against the article's URL.
+          link.setAttribute('href', resolvedStr);
+        } else if (resolved.origin === window.location.origin && resolved.origin !== new URL(baseUrl).origin) {
+          // Absolute URL pointing to Sift's origin but should point to the
+          // article's origin — Readability resolved a relative link against
+          // the document's baseURI (which was Sift's page) instead of the
+          // article's URL. Re-resolve using just the path/query/hash.
+          link.setAttribute('href', new URL(resolved.pathname + resolved.search + resolved.hash, baseUrl).toString());
+        }
+      } catch {
+        // leave invalid URLs as-is
+      }
+    }
+    if (!link.hasAttribute('target') || link.getAttribute('target') !== '_blank') {
+      link.setAttribute('target', '_blank');
+    }
+    link.setAttribute('rel', 'noopener noreferrer');
+  }
+  return doc.body.innerHTML;
 }
 
 /**
@@ -42,12 +70,12 @@ export async function openItemForReading(
   // a cached Readability extraction (which may have been extracted from the
   // linked URL when the feed didn't provide full content at parse time).
   if (item.html && item.html.length > 0) {
-    return { bodyHtml: processLinks(item.html), extracted: true, extractionFailed: false };
+    return { bodyHtml: processLinks(item.html, item.link), extracted: true, extractionFailed: false };
   }
 
   // Path 2: cached Readability extract.
   if (item.extractedHtml != null && item.extractedHtml.length > 0) {
-    return { bodyHtml: processLinks(item.extractedHtml), extracted: true, extractionFailed: false };
+    return { bodyHtml: processLinks(item.extractedHtml, item.link), extracted: true, extractionFailed: false };
   }
 
   // Path 3: extract via Readability + proxy.
@@ -60,7 +88,7 @@ export async function openItemForReading(
     return { bodyHtml: item.excerpt, extracted: false, extractionFailed: true };
   }
   await updateItem(item.id, { extractedHtml: result.html });
-  return { bodyHtml: processLinks(result.html), extracted: true, extractionFailed: false };
+  return { bodyHtml: processLinks(result.html, item.link), extracted: true, extractionFailed: false };
 }
 
 /**
