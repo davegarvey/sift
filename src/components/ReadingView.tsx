@@ -1,9 +1,9 @@
-import { createSignal, createEffect, Show } from 'solid-js';
+import { createSignal, createEffect, createMemo, Show } from 'solid-js';
 import { useApp } from '../state';
-import { ArrowLeft, CircleQuestionMark, ExternalLink, Star } from 'lucide-solid';
+import { ArrowLeft, ChevronLeft, ChevronRight, CircleQuestionMark, ExternalLink, Star } from 'lucide-solid';
 import { openItemForReading } from '../articles/service';
 import { toggleStar, markRead } from '../db/items';
-import { relativeTime } from '../util/time';
+import { humanRelativeTime } from '../util/time';
 
 export function ReadingView() {
   const ctx = useApp();
@@ -14,8 +14,30 @@ export function ReadingView() {
   let scrollRef: HTMLDivElement | undefined;
   let lastItemId: string | undefined;
 
+  const currentItem = () => ctx.state.currentItem;
+
+  const hasPrev = createMemo(() => {
+    const list = ctx.items();
+    return ctx.state.focusedIndex > 0 && list.length > 1;
+  });
+
+  const hasNext = createMemo(() => {
+    const list = ctx.items();
+    return ctx.state.focusedIndex < list.length - 1 && list.length > 1;
+  });
+
+  const navigate = (offset: number) => {
+    ctx.jumpTo(offset);
+    const items = ctx.items();
+    const item = items[ctx.state.focusedIndex];
+    if (item) void ctx.openItem(item);
+  };
+
+  const feedName = () =>
+    ctx.feeds().find((f) => f.url === currentItem()?.feedUrl)?.title ?? '';
+
   createEffect(() => {
-    const item = ctx.state.currentItem;
+    const item = currentItem();
     if (!item || item.id === lastItemId) return;
     lastItemId = item.id;
 
@@ -33,40 +55,56 @@ export function ReadingView() {
   });
 
   const toggleStarClick = async () => {
-    const item = ctx.state.currentItem;
+    const item = currentItem();
     if (!item) return;
     await toggleStar(item.id);
-    // Optimistically update local UI by reloading items; currentItem is
-    // already a snapshot but we can patch its starred flag:
     ctx.setState({
       currentItem: { ...item, starred: !item.starred },
     });
     void ctx.reloadItems();
   };
 
+  const singleItem = () => ctx.items().length <= 1;
+
   return (
     <main class="reading">
       <div class="reading-chrome">
         <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)">
-          <ArrowLeft size={14} /> All
+          <ArrowLeft size={14} />
         </button>
-        <span class="source">
-          {ctx.feeds().find((f) => f.url === ctx.state.currentItem?.feedUrl)?.title ?? ''}
-          {' · '}
-          {ctx.state.currentItem ? relativeTime(ctx.state.currentItem.publishedAt) : ''}
-        </span>
+        <span class="chrome-spacer" />
+        <div class="mobile-only chrome-chevrons">
+          <button
+            class="chrome-chevron"
+            disabled={!hasPrev()}
+            onClick={() => navigate(-1)}
+            title="Previous article (j)"
+            aria-label="Previous article"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            class="chrome-chevron"
+            disabled={!hasNext()}
+            onClick={() => navigate(1)}
+            title="Next article (k)"
+            aria-label="Next article"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
         <button
           class="star"
           onClick={() => void toggleStarClick()}
-          title={ctx.state.currentItem?.starred ? 'Unstar (s)' : 'Star (s)'}
-          aria-pressed={ctx.state.currentItem?.starred ?? false}
-          aria-label={ctx.state.currentItem?.starred ? 'Unstar' : 'Star'}
+          title={currentItem()?.starred ? 'Unstar (s)' : 'Star (s)'}
+          aria-pressed={currentItem()?.starred ?? false}
+          aria-label={currentItem()?.starred ? 'Unstar' : 'Star'}
         >
-          <Star size={14} fill={ctx.state.currentItem?.starred ? 'currentColor' : 'none'} />
+          <Star size={14} fill={currentItem()?.starred ? 'currentColor' : 'none'} />
         </button>
         <a
           class="open-original"
-          href={ctx.state.currentItem?.link ?? '#'}
+          href={currentItem()?.link ?? '#'}
           target="_blank"
           rel="noopener noreferrer"
           title="Open original"
@@ -83,21 +121,23 @@ export function ReadingView() {
       </div>
 
       <div class="reading-body" ref={scrollRef}>
-        <Show when={!loading() && ctx.state.currentItem}>
+        <Show when={!loading() && currentItem()}>
           <div class="reading-content">
-            <h1 class="reading-title">{ctx.state.currentItem!.title}</h1>
+            <h1 class="reading-title">{currentItem()!.title}</h1>
             <div class="byline">
-              <Show when={ctx.state.currentItem!.author}>
-                by {ctx.state.currentItem!.author}{' · '}
+              <Show when={currentItem()!.author}>
+                by {currentItem()!.author}{' · '}
               </Show>
-              <span>{new Date(ctx.state.currentItem!.publishedAt).toLocaleString()}</span>
+              {feedName()}
+              {' · '}
+              <span>{humanRelativeTime(new Date(currentItem()!.publishedAt))}</span>
             </div>
             <Show when={extractionFailed()}>
               <div class="extraction-notice">
                 <span>Couldn't extract this article.</span>
                 <a
                   class="open-original"
-                  href={ctx.state.currentItem!.link ?? '#'}
+                  href={currentItem()!.link ?? '#'}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -110,6 +150,23 @@ export function ReadingView() {
         </Show>
 
       </div>
+
+      <Show when={!singleItem()}>
+        <div
+          class="reading-zone reading-zone-prev desktop-only"
+          classList={{ ghosted: !hasPrev() }}
+          onClick={() => hasPrev() && navigate(-1)}
+        >
+          <ChevronLeft size={24} />
+        </div>
+        <div
+          class="reading-zone reading-zone-next desktop-only"
+          classList={{ ghosted: !hasNext() }}
+          onClick={() => hasNext() && navigate(1)}
+        >
+          <ChevronRight size={24} />
+        </div>
+      </Show>
     </main>
   );
 }

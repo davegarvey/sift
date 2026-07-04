@@ -16,3 +16,28 @@ export function relativeTime(ts: number): string {
   const years = Math.round(days / 365);
   return `${years}y`;
 }
+
+/** Format a Date as human-readable relative time with decaying precision.
+ *  "2h ago" → "Wednesday" → "last month" → "Jun 2026" */
+export function humanRelativeTime(date: Date): string {
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.round(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 2) return 'yesterday';
+  if (diffDays < 7) {
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return dayNames[date.getDay()];
+  }
+  if (diffDays < 60) {
+    const diffMonths = Math.round(diffDays / 30);
+    return diffMonths < 2 ? 'last month' : `${diffMonths} months ago`;
+  }
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[date.getMonth()]} ${date.getFullYear()}`;
+}
