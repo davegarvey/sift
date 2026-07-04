@@ -100,28 +100,32 @@ export const AppProvider: ParentComponent = (props) => {
     mcpEventSource.addEventListener('add-feed', async (e) => {
       const data = JSON.parse(e.data);
       if (typeof data.feed?.url !== 'string') return;
-      await upsertFeed(data.feed as Feed);
-      await reloadFeeds();
-      await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'ack', id: data.id }),
-      });
+      try {
+        await upsertFeed(data.feed as Feed);
+        await reloadFeeds();
+        await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'ack', id: data.id }),
+        });
+      } catch {}
     });
 
     mcpEventSource.addEventListener('remove-feed', async (e) => {
       const data = JSON.parse(e.data);
       if (typeof data.url !== 'string') return;
-      await unsubscribeFeed(data.url);
-      if (state.riverScope === data.url) {
-        setState({ riverScope: null });
-      }
-      await reloadFeeds();
-      await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'ack', id: data.id }),
-      });
+      try {
+        await unsubscribeFeed(data.url);
+        if (state.riverScope === data.url) {
+          setState({ riverScope: null });
+        }
+        await reloadFeeds();
+        await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'ack', id: data.id }),
+        });
+      } catch {}
     });
 
     mcpEventSource.addEventListener('keepalive', () => {});
@@ -147,12 +151,14 @@ export const AppProvider: ParentComponent = (props) => {
   const mcpNotifySync = async () => {
     const es = mcpEventSource;
     if (!es || es.readyState !== EventSource.OPEN) return;
-    const feeds = await listFeeds();
-    await fetch('/api/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'sync', feeds }),
-    });
+    try {
+      const feeds = await listFeeds();
+      await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'sync', feeds }),
+      });
+    } catch {}
   };
 
   const reloadFeeds = async () => setFeeds(await listFeeds());
