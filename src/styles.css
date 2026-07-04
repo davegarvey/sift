@@ -250,10 +250,18 @@ a:hover { text-decoration: underline; }
   display: none;
 }
 
+/* Mobile-only is hidden on desktop. */
+.mobile-only {
+  display: none;
+}
+
 /* Mobile: topbar is a thin fixed bar with hamburger + wordmark. */
 @media (max-width: 768px) {
   .desktop-only {
     display: none;
+  }
+  .mobile-only {
+    display: flex;
   }
   .topbar {
     display: flex;
@@ -711,12 +719,26 @@ a:hover { text-decoration: underline; }
   color: var(--subtext);
 }
 
-.reading .reading-chrome .source {
-  color: var(--subtext);
+.reading .reading-chrome .chrome-spacer {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.reading .reading-chrome .chrome-chevrons {
+  display: flex;
+  gap: 4px;
+}
+
+.reading .reading-chrome .chrome-chevron {
+  display: inline-flex;
+  align-items: center;
+  color: var(--subtext);
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.reading .reading-chrome .chrome-chevron:disabled {
+  opacity: 0.2;
+  pointer-events: none;
 }
 
 .reading .reading-chrome .star {
@@ -737,6 +759,43 @@ a:hover { text-decoration: underline; }
 .reading .reading-chrome .desktop-only {
   display: inline-flex;
   align-items: center;
+}
+
+/* Desktop chevron zones — hover-reveal prev/next in margin gutters. */
+.reading .reading-zone {
+  position: fixed;
+  z-index: 6;
+  width: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--subtext);
+  transition: opacity 0.15s ease;
+  top: 44px;
+  bottom: 0;
+}
+
+.reading .reading-zone-prev {
+  left: 0;
+}
+
+.reading .reading-zone-next {
+  right: 0;
+}
+
+@media (hover: hover) {
+  .reading .reading-zone {
+    opacity: 0.15;
+  }
+  .reading .reading-zone:hover {
+    opacity: 1;
+  }
+}
+
+.reading .reading-zone.ghosted {
+  opacity: 0.05;
+  cursor: default;
 }
 
 .reading .reading-body {
