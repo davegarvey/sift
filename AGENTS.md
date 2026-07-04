@@ -29,6 +29,12 @@ Sift — a simple, slick, browser-first RSS reader.
 - Test files live alongside source where appropriate (`*.test.ts`) or under `tests/` for integration tests.
 - The `LICENSE` is MIT. Do not introduce third-party code that is incompatible.
 
+## Git workflow
+
+- **Never push directly to `main`.** Create a feature branch (e.g., `feat/short-description`, `fix/short-description`), push it, and open a PR. PRs are how changes land on `main` — even for one-commit changes.
+- Before branching, ensure `main` is up to date with `git pull`.
+- Use conventional commits for commit messages. Include the PR number in the body if applicable.
+
 ## OpenSpec
 
 Change artifacts live in `openspec/changes/`. Current change: `add-core-reader`.
