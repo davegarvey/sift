@@ -20,6 +20,8 @@ export async function extractArticle(
     return null;
   }
 
+  const ogUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
+
   if (!doc.querySelector('base')) {
     const baseEl = doc.createElement('base');
     baseEl.setAttribute('href', articleUrl);
@@ -36,7 +38,11 @@ export async function extractArticle(
     return null;
   }
 
-  const content = rewriteImagesToProxy(article.content, articleUrl);
+  let content = rewriteImagesToProxy(article.content, articleUrl);
+  const heroUrl = ogUrl ?? thumbnailUrl;
+  if (heroUrl) {
+    content = injectHeroImageProxy(content, heroUrl);
+  }
   return { html: content, title: article.title ?? undefined };
 }
 
@@ -54,5 +60,16 @@ function rewriteImagesToProxy(html: string, baseUrl: string): string {
       // leave invalid URLs as-is
     }
   }
+  return doc.body.innerHTML;
+}
+
+function injectHeroImageProxy(html: string, heroUrl: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  if (doc.body.querySelector('img')) return html;
+  const img = doc.createElement('img');
+  img.setAttribute('src', `/img?url=${encodeURIComponent(heroUrl)}`);
+  img.setAttribute('data-original-src', heroUrl);
+  img.setAttribute('style', 'max-width:100%;height:auto;display:block;margin:0 auto 1em');
+  doc.body.insertBefore(img, doc.body.firstChild);
   return doc.body.innerHTML;
 }
