@@ -64,18 +64,14 @@ export interface DBSchema {
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;
 export const MAX_LEARNED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-/** Full-extract retention window (images + text). Default 7 days. */
-export const FULL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-/** Text-only retention window. Default 30 days. */
-export const TEXTONLY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-/** Per-feed size threshold before applying eviction. Default 50 MB. */
-export const FEED_STORAGE_THRESHOLD_BYTES = 50 * 1024 * 1024;
+export const STORAGE_SOFT_CAP_RATIO = 0.05;
+export const EVICTION_CHUNK_SIZE = 500;
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 

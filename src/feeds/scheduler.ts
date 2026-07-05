@@ -26,7 +26,10 @@ let tickTimer: ReturnType<typeof setInterval> | null = null;
 export function startScheduler(): void {
   if (tickTimer) return;
   void refreshStaleFeeds();
-  tickTimer = setInterval(() => void refreshStaleFeeds(), TICK_MS);
+  tickTimer = setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    void refreshStaleFeeds();
+  }, TICK_MS);
 }
 
 export function stopScheduler(): void {

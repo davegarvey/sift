@@ -740,6 +740,8 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 4px;
   color: var(--subtext);
+  padding: 4px;
+  border-radius: 4px;
 }
 
 .reading .reading-chrome .chrome-spacer {
@@ -792,6 +794,8 @@ a:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   color: var(--accent);
+  padding: 4px;
+  border-radius: 4px;
 }
 
 .reading .reading-chrome .star.dim { color: var(--overlay); }
@@ -801,13 +805,36 @@ a:hover { text-decoration: underline; }
   align-items: center;
   color: var(--subtext);
   text-decoration: none;
+  padding: 4px;
+  border-radius: 4px;
 }
 
 @media (min-width: 769px) {
   .reading .reading-chrome .desktop-only {
     display: inline-flex;
     align-items: center;
+    padding: 4px;
+    border-radius: 4px;
   }
+}
+
+/* Reading chrome button hover/focus states. */
+.reading .reading-chrome .back:hover,
+.reading .reading-chrome .back:focus-visible,
+.reading .reading-chrome .chrome-chevron:hover:not(:disabled),
+.reading .reading-chrome .chrome-chevron:focus-visible:not(:disabled),
+.reading .reading-chrome .open-original:hover,
+.reading .reading-chrome .open-original:focus-visible,
+.reading .reading-chrome .desktop-only:hover,
+.reading .reading-chrome .desktop-only:focus-visible {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.reading .reading-chrome .star:hover,
+.reading .reading-chrome .star:focus-visible {
+  background: var(--accent-dim);
+  color: var(--accent-text);
 }
 
 /* Desktop chevron zones — hover-reveal prev/next in margin gutters. */

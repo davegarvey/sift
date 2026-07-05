@@ -1,6 +1,6 @@
 import type { Item } from '../db/types';
 import { getItem, updateItem } from '../db/items';
-import { extractArticle, reinlineImages } from './extract';
+import { extractArticle } from './extract';
 import { runEviction } from './eviction';
 
 function processLinks(html: string, baseUrl?: string): string {
@@ -89,21 +89,6 @@ export async function openItemForReading(
   }
   await updateItem(item.id, { extractedHtml: result.html });
   return { bodyHtml: processLinks(result.html, item.link), extracted: true, extractionFailed: false };
-}
-
-/**
- * Lazily re-inline images for an item's body whose images have been evicted.
- * Called by the reading view as the user scrolls near images.
- */
-export async function relininlineForItem(
-  itemId: string,
-  bodyHtml: string,
-): Promise<string | null> {
-  const item = await getItem(itemId);
-  if (!item || item.extractedHtml == null) return null;
-  const updated = await reinlineImages(bodyHtml);
-  await updateItem(item.id, { extractedHtml: updated });
-  return updated;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { Search } from 'lucide-solid';
-import { createSignal, For, Show, onMount, onCleanup, createMemo } from 'solid-js';
+import { createSignal, For, Show, onMount, createMemo } from 'solid-js';
 import { useApp } from '../state';
 import { searchItems } from '../db/items';
 import { refreshStaleFeeds } from '../feeds/scheduler';
@@ -17,10 +17,15 @@ export function CommandPalette() {
   const [selected, setSelected] = createSignal(0);
 
   let inputRef: HTMLInputElement | undefined;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let abortController: AbortController | null = null;
+  let generation = 0;
 
-  const update = async () => {
+  const update = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
     const q = query().trim();
     if (q.length === 0) {
+      if (abortController) abortController.abort();
       setResults([]);
       setSelected(0);
       return;
@@ -29,9 +34,17 @@ export function CommandPalette() {
       setResults([]);
       return;
     }
-    const items = await searchItems(q, 25);
-    setResults(items);
-    setSelected(0);
+    debounceTimer = setTimeout(async () => {
+      if (abortController) abortController.abort();
+      abortController = new AbortController();
+      const signal = abortController.signal;
+      const myGen = ++generation;
+      const items = await searchItems(q, 25, signal);
+      if (myGen === generation) {
+        setResults(items);
+        setSelected(0);
+      }
+    }, 200);
   };
 
   const choose = (id: string) => {
@@ -41,7 +54,6 @@ export function CommandPalette() {
       ctx.closeModal();
       return;
     }
-    // Otherwise it's an action.
     if (id === 'add-feed') {
       ctx.closeModal();
       ctx.openModal({ kind: 'add-feed' });
@@ -113,7 +125,7 @@ export function CommandPalette() {
                 <div>
                   <div>{item.title}</div>
                   <div class="meta">
-                    {ctx.feeds().find((f) => f.url === item.feedUrl)?.title ?? ''}
+                    {ctx.feedMap().get(item.feedUrl)?.title ?? ''}
                   </div>
                 </div>
               </div>
