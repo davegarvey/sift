@@ -192,7 +192,7 @@ export const AppProvider: ParentComponent = (props) => {
     setState({ view: 'river', currentItem: null });
   };
 
-  const toggleSidebar = () => setState({ sidebarOpen: !state.sidebarOpen });
+  const toggleSidebar = () => setState({ sidebarOpen: !state.sidebarOpen, sidebarHiddenDesktop: false });
   const toggleSidebarDesktop = () =>
     setState({ sidebarHiddenDesktop: !state.sidebarHiddenDesktop });
 
