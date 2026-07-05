@@ -121,7 +121,7 @@ export function createApp<E extends Env = AppEnv>(relay?: Relay): Hono<E> {
     const headers = new Headers();
     const contentType = upstreamRes.headers.get('Content-Type');
     if (contentType) headers.set('Content-Type', contentType);
-    headers.set('Cache-Control', 'public, max-age=86400');
+    headers.set('Cache-Control', 'public, max-age=2592000, immutable');
     return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
   });
 

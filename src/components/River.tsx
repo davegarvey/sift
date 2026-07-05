@@ -113,7 +113,7 @@ export function River() {
             >
               <div class="body">
                 <div class="meta">
-                  <span class="source">{ctx.feeds().find((f) => f.url === item.feedUrl)?.title ?? ''}</span>
+                  <span class="source">{ctx.feedMap().get(item.feedUrl)?.title ?? ''}</span>
                   <span class="time">{relativeTime(item.publishedAt)}</span>
                 </div>
                 <h3 class="title">

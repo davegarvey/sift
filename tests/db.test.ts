@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getDb } from '../src/db/open';
 import { upsertFeed, getFeedByUrl, listFeeds, deleteFeed } from '../src/db/feeds';
 import {
@@ -11,6 +11,8 @@ import {
   toggleStar,
   searchItems,
 } from '../src/db/items';
+import { runEviction } from '../src/articles/eviction';
+import { getFlag } from '../src/db/flags';
 import type { Feed, Item } from '../src/db/types';
 
 function makeFeed(overrides: Partial<Feed> = {}): Feed {
@@ -142,5 +144,45 @@ describe('items store', () => {
     expect(results.map((r) => r.guid)).toEqual(['1']);
     const results2 = await searchItems('SVELTE');
     expect(results2.map((r) => r.guid)).toEqual(['2']);
+  });
+
+  it('insertOrUpdateItem creates a matching flag entry', async () => {
+    const item = makeItem({ guid: 'a', read: false, starred: true });
+    await insertOrUpdateItem(item);
+    const flag = await getFlag(item.id);
+    expect(flag?.id).toBe(item.id);
+    expect(flag?.feedUrl).toBe(item.feedUrl);
+    expect(flag?.read).toBe(0);
+    expect(flag?.starred).toBe(1);
+  });
+
+  it('markRead updates both the item and the flag store', async () => {
+    const item = makeItem({ guid: 'a', read: false });
+    await insertOrUpdateItem(item);
+    await markRead(item.id, true);
+    const got = await getItem(item.id);
+    expect(got?.read).toBe(true);
+    const flag = await getFlag(item.id);
+    expect(flag?.read).toBe(1);
+  });
+
+  it('toggleStar updates both the item and the flag store', async () => {
+    const item = makeItem({ guid: 'a', starred: false });
+    await insertOrUpdateItem(item);
+    await toggleStar(item.id);
+    const got = await getItem(item.id);
+    expect(got?.starred).toBe(true);
+    const flag = await getFlag(item.id);
+    expect(flag?.starred).toBe(1);
+  });
+
+  it('searchItems respects AbortSignal — aborted search returns quickly', async () => {
+    for (let i = 0; i < 20; i++) {
+      await insertOrUpdateItem(makeItem({ guid: `s-${i}`, title: `Item ${i}`, excerpt: 'test' }));
+    }
+    const ac = new AbortController();
+    ac.abort();
+    const results = await searchItems('test', 50, ac.signal);
+    expect(results).toEqual([]);
   });
 });

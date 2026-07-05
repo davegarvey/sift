@@ -1,4 +1,4 @@
-import { createSignal, createContext, useContext } from 'solid-js';
+import { createSignal, createMemo, createContext, useContext } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { listFeeds, upsertFeed, unsubscribeFeed } from './db/feeds';
@@ -35,6 +35,7 @@ interface AppContext {
   state: AppState;
   setState: (patch: Partial<AppState>) => void;
   feeds: () => Feed[];
+  feedMap: () => Map<string, Feed>;
   items: () => Item[];
   settings: () => AppSettings;
   fetching: () => number;
@@ -81,6 +82,7 @@ export const AppProvider: ParentComponent = (props) => {
   const setState = (patch: Partial<AppState>) => setStateInternal(patch as Partial<AppState>);
 
   const [feeds, setFeeds] = createSignal<Feed[]>([]);
+  const feedMap = createMemo(() => new Map(feeds().map((f) => [f.url, f])));
   const [items, setItems] = createSignal<Item[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>({
     theme: 'system',
@@ -243,6 +245,7 @@ export const AppProvider: ParentComponent = (props) => {
     state,
     setState,
     feeds,
+    feedMap,
     items,
     settings,
     fetching: fetchingState.inFlight,
@@ -306,9 +309,17 @@ export const AppProvider: ParentComponent = (props) => {
     startScheduler();
     // After the first refresh sweep, keep feeds/items in sync.
     setInterval(async () => {
+      if (document.visibilityState === 'hidden') return;
       await reloadFeeds();
       await reloadItems();
     }, 30_000);
+    // Refresh immediately on tab return.
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        await reloadFeeds();
+        await reloadItems();
+      }
+    }, { once: false });
   })();
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;

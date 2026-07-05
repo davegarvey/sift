@@ -1,73 +1,46 @@
+import { getDb } from '../db/open';
 import type { Item } from '../db/types';
-import {
-  FULL_RETENTION_MS,
-  TEXTONLY_RETENTION_MS,
-  FEED_STORAGE_THRESHOLD_BYTES,
-} from '../db/types';
-import { listItemsByFeed, updateItem } from '../db/items';
-import { listFeeds } from '../db/feeds';
-import { stripImages } from './extract';
+import { STORAGE_SOFT_CAP_RATIO, EVICTION_CHUNK_SIZE } from '../db/types';
 
-/**
- * Storage-eviction policy (see design D5b):
- *  - Items keep full extractedHtml (with inlined images) for 7 days after first open.
- *  - After 30 days OR when a feed's items exceed 50MB, strip images (text-only).
- *  - Under continued pressure, fully drop extractedHtml.
- *
- * The threshold is approximate: we sum each item's `extractedHtml` byte length
- * for a feed; if it crosses the threshold, we run a leave-one-stash pass.
- *
- * Idempotent and safe to run on every scheduler tick.
- */
 export async function runEviction(): Promise<void> {
-  const feeds = await listFeeds();
-  await Promise.all(feeds.map((f) => evictFeed(f.url)));
-}
+  if (!('storage' in navigator && 'estimate' in navigator.storage)) return;
 
-async function evictFeed(feedUrl: string): Promise<void> {
-  const items = await listItemsByFeed(feedUrl, 500);
-  const now = Date.now();
+  const { quota, usage } = await navigator.storage.estimate();
+  if (!quota || !usage) return;
 
-  // Pass 1: drop extractedHtml from items older than the text-only retention.
-  for (const item of items) {
-    if (item.extractedHtml == null) continue;
-    const age = now - (item.firstOpenedAt ?? item.createdAt);
-    if (age > TEXTONLY_RETENTION_MS) {
-      await updateItem(item.id, { extractedHtml: null });
-      item.extractedHtml = null;
+  const pctCap = quota * STORAGE_SOFT_CAP_RATIO;
+  const halfCap = quota * 0.5;
+  const softCap = Math.min(pctCap, halfCap);
+  if (usage <= softCap) return;
+
+  const db = await getDb();
+  const candidates: Item[] = [];
+  let cursor = await db
+    .transaction('items', 'readonly')
+    .store.index('by-published')
+    .openCursor(null, 'prev');
+  while (cursor) {
+    if (cursor.value.extractedHtml != null) {
+      candidates.push(cursor.value);
     }
+    cursor = await cursor.continue();
   }
 
-  // Pass 2: strip images from items older than the full retention.
-  for (const item of items) {
-    if (item.extractedHtml == null) continue;
-    const age = now - (item.firstOpenedAt ?? item.createdAt);
-    if (age > FULL_RETENTION_MS && !looksTextOnly(item.extractedHtml)) {
-      const stripped = stripImages(item.extractedHtml);
-      await updateItem(item.id, { extractedHtml: stripped });
-      item.extractedHtml = stripped;
+  candidates.sort((a, b) => {
+    const aTime = a.firstOpenedAt ?? -Infinity;
+    const bTime = b.firstOpenedAt ?? -Infinity;
+    return aTime - bTime;
+  });
+
+  let bytesToFree = usage - softCap;
+  for (let i = 0; i < candidates.length && bytesToFree > 0; i += EVICTION_CHUNK_SIZE) {
+    const chunk = candidates.slice(i, i + EVICTION_CHUNK_SIZE);
+    const tx = db.transaction('items', 'readwrite');
+    for (const item of chunk) {
+      if (item.extractedHtml == null) continue;
+      bytesToFree -= item.extractedHtml.length;
+      await tx.store.put({ ...item, extractedHtml: null, id: item.id });
     }
+    await tx.done;
   }
-
-  // Pass 3: under continued per-feed storage pressure, drop extractedHtml
-  // from the oldest items until we fall below the threshold.
-  let bytes = totalBytes(items);
-  if (bytes <= FEED_STORAGE_THRESHOLD_BYTES) return;
-  const sorted = [...items].sort((a, b) => a.publishedAt - b.publishedAt);
-  for (const item of sorted) {
-    if (bytes <= FEED_STORAGE_THRESHOLD_BYTES) break;
-    if (item.extractedHtml == null) continue;
-    bytes -= item.extractedHtml.length;
-    await updateItem(item.id, { extractedHtml: null });
-  }
-}
-
-function totalBytes(items: Item[]): number {
-  let total = 0;
-  for (const i of items) total += (i.extractedHtml ?? '').length;
-  return total;
-}
-
-function looksTextOnly(html: string): boolean {
-  return !/<img\s[^>]*src="data:/.test(html);
 }

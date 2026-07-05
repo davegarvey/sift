@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { DB_NAME, DB_VERSION, type Feed, type Item, type Meta } from './types';
+import type { ItemFlag } from './flags';
 
 interface RssReaderDB extends DBSchema {
   feeds: {
@@ -19,9 +20,43 @@ interface RssReaderDB extends DBSchema {
     key: string;
     value: Meta;
   };
+  itemFlags: {
+    key: string;
+    value: ItemFlag;
+    indexes: {
+      'by-read': number;
+      'by-starred': number;
+      'by-feed-url': string;
+    };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<RssReaderDB>> | null = null;
+
+async function backfillFlags(db: IDBPDatabase<RssReaderDB>): Promise<void> {
+  const meta = await db.get('meta', 'flagsBackfilled');
+  if (meta?.value) return;
+  const itemsTx = db.transaction('items', 'readonly');
+  let cursor = await itemsTx.store.index('by-feed-published').openCursor();
+  const batch: ItemFlag[] = [];
+  while (cursor) {
+    const v = cursor.value;
+    batch.push({ id: v.id, feedUrl: v.feedUrl, read: v.read ? 1 : 0, starred: v.starred ? 1 : 0 });
+    if (batch.length >= 10000) {
+      const wtx = db.transaction('itemFlags', 'readwrite');
+      for (const flag of batch) await wtx.store.put(flag);
+      await wtx.done;
+      batch.length = 0;
+    }
+    cursor = await cursor.continue();
+  }
+  if (batch.length > 0) {
+    const wtx = db.transaction('itemFlags', 'readwrite');
+    for (const flag of batch) await wtx.store.put(flag);
+    await wtx.done;
+  }
+  await db.put('meta', { key: 'flagsBackfilled', value: true });
+}
 
 export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
   if (!dbPromise) {
@@ -49,7 +84,19 @@ export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
             store.createIndex('by-published', 'publishedAt');
           }
         }
+        // v3: add itemFlags store for boolean-indexed read/starred queries
+        if (_oldVersion < 3) {
+          if (!db.objectStoreNames.contains('itemFlags')) {
+            const flags = db.createObjectStore('itemFlags', { keyPath: 'id' });
+            flags.createIndex('by-read', 'read');
+            flags.createIndex('by-starred', 'starred');
+            flags.createIndex('by-feed-url', 'feedUrl');
+          }
+        }
       },
+    }).then(async (db) => {
+      await backfillFlags(db);
+      return db;
     });
   }
   return dbPromise;
