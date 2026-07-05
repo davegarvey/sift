@@ -299,7 +299,7 @@ a:hover { text-decoration: underline; }
     display: none;
   }
 
-  .sidebar-header {
+  .app-shell .sidebar-header {
     display: none;
   }
 
@@ -338,6 +338,10 @@ a:hover { text-decoration: underline; }
     display: block;
   }
   .sidebar-action.desktop-only {
+    display: none;
+  }
+
+  .app-shell .sidebar-collapse {
     display: none;
   }
 }
