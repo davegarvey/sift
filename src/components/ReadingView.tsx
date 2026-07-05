@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo, Show } from 'solid-js';
+import { createSignal, createEffect, createMemo, Show, onMount, onCleanup } from 'solid-js';
 import { useApp } from '../state';
 import { ArrowLeft, ChevronLeft, ChevronRight, CircleQuestionMark, ExternalLink, Star } from 'lucide-solid';
 import { openItemForReading } from '../articles/service';
@@ -10,7 +10,11 @@ export function ReadingView() {
   const [body, setBody] = createSignal<string>('');
   const [extractionFailed, setExtractionFailed] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
+  const [showChromeTitle, setShowChromeTitle] = createSignal(false);
+  const [displayTitle, setDisplayTitle] = createSignal('');
 
+  let titleRef: HTMLHeadingElement | undefined;
+  let containerRef: HTMLDivElement | undefined;
   let scrollRef: HTMLDivElement | undefined;
   let lastItemId: string | undefined;
 
@@ -50,9 +54,34 @@ export function ReadingView() {
       setBody(result.bodyHtml);
       setExtractionFailed(result.extractionFailed);
       setLoading(false);
-      scrollRef?.scrollTo({ top: 0, behavior: 'smooth' });
+      containerRef?.scrollTo({ top: 0 });
     });
   });
+
+  onMount(() => {
+    if (!titleRef || !containerRef) return;
+    const observer = new IntersectionObserver(
+      ([e]) => setShowChromeTitle(!e.isIntersecting),
+      { root: containerRef, rootMargin: '-35px 0px 0px 0px' }
+    );
+    observer.observe(titleRef);
+    onCleanup(() => observer.disconnect());
+  });
+
+  createEffect(() => {
+    if (loading()) setShowChromeTitle(false);
+  });
+
+  createEffect(() => {
+    const item = currentItem();
+    if (item && !loading()) setDisplayTitle(item.title);
+  });
+
+  createEffect(() => {
+    const item = currentItem();
+    document.title = item ? `${item.title} — Sift` : 'Sift';
+  });
+  onCleanup(() => { document.title = 'Sift'; });
 
   const toggleStarClick = async () => {
     const item = currentItem();
@@ -67,86 +96,94 @@ export function ReadingView() {
   const singleItem = () => ctx.items().length <= 1;
 
   return (
-    <main class="reading">
+    <main class="reading" ref={containerRef}>
       <div class="reading-chrome">
-        <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)">
-          <ArrowLeft size={14} />
-        </button>
-        <span class="chrome-spacer" />
-        <div class="mobile-only chrome-chevrons">
-          <button
-            class="chrome-chevron"
-            disabled={!hasPrev()}
-            onClick={() => navigate(-1)}
-            title="Previous article (j)"
-            aria-label="Previous article"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <button
-            class="chrome-chevron"
-            disabled={!hasNext()}
-            onClick={() => navigate(1)}
-            title="Next article (k)"
-            aria-label="Next article"
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
-        <button
-          class="star"
-          onClick={() => void toggleStarClick()}
-          title={currentItem()?.starred ? 'Unstar (s)' : 'Star (s)'}
-          aria-pressed={currentItem()?.starred ?? false}
-          aria-label={currentItem()?.starred ? 'Unstar' : 'Star'}
-        >
-          <Star size={14} fill={currentItem()?.starred ? 'currentColor' : 'none'} />
-        </button>
-        <a
-          class="open-original"
-          href={currentItem()?.link ?? '#'}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Open original"
-        >
-          <ExternalLink size={14} />
-        </a>
-        <button
-          class="desktop-only"
-          title="Keyboard shortcuts (?)"
-          onClick={() => ctx.openModal({ kind: 'shortcuts' })}
-        >
-          <CircleQuestionMark size={14} />
-        </button>
+          <div class="reading-chrome-inner">
+            <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)">
+              <ArrowLeft size={14} />
+            </button>
+            <span class="chrome-spacer">
+              <span class="chrome-title" data-shown={showChromeTitle() || undefined} data-loading={loading() || undefined}>
+                {displayTitle()}
+              </span>
+            </span>
+            <div class="mobile-only chrome-chevrons">
+              <button
+                class="chrome-chevron"
+                disabled={!hasPrev()}
+                onClick={() => navigate(-1)}
+                title="Previous article (k)"
+                aria-label="Previous article"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                class="chrome-chevron"
+                disabled={!hasNext()}
+                onClick={() => navigate(1)}
+                title="Next article (j)"
+                aria-label="Next article"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+            <button
+              class="star"
+              onClick={() => void toggleStarClick()}
+              title={currentItem()?.starred ? 'Unstar (s)' : 'Star (s)'}
+              aria-pressed={currentItem()?.starred ?? false}
+              aria-label={currentItem()?.starred ? 'Unstar' : 'Star'}
+            >
+              <Star size={14} fill={currentItem()?.starred ? 'currentColor' : 'none'} />
+            </button>
+            <a
+              class="open-original"
+              href={currentItem()?.link ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open original"
+            >
+              <ExternalLink size={14} />
+            </a>
+            <button
+              class="desktop-only"
+              title="Keyboard shortcuts (?)"
+              onClick={() => ctx.openModal({ kind: 'shortcuts' })}
+            >
+              <CircleQuestionMark size={14} />
+            </button>
+          </div>
       </div>
 
       <div class="reading-body" ref={scrollRef}>
-        <Show when={!loading() && currentItem()}>
-          <div class="reading-content">
-            <h1 class="reading-title">{currentItem()!.title}</h1>
-            <div class="byline">
-              <Show when={currentItem()!.author}>
-                by {currentItem()!.author}{' · '}
-              </Show>
-              {feedName()}
-              {' · '}
-              <span>{humanRelativeTime(new Date(currentItem()!.publishedAt))}</span>
-            </div>
-            <Show when={extractionFailed()}>
-              <div class="extraction-notice">
-                <span>Couldn't extract this article.</span>
-                <a
-                  class="open-original"
-                  href={currentItem()!.link ?? '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink size={14} />
-                </a>
+        <Show when={currentItem()}>
+          <h1 class="reading-title" ref={titleRef}>{currentItem()!.title}</h1>
+          <Show when={!loading()}>
+            <div class="reading-content">
+              <div class="byline">
+                <Show when={currentItem()!.author}>
+                  by {currentItem()!.author}{' · '}
+                </Show>
+                {feedName()}
+                {' · '}
+                <span>{humanRelativeTime(new Date(currentItem()!.publishedAt))}</span>
               </div>
-            </Show>
-            <div innerHTML={body()} />
-          </div>
+              <Show when={extractionFailed()}>
+                <div class="extraction-notice">
+                  <span>Couldn't extract this article.</span>
+                  <a
+                    class="open-original"
+                    href={currentItem()!.link ?? '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                </div>
+              </Show>
+              <div innerHTML={body()} />
+            </div>
+          </Show>
         </Show>
 
       </div>
