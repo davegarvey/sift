@@ -4,6 +4,7 @@ import { createStore } from 'solid-js/store';
 import { listFeeds, upsertFeed, unsubscribeFeed } from './db/feeds';
 import { listItems, listItemsByFeed, markRead } from './db/items';
 import type { Feed, Item } from './db/types';
+import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
 import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
 import { refreshStaleFeeds, fetchingState, startScheduler } from './feeds/scheduler';
 
@@ -42,7 +43,7 @@ interface AppContext {
   reloadFeeds: () => Promise<Feed[]>;
   reloadItems: () => Promise<void>;
   setRiverScope: (feedUrl: string | null) => void;
-  openItem: (item: Item) => Promise<void>;
+  openItem: (item: Item, replace?: boolean) => Promise<void>;
   closeReading: () => Promise<void>;
   toggleSidebar: () => void;
   toggleSidebarDesktop: () => void;
@@ -174,12 +175,15 @@ export const AppProvider: ParentComponent = (props) => {
     setState({ riverScope: feedUrl, focusedIndex: 0, view: 'river' });
   };
 
-  const openItem = async (item: Item) => {
+  const openItem = async (item: Item, replace = false) => {
     setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id });
-    history.pushState(null, '');
+    if (replace) {
+      history.replaceState(null, '', itemUrl(item));
+    } else {
+      history.pushState(null, '', itemUrl(item));
+    }
     if (!item.read) {
       await markRead(item.id);
-      // Optimistic: caller can reload items when needed.
     }
   };
 
@@ -190,6 +194,7 @@ export const AppProvider: ParentComponent = (props) => {
       // reload failure is non-fatal; still switch back to river
     }
     setState({ view: 'river', currentItem: null });
+    history.replaceState(null, '', '/');
   };
 
   const toggleSidebar = () => setState({ sidebarOpen: !state.sidebarOpen, sidebarHiddenDesktop: false });
@@ -287,6 +292,17 @@ export const AppProvider: ParentComponent = (props) => {
         : null;
     setState({ riverScope: validFeed });
     await reloadItems();
+    // If the URL references a specific article, restore it.
+    const hash = parseItemIdFromUrl();
+    if (hash) {
+      const item = items().find(i => hashId(i.id) === hash);
+      if (item) {
+        setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id });
+        if (!item.read) {
+          await markRead(item.id);
+        }
+      }
+    }
     startScheduler();
     // After the first refresh sweep, keep feeds/items in sync.
     setInterval(async () => {
