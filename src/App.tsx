@@ -42,13 +42,13 @@ function Shell() {
         ctx.jumpTo(1);
         const items = ctx.items();
         const item = items[ctx.state.focusedIndex];
-        if (item) void ctx.openItem(item);
+        if (item) void ctx.openItem(item, true);
       } else if (e.key === 'k') {
         e.preventDefault();
         ctx.jumpTo(-1);
         const items = ctx.items();
         const item = items[ctx.state.focusedIndex];
-        if (item) void ctx.openItem(item);
+        if (item) void ctx.openItem(item, true);
       } else if (e.key === 'o') {
         e.preventDefault();
         const item = ctx.state.currentItem;

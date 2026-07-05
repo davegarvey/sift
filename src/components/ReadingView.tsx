@@ -34,7 +34,7 @@ export function ReadingView() {
     ctx.jumpTo(offset);
     const items = ctx.items();
     const item = items[ctx.state.focusedIndex];
-    if (item) void ctx.openItem(item);
+    if (item) void ctx.openItem(item, true);
   };
 
   const feedName = () =>
