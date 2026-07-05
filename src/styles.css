@@ -802,9 +802,11 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
 }
 
-.reading .reading-chrome .desktop-only {
-  display: inline-flex;
-  align-items: center;
+@media (min-width: 769px) {
+  .reading .reading-chrome .desktop-only {
+    display: inline-flex;
+    align-items: center;
+  }
 }
 
 /* Desktop chevron zones — hover-reveal prev/next in margin gutters. */
