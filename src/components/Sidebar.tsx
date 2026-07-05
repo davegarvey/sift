@@ -30,7 +30,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
         <div class="sidebar-header">
           <div class="sidebar-wordmark">sift</div>
           <button
-            class="sidebar-collapse"
+            class="sidebar-collapse desktop-only"
             title="Close sidebar"
             onClick={() => ctx.toggleSidebarDesktop()}
           >
