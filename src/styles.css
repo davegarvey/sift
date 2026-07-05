@@ -314,6 +314,14 @@ a:hover { text-decoration: underline; }
     display: none;
   }
 
+  .reading .reading-body {
+    padding: 16px 16px 64px;
+  }
+
+  .reading .reading-chrome-inner {
+    padding: 10px 16px;
+  }
+
   /* Drawer + backdrop. */
   .app-shell .sidebar {
     position: fixed;
@@ -763,7 +771,6 @@ a:hover { text-decoration: underline; }
 
 
 .reading .reading-chrome .chrome-chevrons {
-  display: flex;
   gap: 4px;
 }
 
@@ -801,40 +808,42 @@ a:hover { text-decoration: underline; }
 }
 
 /* Desktop chevron zones — hover-reveal prev/next in margin gutters. */
-.reading .reading-zone {
-  position: fixed;
-  z-index: 6;
-  width: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--subtext);
-  transition: opacity 0.15s ease;
-  top: 44px;
-  bottom: 0;
-}
-
-.reading .reading-zone-prev {
-  left: 0;
-}
-
-.reading .reading-zone-next {
-  right: 0;
-}
-
-@media (hover: hover) {
+@media (min-width: 769px) {
   .reading .reading-zone {
-    opacity: 0.15;
+    position: fixed;
+    z-index: 6;
+    width: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--subtext);
+    transition: opacity 0.15s ease;
+    top: 44px;
+    bottom: 0;
   }
-  .reading .reading-zone:hover {
-    opacity: 1;
-  }
-}
 
-.reading .reading-zone.ghosted {
-  opacity: 0.05;
-  cursor: default;
+  .reading .reading-zone-prev {
+    left: 0;
+  }
+
+  .reading .reading-zone-next {
+    right: 0;
+  }
+
+  @media (hover: hover) {
+    .reading .reading-zone {
+      opacity: 0.15;
+    }
+    .reading .reading-zone:hover {
+      opacity: 1;
+    }
+  }
+
+  .reading .reading-zone.ghosted {
+    opacity: 0.05;
+    cursor: default;
+  }
 }
 
 .reading .reading-body {
