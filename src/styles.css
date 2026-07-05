@@ -218,9 +218,7 @@ a:hover { text-decoration: underline; }
     color: var(--accent);
   }
 
-  .collapsed-action .palette-shortcut {
-    font-size: 13px;
-  }
+
 }
 
 .app-shell[data-reading="true"] {
@@ -342,6 +340,10 @@ a:hover { text-decoration: underline; }
   .app-shell[data-sidebar-hidden="true"] .sidebar {
     display: block;
     transform: translateX(-100%);
+  }
+
+  .sidebar-action.desktop-only {
+    display: none;
   }
 }
 

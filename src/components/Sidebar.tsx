@@ -1,6 +1,6 @@
 import { For, Show } from 'solid-js';
 import { useApp } from '../state';
-import { Settings, Plus, ChevronLeft, ChevronRight, TriangleAlert, X } from 'lucide-solid';
+import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, X } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
 import type { Feed } from '../db/types';
 
@@ -86,10 +86,10 @@ export function Sidebar(props: { onNavigate?: () => void }) {
         <div class="sidebar-actions-bottom">
           <button
             class="sidebar-action"
-            title="Search / Command palette (⌘K)"
+            title="Search / Command palette"
             onClick={() => ctx.openModal({ kind: 'palette' })}
           >
-            <span>⌘K</span>
+            <Search size={14} />
             <span>Palette</span>
           </button>
           <button
@@ -134,8 +134,8 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             </button>
           </div>
           <div class="collapsed-actions-bottom" onClick={(e) => e.stopPropagation()}>
-            <button class="collapsed-action" title="Search / Command palette (⌘K)" onClick={() => ctx.openModal({ kind: 'palette' })}>
-              <span class="palette-shortcut">⌘K</span>
+            <button class="collapsed-action" title="Search / Command palette" onClick={() => ctx.openModal({ kind: 'palette' })}>
+              <Search size={14} />
             </button>
             <button class="collapsed-action" title="Settings" onClick={() => ctx.openModal({ kind: 'settings' })}>
             <Settings size={14} />
