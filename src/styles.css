@@ -299,7 +299,7 @@ a:hover { text-decoration: underline; }
     display: none;
   }
 
-  .sidebar-collapse {
+  .sidebar-header {
     display: none;
   }
 
@@ -337,11 +337,6 @@ a:hover { text-decoration: underline; }
   .app-shell[data-sidebar-open="true"] .sidebar-backdrop {
     display: block;
   }
-  .app-shell[data-sidebar-hidden="true"] .sidebar {
-    display: block;
-    transform: translateX(-100%);
-  }
-
   .sidebar-action.desktop-only {
     display: none;
   }
