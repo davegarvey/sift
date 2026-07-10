@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Bump version and release
-        uses: davegarvey/grubble@v4
+        uses: davegarvey/grubble@v5
         with:
           push: true
           package-files: "package.json"
