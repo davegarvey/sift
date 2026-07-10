@@ -1,5 +1,6 @@
 import { onMount, onCleanup, Show, type JSX } from 'solid-js';
 import { AppProvider, useApp } from './state';
+import { hashId, parseItemIdFromUrl } from './routing';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { River } from './components/River';
@@ -102,7 +103,16 @@ function Shell() {
 
   const onKey = (e: KeyboardEvent) => nav(e);
   const onPop = () => {
-    if (ctx.state.view === 'reading') ctx.closeReading();
+    const path = window.location.pathname;
+    if (path === '/') {
+      if (ctx.state.view === 'reading') ctx.closeReading();
+    } else {
+      const hash = parseItemIdFromUrl();
+      if (hash) {
+        const item = ctx.items().find(i => hashId(i.id) === hash);
+        if (item) ctx.openItem(item, true);
+      }
+    }
   };
   onMount(() => {
     window.addEventListener('keydown', onKey);
