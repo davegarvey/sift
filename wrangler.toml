@@ -7,3 +7,12 @@ compatibility_flags = ["nodejs_compat"]
 binding = "ASSETS"
 directory = "./dist"
 not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sift-sync"
+database_id = "REPLACE_WITH_ACTUAL_ID"
+migrations_dir = "server/migrations"
+
+[triggers]
+crons = ["0 3 * * *"]

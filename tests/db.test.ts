@@ -79,6 +79,7 @@ describe('items store', () => {
     const db = await getDb();
     await db.clear('feeds');
     await db.clear('items');
+    await db.clear('itemFlags');
     await db.clear('meta');
   });
 

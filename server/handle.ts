@@ -5,14 +5,23 @@ import {
   fetchUpstream,
   badRequest,
   badGateway,
-  assertNoUrlLog,
 } from './fetch';
+import { assertNoUrlLog } from './log';
 import { Relay, sseResponse } from './relay';
 import { handleMcpRequest } from './mcp';
+import { createSyncRoutes } from './sync/routes';
 
 export type AppEnv = Env;
 
-export function createApp<E extends Env = AppEnv>(relay?: Relay): Hono<E> {
+export interface CreateAppOptions {
+  relay?: Relay;
+  db?: D1Database;
+  scheduledHandler?: (event: { scheduledTime: Date; waitUntil?: (p: Promise<unknown>) => void }) => Promise<void>;
+}
+
+export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}): Hono<E> {
+  const { relay: providedRelay, db, scheduledHandler } = options;
+  let relay = providedRelay;
   if (!relay && typeof process !== 'undefined' && process.env?.MCP_ENABLED === 'true') {
     relay = new Relay();
   }
@@ -168,6 +177,16 @@ export function createApp<E extends Env = AppEnv>(relay?: Relay): Hono<E> {
       });
       return handleMcpRequest(request, relay);
     });
+  }
+
+  // Sync routes — only registered when a D1 binding is provided.
+  if (db) {
+    const syncApp = createSyncRoutes(db);
+    app.route('/', syncApp);
+    if (scheduledHandler) {
+      // Mount scheduled handler as a module-level export so worker.ts can hook it.
+      (app as unknown as { __scheduledHandler?: typeof scheduledHandler }).__scheduledHandler = scheduledHandler;
+    }
   }
 
   // Static serving: served by adapter-supplied middleware below.

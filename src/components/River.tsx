@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createEffect } from 'solid-js';
 import { useApp } from '../state';
-import { markRead, toggleStar } from '../db/items';
+import { markRead } from '../db/items';
 import type { Item } from '../db/types';
 import { relativeTime } from '../util/time';
 import { Star } from 'lucide-solid';
@@ -68,10 +68,10 @@ export function River() {
       el.style.transform = '';
       if (dx > 60) {
         // swipe right → mark read
-        if (!item.read) void markRead(item.id).then(() => ctx.reloadItems());
+        if (!item.read) void ctx.markReadAndSync(item, true);
       } else if (dx < -60) {
         // swipe left → toggle star
-        void toggleStar(item.id).then(() => ctx.reloadItems());
+        void ctx.toggleStar(item);
       }
       cleanup();
     };
@@ -132,7 +132,7 @@ export function River() {
                   title={item.read ? 'Mark unread' : 'Mark read'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void markRead(item.id, !item.read).then(() => ctx.reloadItems());
+                    void ctx.markReadAndSync(item, !item.read);
                   }}
                   aria-label={item.read ? 'Mark unread' : 'Mark read'}
                 >
@@ -143,7 +143,7 @@ export function River() {
                   title={item.starred ? 'Unstar' : 'Star'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void toggleStar(item.id).then(() => ctx.reloadItems());
+                    void ctx.toggleStar(item);
                   }}
                   aria-label={item.starred ? 'Unstar' : 'Star'}
                 >

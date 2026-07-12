@@ -6,10 +6,14 @@ import type { ThemePreference } from '../db/types';
 import { serializeOpml } from '../opml/serialize';
 import { parseOpml } from '../opml/parse';
 import { buildMergePreview, applyMerge } from '../opml/merge';
+import { isSyncAvailable } from '../sync/capabilities';
+import { PairDeviceModal } from './PairDeviceModal';
 
 export function SettingsDrawer() {
   const ctx = useApp();
   const settings = ctx.settings;
+  const [syncAvail, setSyncAvail] = createSignal<boolean | null>(null);
+  void isSyncAvailable().then(setSyncAvail);
 
   const setTheme = (theme: ThemePreference) => {
     void ctx.saveSettingsPatch({ theme });
@@ -117,6 +121,10 @@ export function SettingsDrawer() {
           </div>
         </Show>
 
+        <Show when={syncAvail()}>
+          <SyncSection />
+        </Show>
+
         <div class="group">
           <h3>About</h3>
           <p style={{ color: "var(--subtext)", "line-height": "1.5" }}>
@@ -132,6 +140,80 @@ export function SettingsDrawer() {
         <span style={{ color: "var(--overlay)", "margin-right": "auto" }}>v{version}</span>
         <button class="btn primary" onClick={() => ctx.closeModal()}>Done</button>
       </div>
+    </div>
+  );
+}
+
+function SyncSection() {
+  const ctx = useApp();
+  const [pairMode, setPairMode] = createSignal<'source' | 'receiver' | null>(null);
+  const [confirmDisable, setConfirmDisable] = createSignal(false);
+
+  const enabled = () => Boolean(ctx.syncKey());
+  const lastSyncedDisplay = createMemo(() => {
+    const last = ctx.settings().lastSyncAt;
+    if (!last) return 'never';
+    const sec = Math.floor((Date.now() - last) / 1000);
+    if (sec < 60) return 'just now';
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+    return `${Math.floor(sec / 86400)}d ago`;
+  });
+
+  const enable = async () => {
+    await ctx.enableSync();
+  };
+
+  const disable = async () => {
+    if (!confirm('Your other devices will stop syncing. Server data is kept until you generate a new key. Continue?')) return;
+    await ctx.disableSync();
+    setConfirmDisable(false);
+  };
+
+  const regenerate = async () => {
+    if (!confirm('Generate a new sync key? Your other devices will stop syncing.')) return;
+    await ctx.regenerateSyncKey();
+  };
+
+  return (
+    <div class="group">
+      <h3>Sync</h3>
+      <p style={{ color: 'var(--subtext)', 'font-size': '13px', 'line-height': '1.5', margin: '0 0 8px' }}>
+        Sync copies your subscriptions and read state between devices using a server-stored key.
+        There is no account; if you lose the key, server data is not recoverable.
+      </p>
+      <Show
+        when={enabled()}
+        fallback={
+          <div class="row">
+            <button class="btn" onClick={() => void enable()}>
+              Enable sync
+            </button>
+            <button class="btn subtle" onClick={() => setPairMode('receiver')}>
+              Have a key? Pair…
+            </button>
+          </div>
+        }
+      >
+        <div class="row">
+          <label>Last synced</label>
+          <span style={{ color: 'var(--subtext)' }}>{lastSyncedDisplay()}</span>
+        </div>
+        <div class="row">
+          <button class="btn" onClick={() => void ctx.syncNow()}>Sync now</button>
+          <button class="btn subtle" onClick={() => setPairMode('source')}>Pair device</button>
+        </div>
+        <div class="row">
+          <button class="btn subtle" onClick={() => void regenerate()}>Regenerate key</button>
+          <button class="btn danger" onClick={() => void disable()}>Disable sync</button>
+        </div>
+        <div style={{ 'font-size': '12px', color: 'var(--subtext)', 'line-height': '1.5' }}>
+          Save your sync key somewhere safe (e.g., a password manager). If you lose it, server data is not recoverable.
+        </div>
+      </Show>
+      <Show when={pairMode()}>
+        <PairDeviceModal mode={pairMode()!} onClose={() => setPairMode(null)} />
+      </Show>
     </div>
   );
 }

@@ -39,5 +39,4 @@ export function badGateway(message: string): Response {
   return new Response(message, { status: 502 });
 }
 
-export function assertNoUrlLog(_input: unknown): void {
-}
+export { assertNoUrlLog } from './log';

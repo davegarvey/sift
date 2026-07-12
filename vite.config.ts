@@ -16,7 +16,7 @@ function honoDevMiddleware() {
     configureServer(server: ViteDevServer) {
       const mcpEnabled = process.env.MCP_ENABLED === 'true';
       const relay = mcpEnabled ? new Relay() : undefined;
-      const devApp = createApp(relay);
+      const devApp = createApp({ relay });
       console.log(mcpEnabled ? 'MCP server enabled — http://localhost:8787/mcp' : 'MCP server disabled — set MCP_ENABLED=true in .env to enable');
       server.middlewares.use(
         async (

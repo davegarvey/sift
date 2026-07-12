@@ -83,6 +83,10 @@ export interface AppSettings {
   /** @deprecated No longer used. Kept for backward compat with persisted settings. */
   readFilter?: 'unread' | 'all';
   mcpEnabled: boolean;
+  /** 128-bit sync key as base64url (22 chars). Null = sync not enabled. */
+  syncKey?: string | null;
+  /** Monotonic server timestamp of the last successful pull. */
+  lastSyncAt?: number | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -91,4 +95,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastRefreshRunAt: null,
   lastFeedUrl: null,
   mcpEnabled: false,
+  syncKey: null,
+  lastSyncAt: null,
 };
