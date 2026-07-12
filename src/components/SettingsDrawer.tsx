@@ -7,7 +7,8 @@ import { serializeOpml } from '../opml/serialize';
 import { parseOpml } from '../opml/parse';
 import { buildMergePreview, applyMerge } from '../opml/merge';
 import { isSyncAvailable } from '../sync/capabilities';
-import { PairDeviceModal } from './PairDeviceModal';
+import { issueOtp, redeemCode } from '../sync/client';
+import { renderSyncKeyQr } from '../sync/qr';
 
 export function SettingsDrawer() {
   const ctx = useApp();
@@ -125,16 +126,6 @@ export function SettingsDrawer() {
           <SyncSection />
         </Show>
 
-        <div class="group">
-          <h3>About</h3>
-          <p style={{ color: "var(--subtext)", "line-height": "1.5" }}>
-            Sift — a browser-first RSS reader. MIT licensed. Local-only storage.
-          </p>
-          <a href="https://github.com/davegarvey/sift" target="_blank" rel="noopener noreferrer"
-             style={{ "line-height": "1.5" }}>
-            View source on GitHub <ExternalLink size={12} />
-          </a>
-        </div>
       </div>
       <div class="modal-footer">
         <span style={{ color: "var(--overlay)", "margin-right": "auto" }}>v{version}</span>
@@ -146,73 +137,136 @@ export function SettingsDrawer() {
 
 function SyncSection() {
   const ctx = useApp();
-  const [pairMode, setPairMode] = createSignal<'source' | 'receiver' | null>(null);
-  const [confirmDisable, setConfirmDisable] = createSignal(false);
-
+  const [code, setCode] = createSignal<string | null>(null);
+  const [expiresAt, setExpiresAt] = createSignal<number | null>(null);
+  const [copied, setCopied] = createSignal(false);
+  const [pairInput, setPairInput] = createSignal('');
+  const [pairError, setPairError] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal(false);
   const enabled = () => Boolean(ctx.syncKey());
-  const lastSyncedDisplay = createMemo(() => {
-    const last = ctx.settings().lastSyncAt;
-    if (!last) return 'never';
-    const sec = Math.floor((Date.now() - last) / 1000);
-    if (sec < 60) return 'just now';
-    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-    if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-    return `${Math.floor(sec / 86400)}d ago`;
-  });
 
-  const enable = async () => {
+  const generateCode = async () => {
+    setBusy(true);
+    try {
+      const res = await issueOtp();
+      setCode(res.code);
+      setExpiresAt(res.expiresAt);
+    } catch {
+      setCode(null);
+      setExpiresAt(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyCode = async () => {
+    if (!code()) return;
+    await navigator.clipboard.writeText(code()!);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const doPair = async () => {
+    const v = pairInput().trim();
+    if (!v) return;
+    if (v.length !== 8) {
+      setPairError('Enter an 8-character pairing code');
+      return;
+    }
+    setBusy(true);
+    setPairError(null);
+    try {
+      const key = await redeemCode(v);
+      await ctx.pairSyncWithKey(key);
+      setPairInput('');
+    } catch (e) {
+      setPairError(e instanceof Error ? e.message : 'Pairing failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleOn = async () => {
     await ctx.enableSync();
   };
 
-  const disable = async () => {
-    if (!confirm('Your other devices will stop syncing. Server data is kept until you generate a new key. Continue?')) return;
-    await ctx.disableSync();
-    setConfirmDisable(false);
-  };
-
-  const regenerate = async () => {
-    if (!confirm('Generate a new sync key? Your other devices will stop syncing.')) return;
-    await ctx.regenerateSyncKey();
+  const toggleOff = () => {
+    void ctx.disableSync();
+    setCode(null);
+    setExpiresAt(null);
   };
 
   return (
     <div class="group">
       <h3>Sync</h3>
-      <p style={{ color: 'var(--subtext)', 'font-size': '13px', 'line-height': '1.5', margin: '0 0 8px' }}>
-        Sync copies your subscriptions and read state between devices using a server-stored key.
-        There is no account; if you lose the key, server data is not recoverable.
-      </p>
-      <Show
-        when={enabled()}
-        fallback={
+      <div class="row">
+        <label>Enable sync</label>
+        <div
+          class="toggle"
+          classList={{ on: enabled() }}
+          onClick={() => void (enabled() ? toggleOff() : toggleOn())}
+          role="switch"
+          aria-checked={enabled()}
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' || e.key === ' ' ? (e.preventDefault(), void (enabled() ? toggleOff() : toggleOn())) : null}
+        />
+      </div>
+      <Show when={enabled()}>
+        <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '12px 0 6px' }}>
+          Join existing sync
+        </p>
+        <div class="row" style={{ 'border-bottom': 0 }}>
+          <form
+            onSubmit={(e) => { e.preventDefault(); void doPair(); }}
+            style={{ display: 'flex', gap: '6px', 'align-items': 'center', width: '100%' }}
+          >
+            <input
+              type="text"
+              value={pairInput()}
+              onInput={(e) => setPairInput(e.currentTarget.value)}
+              placeholder="Enter pairing code"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck={false}
+              disabled={busy()}
+              style={{ flex: 1, 'font-size': '13px', padding: '4px 6px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--hairline)', 'border-radius': '4px' }}
+            />
+            <button class="btn" disabled={busy() || !pairInput().trim()}>Pair</button>
+          </form>
+        </div>
+        <Show when={pairError()}>
+          <p class="error" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{pairError()}</p>
+        </Show>
+
+        <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '12px 0 6px' }}>
+          Start syncing another device
+        </p>
+        <Show when={code()} fallback={
           <div class="row">
-            <button class="btn" onClick={() => void enable()}>
-              Enable sync
-            </button>
-            <button class="btn subtle" onClick={() => setPairMode('receiver')}>
-              Have a key? Pair…
+            <button class="btn" disabled={busy()} onClick={() => void generateCode()}>
+              Generate code
             </button>
           </div>
-        }
-      >
-        <div class="row">
-          <label>Last synced</label>
-          <span style={{ color: 'var(--subtext)' }}>{lastSyncedDisplay()}</span>
-        </div>
-        <div class="row">
-          <button class="btn" onClick={() => void ctx.syncNow()}>Sync now</button>
-          <button class="btn subtle" onClick={() => setPairMode('source')}>Pair device</button>
-        </div>
-        <div class="row">
-          <button class="btn subtle" onClick={() => void regenerate()}>Regenerate key</button>
-          <button class="btn danger" onClick={() => void disable()}>Disable sync</button>
-        </div>
-        <div style={{ 'font-size': '12px', color: 'var(--subtext)', 'line-height': '1.5' }}>
-          Save your sync key somewhere safe (e.g., a password manager). If you lose it, server data is not recoverable.
-        </div>
-      </Show>
-      <Show when={pairMode()}>
-        <PairDeviceModal mode={pairMode()!} onClose={() => setPairMode(null)} />
+        }>
+          <div class="sync-grid">
+            <div class="sync-grid__cell">
+              <span class="sync-grid__label">Pairing code</span>
+              <span class="sync-grid__code">{code()}</span>
+              <span class="sync-grid__expiry">{expiresAt() && `valid for ${Math.ceil((expiresAt()! - Date.now()) / 60000)} min`}</span>
+              <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
+                {copied() ? <Check size={14} /> : <Copy size={14} />}
+                <span style={{ 'font-size': '12px' }}>Copy</span>
+              </button>
+              <span class="sync-grid__hint">Enter this code on your other device</span>
+            </div>
+            <div class="sync-grid__cell">
+              <span class="sync-grid__label">QR code</span>
+              <div class="sync-grid__qr" innerHTML={renderSyncKeyQr(ctx.syncKey()!)} />
+              <span class="sync-grid__hint">Open Sift on your other device and scan</span>
+            </div>
+          </div>
+        </Show>
       </Show>
     </div>
   );

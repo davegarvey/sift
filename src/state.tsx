@@ -10,7 +10,7 @@ import { refreshStaleFeeds, fetchingState, startScheduler } from './feeds/schedu
 import { enqueueFeed, enqueueFeedDelete, enqueueFlag } from './sync/queue';
 import { scheduleFlush } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
-import { clearStoredSyncKey, getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
+import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
 
 type ViewKind = 'river' | 'reading';
 type ModalKind =
@@ -19,7 +19,8 @@ type ModalKind =
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
   | { kind: 'add-feed' }
-  | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string };
+  | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string }
+  ;
 
 export interface AppState {
   view: ViewKind;
@@ -290,17 +291,24 @@ export const AppProvider: ParentComponent = (props) => {
     }
   };
 
+  const updateSettingsWith = async (patch: Partial<AppSettings>) => {
+    const next = { ...settings(), ...patch };
+    setSettings(next);
+    await saveSettings(next);
+  };
+
   const enableSync = async () => {
     let key = await getStoredSyncKey();
     if (!key) {
       key = generateSyncKey();
       await setStoredSyncKey(key);
     }
+    await updateSettingsWith({ syncKey: key });
     await triggerFirstTime();
   };
 
   const disableSync = async () => {
-    await clearStoredSyncKey();
+    await updateSettingsWith({ syncKey: null, lastSyncAt: null });
   };
 
   const pairSyncWithKey = async (key: string) => {
@@ -308,12 +316,14 @@ export const AppProvider: ParentComponent = (props) => {
       throw new Error('Invalid sync key format');
     }
     await setStoredSyncKey(key);
+    await updateSettingsWith({ syncKey: key });
     await triggerFirstTime();
   };
 
   const regenerateSyncKey = async () => {
     const newKey = generateSyncKey();
     await setStoredSyncKey(newKey);
+    await updateSettingsWith({ syncKey: newKey });
   };
 
   const syncNow = async () => {
