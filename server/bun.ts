@@ -9,7 +9,7 @@ loadEnv();
 
 const mcpEnabled = process.env.MCP_ENABLED === 'true';
 const relay = mcpEnabled ? new Relay() : undefined;
-const app = createApp(relay);
+const app = createApp({ relay });
 app.use('/assets/*', serveStatic({ root: './dist/assets' }));
 app.use('*', serveStatic({ root: './dist' }));
 

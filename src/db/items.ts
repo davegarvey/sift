@@ -1,39 +1,36 @@
 import { getDb } from './open';
 import type { Item } from './types';
-import { readToFlag, starToFlag } from './flags';
+import { readToFlag, starToFlag, READ_UNREAD, STAR_UNSTARRED } from './flags';
 
 export async function insertOrUpdateItem(item: Item): Promise<void> {
   const db = await getDb();
   const existing = await db.get('items', item.id);
   if (existing) {
-    await db.put('items', {
-      ...existing,
-      ...item,
-      read: existing.read,
-      starred: existing.starred,
-      firstOpenedAt: existing.firstOpenedAt,
-      extractedHtml: item.html ? null : (existing.extractedHtml ?? null),
-      id: existing.id,
-    });
-    // Sync flag if user state exists
+    // Update path: preserve user-controlled state (read, starred, firstOpenedAt).
+    // The feed's "default" read/starred values are not authoritative.
+    const merged = { ...existing, ...item, read: existing.read, starred: existing.starred, firstOpenedAt: existing.firstOpenedAt, id: existing.id };
+    if (item.html) merged.extractedHtml = null;
+    await db.put('items', merged);
+    // Sync flag if user state exists. Stored flag wins over the incoming item's
+    // defaults (sync state has higher priority than the feed's defaults).
     const flag = await db.get('itemFlags', item.id);
-    if (flag) {
-      await db.put('itemFlags', { ...flag, read: readToFlag(existing.read), starred: starToFlag(existing.starred) });
-    } else {
-      await db.put('itemFlags', {
-        id: item.id,
-        feedUrl: item.feedUrl,
-        read: readToFlag(existing.read),
-        starred: starToFlag(existing.starred),
-      });
-    }
-  } else {
-    await db.put('items', item);
     await db.put('itemFlags', {
       id: item.id,
       feedUrl: item.feedUrl,
-      read: readToFlag(item.read),
-      starred: starToFlag(item.starred),
+      read: flag ? flag.read : readToFlag(existing.read),
+      starred: flag ? flag.starred : starToFlag(existing.starred),
+    });
+  } else {
+    await db.put('items', item);
+    // Check if there's a stored sync flag (e.g., from a remote pull that
+    // arrived before the item was created locally). If present, the stored
+    // sync state wins over the new item's default read/starred values.
+    const existingFlag = await db.get('itemFlags', item.id);
+    await db.put('itemFlags', {
+      id: item.id,
+      feedUrl: item.feedUrl,
+      read: existingFlag ? existingFlag.read : readToFlag(item.read),
+      starred: existingFlag ? existingFlag.starred : starToFlag(item.starred),
     });
   }
 }
@@ -50,26 +47,25 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
   for (const item of items) {
     const existing = await itemsStore.get(item.id);
     if (existing) {
-      await itemsStore.put({
-        ...existing,
-        ...item,
-        read: existing.read,
-        starred: existing.starred,
-        firstOpenedAt: existing.firstOpenedAt,
-        extractedHtml: item.html ? null : (existing.extractedHtml ?? null),
-        id: existing.id,
-      });
+      // Update path: preserve user-controlled state (read, starred, firstOpenedAt).
+      const merged = { ...existing, ...item, read: existing.read, starred: existing.starred, firstOpenedAt: existing.firstOpenedAt, id: existing.id };
+      if (item.html) merged.extractedHtml = null;
+      await itemsStore.put(merged);
       const flag = await flagsStore.get(item.id);
-      if (flag) {
-        await flagsStore.put({ ...flag, read: readToFlag(existing.read), starred: starToFlag(existing.starred) });
-      }
-    } else {
-      await itemsStore.put(item);
       await flagsStore.put({
         id: item.id,
         feedUrl: item.feedUrl,
-        read: readToFlag(item.read),
-        starred: starToFlag(item.starred),
+        read: flag ? flag.read : readToFlag(existing.read),
+        starred: flag ? flag.starred : starToFlag(existing.starred),
+      });
+    } else {
+      await itemsStore.put(item);
+      const existingFlag = await flagsStore.get(item.id);
+      await flagsStore.put({
+        id: item.id,
+        feedUrl: item.feedUrl,
+        read: existingFlag ? existingFlag.read : readToFlag(item.read),
+        starred: existingFlag ? existingFlag.starred : starToFlag(item.starred),
       });
     }
   }

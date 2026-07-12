@@ -2,11 +2,15 @@ import { createSignal, createMemo, createContext, useContext } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { listFeeds, upsertFeed, unsubscribeFeed } from './db/feeds';
-import { listItems, listItemsByFeed, markRead } from './db/items';
+import { listItems, listItemsByFeed, markRead, toggleStar as dbToggleStar } from './db/items';
 import type { Feed, Item } from './db/types';
 import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
 import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
 import { refreshStaleFeeds, fetchingState, startScheduler } from './feeds/scheduler';
+import { enqueueFeed, enqueueFeedDelete, enqueueFlag } from './sync/queue';
+import { scheduleFlush } from './sync/push';
+import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
+import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
 
 type ViewKind = 'river' | 'reading';
 type ModalKind =
@@ -15,7 +19,8 @@ type ModalKind =
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
   | { kind: 'add-feed' }
-  | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string };
+  | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string }
+  ;
 
 export interface AppState {
   view: ViewKind;
@@ -52,11 +57,18 @@ interface AppContext {
   closeModal: () => void;
   jumpTo: (offset: number) => void;
   refreshAll: () => Promise<void>;
-  toggleStar: (item: Item) => Promise<void>;
   saveSettingsPatch: (patch: Partial<AppSettings>) => Promise<void>;
   mcpAvailable: () => boolean;
   mcpConnected: () => boolean;
   mcpNotifySync: () => Promise<void>;
+  enableSync: () => Promise<void>;
+  disableSync: () => Promise<void>;
+  pairSyncWithKey: (key: string) => Promise<void>;
+  regenerateSyncKey: () => Promise<void>;
+  syncNow: () => Promise<void>;
+  syncKey: () => string | null;
+  markReadAndSync: (item: Item, read: boolean) => Promise<void>;
+  toggleStar: (item: Item) => Promise<void>;
 }
 
 const Ctx = createContext<AppContext>();
@@ -104,7 +116,17 @@ export const AppProvider: ParentComponent = (props) => {
       const data = JSON.parse(e.data);
       if (typeof data.feed?.url !== 'string') return;
       try {
-        await upsertFeed(data.feed as Feed);
+        const feed = data.feed as Feed;
+        await upsertFeed(feed);
+        enqueueFeed({
+          feedUrl: feed.url,
+          folder: feed.folder ?? null,
+          folderAt: Date.now(),
+          title: feed.title,
+          titleAt: Date.now(),
+          deleted: 0,
+          deletedAt: Date.now(),
+        });
         await reloadFeeds();
         await fetch('/api/events', {
           method: 'POST',
@@ -119,6 +141,7 @@ export const AppProvider: ParentComponent = (props) => {
       if (typeof data.url !== 'string') return;
       try {
         await unsubscribeFeed(data.url);
+        enqueueFeedDelete(data.url, Date.now());
         if (state.riverScope === data.url) {
           setState({ riverScope: null });
         }
@@ -164,6 +187,34 @@ export const AppProvider: ParentComponent = (props) => {
     } catch {}
   };
 
+  const markReadAndSync = async (item: Item, read: boolean) => {
+    await markRead(item.id, read);
+    const now = Date.now();
+    enqueueFlag({
+      itemId: item.id,
+      feedUrl: item.feedUrl,
+      read: read ? 1 : 0,
+      readAt: now,
+      starred: item.starred ? 1 : 0,
+      starredAt: now,
+    });
+    scheduleFlush();
+  };
+
+  const toggleStarAndSync = async (item: Item) => {
+    await dbToggleStar(item.id);
+    const now = Date.now();
+    enqueueFlag({
+      itemId: item.id,
+      feedUrl: item.feedUrl,
+      read: item.read ? 1 : 0,
+      readAt: now,
+      starred: !item.starred ? 1 : 0,
+      starredAt: now,
+    });
+    scheduleFlush();
+  };
+
   const reloadFeeds = async () => setFeeds(await listFeeds());
   const reloadItems = async () => {
     if (state.riverScope != null) {
@@ -185,7 +236,7 @@ export const AppProvider: ParentComponent = (props) => {
       history.pushState(null, '', itemUrl(item));
     }
     if (!item.read) {
-      await markRead(item.id);
+      await markReadAndSync(item, true);
     }
   };
 
@@ -219,9 +270,8 @@ export const AppProvider: ParentComponent = (props) => {
     await reloadItems();
   };
 
-  const toggleStar = async () => {
-    // Forwarded by Reading view via the db mutation directly; this is just
-    // a UI hook to refresh state after a star toggle.
+  const toggleStar = async (item: Item) => {
+    await toggleStarAndSync(item);
     await reloadItems();
   };
 
@@ -239,6 +289,51 @@ export const AppProvider: ParentComponent = (props) => {
         stopMcp();
       }
     }
+  };
+
+  const updateSettingsWith = async (patch: Partial<AppSettings>) => {
+    const next = { ...settings(), ...patch };
+    setSettings(next);
+    await saveSettings(next);
+  };
+
+  const enableSync = async () => {
+    let key = await getStoredSyncKey();
+    if (!key) {
+      key = generateSyncKey();
+      await setStoredSyncKey(key);
+    }
+    await updateSettingsWith({ syncKey: key });
+    await triggerFirstTime();
+  };
+
+  const disableSync = async () => {
+    await updateSettingsWith({ syncKey: null, lastSyncAt: null });
+  };
+
+  const pairSyncWithKey = async (key: string) => {
+    if (!isValidSyncKey(key)) {
+      throw new Error('Invalid sync key format');
+    }
+    await setStoredSyncKey(key);
+    await updateSettingsWith({ syncKey: key });
+    await triggerFirstTime();
+  };
+
+  const regenerateSyncKey = async () => {
+    const newKey = generateSyncKey();
+    await setStoredSyncKey(newKey);
+    await updateSettingsWith({ syncKey: newKey });
+  };
+
+  const syncNow = async () => {
+    await pullNow();
+    await scheduleFlush();
+  };
+
+  const syncKey = (): string | null => {
+    const k = settings().syncKey;
+    return isValidSyncKey(k ?? null) ? (k as string) : null;
   };
 
   const value: AppContext = {
@@ -262,11 +357,18 @@ export const AppProvider: ParentComponent = (props) => {
     closeModal,
     jumpTo,
     refreshAll,
-    toggleStar,
     saveSettingsPatch,
     mcpAvailable,
     mcpConnected,
     mcpNotifySync,
+    enableSync,
+    disableSync,
+    pairSyncWithKey,
+    regenerateSyncKey,
+    syncNow,
+    syncKey,
+    markReadAndSync,
+    toggleStar,
   };
 
   // Boot: load settings + initial feeds/items, then kick the scheduler.
@@ -302,7 +404,7 @@ export const AppProvider: ParentComponent = (props) => {
       if (item) {
         setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id });
         if (!item.read) {
-          await markRead(item.id);
+          await markReadAndSync(item, true);
         }
       }
     }
@@ -318,8 +420,13 @@ export const AppProvider: ParentComponent = (props) => {
       if (document.visibilityState === 'visible') {
         await reloadFeeds();
         await reloadItems();
+        await pullIfStale(30_000);
       }
     }, { once: false });
+    // Online event → pull.
+    window.addEventListener('online', () => { void pullNow(); });
+    // Boot sync: pull / first-time setup.
+    void bootSync();
   })();
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;

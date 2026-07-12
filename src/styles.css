@@ -1114,6 +1114,9 @@ a:hover { text-decoration: underline; }
   gap: 8px;
 }
 
+.settings.modal-header { border-bottom: none; }
+.settings.modal-footer { border-top: none; }
+
 .btn {
   font-size: 13px;
   padding: 6px 12px;
@@ -1220,7 +1223,6 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: space-between;
   padding: 8px 0;
-  border-bottom: 1px solid var(--hairline);
 }
 
 .settings .row label {
@@ -1302,6 +1304,84 @@ a:hover { text-decoration: underline; }
   background: var(--surface);
 }
 
+/* Sync pairing grid. */
+.sync-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sync-grid__cell {
+  background: var(--mantle);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sync-grid__label {
+  font-size: 12px;
+  color: var(--subtext);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sync-grid__code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 24px;
+  letter-spacing: 4px;
+  font-weight: 600;
+  text-align: center;
+  padding: 12px 8px;
+  background: var(--crust, var(--base));
+  border-radius: 4px;
+  color: var(--text);
+}
+.sync-grid__expiry {
+  font-size: 12px;
+  color: var(--subtext);
+  text-align: center;
+}
+.sync-grid__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--subtext);
+  cursor: pointer;
+  font-size: 12px;
+}
+.sync-grid__copy:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.sync-grid__qr {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+  background: var(--crust, var(--base));
+  border-radius: 4px;
+}
+.sync-grid__qr svg {
+  width: 120px;
+  height: 120px;
+}
+.sync-grid__hint {
+  font-size: 12px;
+  color: var(--subtext);
+  line-height: 1.4;
+  text-align: center;
+}
+@media (max-width: 540px) {
+  .sync-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Shortcuts overlay. */
 .shortcuts-list { padding: 0; }
 
@@ -1370,3 +1450,4 @@ a:hover { text-decoration: underline; }
   clip: rect(0,0,0,0);
   border: 0;
 }
+

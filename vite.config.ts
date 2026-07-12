@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { createApp } from './server/handle.ts';
 import { Relay } from './server/relay.ts';
 import { loadEnv } from './server/env.ts';
+import { LocalD1Database } from './server/sync/local-d1.ts';
 
 loadEnv();
 
@@ -16,8 +17,8 @@ function honoDevMiddleware() {
     configureServer(server: ViteDevServer) {
       const mcpEnabled = process.env.MCP_ENABLED === 'true';
       const relay = mcpEnabled ? new Relay() : undefined;
-      const devApp = createApp(relay);
-      console.log(mcpEnabled ? 'MCP server enabled — http://localhost:8787/mcp' : 'MCP server disabled — set MCP_ENABLED=true in .env to enable');
+      const db = new LocalD1Database() as any;
+      const devApp = createApp({ relay, db });
       server.middlewares.use(
         async (
           req: IncomingMessage,
@@ -30,7 +31,8 @@ function honoDevMiddleware() {
             url.startsWith('/article') ||
             url.startsWith('/img') ||
             url.startsWith('/api') ||
-            url.startsWith('/mcp')
+            url.startsWith('/mcp') ||
+            url.startsWith('/sync')
           ) {
               try {
                 const host = req.headers.host ?? 'localhost';

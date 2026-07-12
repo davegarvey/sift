@@ -2,7 +2,6 @@ import { createSignal, createEffect, createMemo, Show, onMount, onCleanup } from
 import { useApp } from '../state';
 import { ArrowLeft, ChevronLeft, ChevronRight, CircleQuestionMark, ExternalLink, Star } from 'lucide-solid';
 import { openItemForReading } from '../articles/service';
-import { toggleStar, markRead } from '../db/items';
 import { humanRelativeTime } from '../util/time';
 
 export function ReadingView() {
@@ -46,7 +45,7 @@ export function ReadingView() {
     lastItemId = item.id;
 
     if (!item.read) {
-      void markRead(item.id).then(() => ctx.reloadItems());
+      void ctx.markReadAndSync(item, true);
     }
     setLoading(true);
     void openItemForReading(item.id).then((result) => {
@@ -86,11 +85,10 @@ export function ReadingView() {
   const toggleStarClick = async () => {
     const item = currentItem();
     if (!item) return;
-    await toggleStar(item.id);
+    await ctx.toggleStar(item);
     ctx.setState({
       currentItem: { ...item, starred: !item.starred },
     });
-    void ctx.reloadItems();
   };
 
   const singleItem = () => ctx.items().length <= 1;

@@ -33,6 +33,11 @@ export async function getFlag(id: string): Promise<ItemFlag | undefined> {
   return db.get('itemFlags', id);
 }
 
+export async function getItemFlags(): Promise<ItemFlag[]> {
+  const db = await getDb();
+  return db.getAll('itemFlags');
+}
+
 export async function setFlag(flag: ItemFlag): Promise<void> {
   const db = await getDb();
   await db.put('itemFlags', flag);

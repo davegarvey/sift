@@ -42,4 +42,10 @@ export default tseslint.config(
   {
     ignores: ['dist/**', 'node_modules/**', '.wrangler/**'],
   },
+  {
+    files: ['server/sync.ts', 'server/sync/**/*.ts'],
+    rules: {
+      'no-console': 'error',
+    },
+  },
 );

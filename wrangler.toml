@@ -3,7 +3,19 @@ main = "server/worker.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
+[build]
+command = "npm run build"
+
 [assets]
 binding = "ASSETS"
 directory = "./dist"
 not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sift-sync"
+database_id = "00d4053d-2d65-4f56-991b-e0804046bb13"
+migrations_dir = "server/migrations"
+
+[triggers]
+crons = ["0 3 * * *"]
