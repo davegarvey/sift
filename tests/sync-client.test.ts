@@ -143,7 +143,6 @@ describe('applyRemoteState', () => {
     });
     const items = await listItems(10);
     expect(items.length).toBe(1);
-    console.log('item.read:', items[0].read, 'item.starred:', items[0].starred, 'items[0]:', JSON.stringify(items[0]));
     expect(items[0].read).toBe(true);
     expect(items[0].starred).toBe(true);
   });
