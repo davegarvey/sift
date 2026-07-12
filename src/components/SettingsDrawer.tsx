@@ -262,7 +262,7 @@ function SyncSection() {
             </div>
             <div class="sync-grid__cell">
               <span class="sync-grid__label">QR code</span>
-              <div class="sync-grid__qr" innerHTML={renderSyncKeyQr(ctx.syncKey()!)} />
+              <div class="sync-grid__qr" innerHTML={renderSyncKeyQr(window.location.origin + '/?pair=' + code()!)} />
               <span class="sync-grid__hint">Open Sift on your other device and scan</span>
             </div>
           </div>

@@ -11,6 +11,7 @@ import { enqueueFeed, enqueueFeedDelete, enqueueFlag } from './sync/queue';
 import { scheduleFlush } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
+import { redeemCode } from './sync/client';
 
 type ViewKind = 'river' | 'reading';
 type ModalKind =
@@ -427,6 +428,20 @@ export const AppProvider: ParentComponent = (props) => {
     window.addEventListener('online', () => { void pullNow(); });
     // Boot sync: pull / first-time setup.
     void bootSync();
+    // QR auto-pairing: redeem ?pair= code on boot.
+    const params = new URLSearchParams(window.location.search);
+    const pairCode = params.get('pair');
+    if (pairCode) {
+      try {
+        const key = await redeemCode(pairCode);
+        await setStoredSyncKey(key);
+        await updateSettingsWith({ syncKey: key });
+        await triggerFirstTime();
+      } catch (e) {
+        console.error('QR pairing failed:', e);
+      }
+      history.replaceState(null, '', window.location.pathname);
+    }
   })();
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
