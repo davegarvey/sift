@@ -56,7 +56,8 @@ Copy `.env.example` to `.env` and set:
 - `npm start` — run the production node server (serves `dist/`, proxy, API, MCP, and sync routes)
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run lint` — eslint
-- `npm test` — vitest
+- `npm test` — vitest unit/integration tests
+- `npm run test:smoke` — Playwright smoke tests (requires `npm run dev`)
 - `npm run deploy` — `git pull && vite build && wrangler deploy`
 
 ## Privacy
