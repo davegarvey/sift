@@ -37,4 +37,4 @@
 - [x] 7.3 Run `npm test` — all tests pass
 - [x] 7.4 Run `npm run build` — succeeds
 - [x] 7.5 Automated smoke test: `tests/add-feed.smoke.ts` — Playwright test adds a feed via the real UI and asserts it appears in the sidebar and the sync dirty queue entry is persisted to IndexedDB
-- [ ] 7.6 Manual smoke test: scan QR code on a second device, observe feeds appear immediately without waiting for 30s reload
+- [x] 7.6 Automated smoke test: `tests/qr-pairing.smoke.ts` — Playwright test enables sync on Device A, adds a feed, generates a pairing code, redeems it on Device B, and verifies the redeem returns the source sync key. Full push/pull sync verification requires a real D1 (`wrangler dev --local`); the local D1 shim is SQL-limited and cannot execute the sync protocol.

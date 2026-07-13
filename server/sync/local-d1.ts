@@ -72,7 +72,11 @@ export class LocalD1Database {
   }
 
   async batch(stmts: any[]): Promise<unknown[]> {
-    return stmts.map((s) => ({ results: [], success: true, meta: {} }));
+    const out: unknown[] = [];
+    for (const s of stmts) {
+      out.push(s.run ? await s.run() : { results: [], success: true, meta: {} });
+    }
+    return out;
   }
 
   async dump(): Promise<ArrayBuffer> {
@@ -124,11 +128,27 @@ export class LocalD1Database {
       columnNames = ['row_at', 'value']; // fallback
     }
 
+    // Parse the VALUES expression list — each element is either `?`
+    // (consuming a param) or a literal (string, number, NULL).
     const row: Record<string, unknown> = {};
+    const rawValues = valuesMatch
+      ? valuesMatch[1].split(',').map((v) => v.trim())
+      : [];
     let paramIdx = 0;
-    for (const c of columnNames) {
-      row[c] = params[paramIdx] ?? null;
-      paramIdx++;
+    for (let ci = 0; ci < columnNames.length; ci++) {
+      const expr = rawValues[ci] ?? '';
+      if (expr === '?') {
+        row[columnNames[ci]] = params[paramIdx] ?? null;
+        paramIdx++;
+      } else if (expr === 'NULL') {
+        row[columnNames[ci]] = null;
+      } else if (/^\d+$/.test(expr)) {
+        row[columnNames[ci]] = parseInt(expr, 10);
+      } else if (expr.startsWith("'") && expr.endsWith("'")) {
+        row[columnNames[ci]] = expr.slice(1, -1);
+      } else {
+        row[columnNames[ci]] = expr;
+      }
     }
 
     // Build a key from primary key columns
@@ -202,16 +222,45 @@ export class LocalD1Database {
     const returningMatch = sql.match(/RETURNING\s+(\w+)/i);
     const returningCol = returningMatch ? returningMatch[1] : null;
 
+    // Count `?` in the SET clause so we know where the WHERE params start.
+    const setParamCount = (assignments.match(/\?/g) || []).length;
+
     const updated: Record<string, unknown>[] = [];
 
     for (const [, row] of table) {
-      if (!this._matchesWhere(row, whereClause, params)) continue;
+      if (!this._matchesWhere(row, whereClause, params, setParamCount)) continue;
 
-      const setParts = assignments.split(',');
-      for (const part of setParts) {
+      // Assemble CASE assignments into field sections so we can track
+      // param consumption correctly. Each field section (folder/title/
+      // deleted) contributes 2 case strings and 3 bind params:
+      //   [at, value, at]
+      // where the first CASE takes 2 params (at, value) and the second
+      // CASE takes 1 param (at, used for both comparison and new value).
+      const caseFields: string[] = [];
+      const otherParts: string[] = [];
+      for (const part of assignments.split(',')) {
         const trimmed = part.trim();
+        if (/^\w+\s*=\s*CASE/i.test(trimmed)) {
+          caseFields.push(trimmed);
+        } else {
+          otherParts.push(trimmed);
+        }
+      }
+      let paramOffset = 0;
+      for (let fi = 0; fi < caseFields.length; fi += 2) {
+        const caseStr = caseFields[fi];      // field = CASE ...
+        const atStr = caseFields[fi + 1];    // field_at = CASE ...
+        this._applyCase(row, caseStr, params, paramOffset);
+        paramOffset += 2; // consumed at (comparison) + value
+        if (atStr) {
+          // field_at CASE: both ? share the same bind (the "at" timestamp)
+          this._applyCase(row, atStr, params, paramOffset);
+          // But it only consumed 1 param (at), used for both ?s.
+        }
+        paramOffset += 1; // consumed at for the _at CASE
+      }
+      for (const trimmed of otherParts) {
         if (/^row_at\s*=\s*MAX/i.test(trimmed)) {
-          // row_at = MAX(...) — compute max of field_at columns
           const cols = trimmed.match(/COALESCE\((\w+),\s*(\d+)\)/g) ?? [];
           let max = 0;
           for (const c of cols) {
@@ -222,31 +271,7 @@ export class LocalD1Database {
             }
           }
           row.row_at = max;
-        } else if (/^\w+\s*=\s*CASE/i.test(trimmed)) {
-          // CASE WHEN field_at IS NULL OR ? > field_at THEN ? ELSE field END
-          const fieldMatch = trimmed.match(/^(\w+)\s*=\s*CASE/i);
-          if (fieldMatch) {
-            const fieldName = fieldMatch[1];
-            const atName = `${fieldName}_at`;
-
-            // Read params: at, value pairs
-            const paramSpec = trimmed.match(/(\?\s*>\s*\w+_at)/g);
-            const atParamIdx = params.findIndex((p) => typeof p === 'number');
-            const valueParamIdx = atParamIdx >= 0 ? atParamIdx : -1;
-
-            if (atParamIdx >= 0 && typeof params[atParamIdx] === 'number') {
-              const newAt = params[atParamIdx] as number;
-              const newValue = params[valueParamIdx + 1] ?? params[atParamIdx + 1];
-              const existingAt = row[atName] as number | null;
-
-              if (existingAt == null || newAt > existingAt) {
-                row[fieldName] = newValue;
-                row[atName] = newAt;
-              }
-            }
-          }
         } else {
-          // Simple assignment: column = value
           const eqMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/);
           if (eqMatch) {
             const col = eqMatch[1];
@@ -254,10 +279,18 @@ export class LocalD1Database {
             if (expr === 'NULL') {
               row[col] = null;
             } else if (expr.startsWith('?')) {
-              const idx = 0;
-              row[col] = params[idx + 1] ?? params[idx] ?? null;
+              row[col] = params[paramOffset] ?? null;
+              paramOffset += 1;
             } else if (expr.startsWith("'")) {
               row[col] = expr.slice(1, -1);
+            } else if (/^\w+\s*[+-]\s*\d+$/.test(expr)) {
+              // Arithmetic: column + N or column - N
+              const arith = expr.match(/^(\w+)\s*([+-])\s*(\d+)$/);
+              if (arith) {
+                const current = Number(row[arith[1]]) || 0;
+                const delta = parseInt(arith[3], 10);
+                row[col] = arith[2] === '+' ? current + delta : current - delta;
+              }
             } else {
               row[col] = expr;
             }
@@ -322,7 +355,13 @@ export class LocalD1Database {
     return rows;
   }
 
-  private _matchesWhere(row: Record<string, unknown>, whereClause: string, _params: unknown[]): boolean {
+  private _matchesWhere(
+    row: Record<string, unknown>,
+    whereClause: string,
+    _params: unknown[],
+    /** Number of SET params preceding the WHERE params in the bind array. */
+    whereParamOffset = 0,
+  ): boolean {
     const trimmed = whereClause.trim();
     if (!trimmed) return true;
 
@@ -334,60 +373,97 @@ export class LocalD1Database {
     const isNullMatch = trimmed.match(/^(\w+)\s+IS\s+NULL/i);
     if (isNullMatch) return row[isNullMatch[1]] == null;
 
-    // Handle AND chains
+    // Handle AND chains — track the param offset through each part.
     const parts = trimmed.split(/\s+AND\s+/i);
-    return parts.every((part) => this._matchesWhereSimple(row, part, _params));
+    let paramOffset = whereParamOffset;
+    return parts.every((part) => {
+      const result = this._paramMatch(row, part.trim(), _params, paramOffset);
+      paramOffset = result.nextOffset;
+      return result.matches;
+    });
   }
 
-  private _matchesWhereSimple(row: Record<string, unknown>, part: string, _params: unknown[]): boolean {
-    const trimmed = part.trim();
-
+  /** Match a single WHERE condition, consuming params starting at `offset`. */
+  private _paramMatch(
+    row: Record<string, unknown>,
+    trimmed: string,
+    _params: unknown[],
+    offset: number,
+  ): { matches: boolean; nextOffset: number } {
     // column = ?
     const eqMatch = trimmed.match(/^(\w+)\s*=\s*\?$/);
     if (eqMatch) {
       const col = eqMatch[1];
-      const idx = 0;
-      return row[col] === _params[idx];
+      return { matches: row[col] === _params[offset], nextOffset: offset + 1 };
     }
 
     // column != ?
     const neqMatch = trimmed.match(/^(\w+)\s*!=\s*\?$/);
     if (neqMatch) {
       const col = neqMatch[1];
-      const idx = 0;
-      return row[col] !== _params[idx];
+      return { matches: row[col] !== _params[offset], nextOffset: offset + 1 };
     }
 
     // column > ?
     const gtMatch = trimmed.match(/^(\w+)\s*>\s*\?$/);
     if (gtMatch) {
       const col = gtMatch[1];
-      const idx = 0;
-      return (row[col] as number) > (_params[idx] as number);
+      return { matches: (row[col] as number) > (_params[offset] as number), nextOffset: offset + 1 };
     }
 
     // column < ?
     const ltMatch = trimmed.match(/^(\w+)\s*<\s*\?$/);
     if (ltMatch) {
       const col = ltMatch[1];
-      const idx = 0;
-      return (row[col] as number) < (_params[idx] as number);
+      return { matches: (row[col] as number) < (_params[offset] as number), nextOffset: offset + 1 };
     }
 
-    // column = 1 (literals)
+    // column = 1 (literal integer)
     const eqLit = trimmed.match(/^(\w+)\s*=\s*(\d+)$/);
     if (eqLit) {
-      return row[eqLit[1]] === parseInt(eqLit[2]);
+      return { matches: row[eqLit[1]] === parseInt(eqLit[2]), nextOffset: offset };
     }
 
     // column IS NULL
     const isNullMatch = trimmed.match(/^(\w+)\s+IS\s+NULL$/i);
-    if (isNullMatch) return row[isNullMatch[1]] == null;
+    if (isNullMatch) return { matches: row[isNullMatch[1]] == null, nextOffset: offset };
 
     // deleted = 1 (tombstone check)
-    if (/^deleted\s*=\s*1$/.test(trimmed)) return row.deleted === 1;
+    if (/^deleted\s*=\s*1$/.test(trimmed)) return { matches: row.deleted === 1, nextOffset: offset };
 
-    return true;
+    return { matches: true, nextOffset: offset };
+  }
+
+  /**
+   * Apply a single CASE assignment.
+   *
+   * For value columns (field = CASE WHEN ... THEN ?) the binds are
+   * [at, value] — the first ? is the comparison timestamp, the second
+   * ? is the new value.
+   *
+   * For _at columns (field_at = CASE WHEN ... THEN ?) the binds have
+   * only [at] — both ?s share the same timestamp value.
+   */
+  private _applyCase(
+    row: Record<string, unknown>,
+    sql: string,
+    params: unknown[],
+    offset: number,
+  ): void {
+    const fieldMatch = sql.match(/^(\w+)\s*=\s*CASE/i);
+    if (!fieldMatch) return;
+    const fieldName = fieldMatch[1];
+    const isAtColumn = fieldName.endsWith('_at');
+    const atName = isAtColumn ? fieldName : `${fieldName}_at`;
+    const newAt = params[offset] as number | undefined;
+    if (newAt == null) return;
+    // For the _at column, both ? in the CASE use the same param.
+    const newValue = isAtColumn ? params[offset] : params[offset + 1];
+    const existingAt = row[atName] as number | null | undefined;
+    if (existingAt == null || newAt > existingAt) {
+      row[fieldName] = newValue;
+      if (!isAtColumn) row[atName] = newAt;
+    }
   }
 
   private _pkCols(name: string): string[] {
