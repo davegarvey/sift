@@ -1,5 +1,4 @@
 import { useApp } from '../state';
-import { unsubscribeFeed } from '../db/feeds';
 
 export function ConfirmUnsubscribeModal() {
   const ctx = useApp();
@@ -8,13 +7,8 @@ export function ConfirmUnsubscribeModal() {
   const { feedUrl, feedTitle } = modal;
 
   const handleConfirm = async () => {
-    await unsubscribeFeed(feedUrl);
-    await ctx.reloadFeeds();
-    await ctx.reloadItems();
+    await ctx.unsubscribeFeed(feedUrl);
     void ctx.mcpNotifySync();
-    if (ctx.state.riverScope === feedUrl) {
-      ctx.setRiverScope(null);
-    }
     ctx.closeModal();
   };
 
