@@ -350,7 +350,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           "folder_at = CASE WHEN folder_at IS NULL OR ? > folder_at THEN ? ELSE folder_at END",
         );
         fieldBinds.push(f.folder.at, f.folder.value === null ? null : JSON.stringify(f.folder.value));
-        fieldBinds.push(f.folder.at);
+        fieldBinds.push(f.folder.at, f.folder.at);
         maxAt = Math.max(maxAt, f.folder.at);
       }
       if (f.title !== undefined) {
@@ -359,7 +359,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           "title_at = CASE WHEN title_at IS NULL OR ? > title_at THEN ? ELSE title_at END",
         );
         fieldBinds.push(f.title.at, f.title.value);
-        fieldBinds.push(f.title.at);
+        fieldBinds.push(f.title.at, f.title.at);
         maxAt = Math.max(maxAt, f.title.at);
       }
       if (f.deleted !== undefined) {
@@ -368,18 +368,23 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           "deleted_at = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted_at END",
         );
         fieldBinds.push(f.deleted.at, f.deleted.value);
-        fieldBinds.push(f.deleted.at);
+        fieldBinds.push(f.deleted.at, f.deleted.at);
         maxAt = Math.max(maxAt, f.deleted.at);
       }
-      fieldSets.push(
-        "row_at = MAX(COALESCE(folder_at, 0), COALESCE(title_at, 0), COALESCE(deleted_at, 0))",
-      );
       stmts.push(
         db
           .prepare(
             `UPDATE feeds SET ${fieldSets.join(', ')} WHERE sync_key = ? AND feed_url = ?`,
           )
           .bind(...fieldBinds, syncKey, f.feedUrl),
+      );
+      // row_at is set in a separate UPDATE because SQLite evaluates all SET
+      // expressions against the old row values — MAX(COALESCE(field_at, 0))
+      // inside the same statement would always see NULL from the INSERT.
+      stmts.push(
+        db
+          .prepare('UPDATE feeds SET row_at = ? WHERE sync_key = ? AND feed_url = ? AND ? > COALESCE(row_at, 0)')
+          .bind(maxAt, syncKey, f.feedUrl, maxAt),
       );
       assertNoUrlLog(f.feedUrl);
     }
@@ -426,7 +431,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           "read_at = CASE WHEN read_at IS NULL OR ? > read_at THEN ? ELSE read_at END",
         );
         fieldBinds.push(g.read.at, g.read.value);
-        fieldBinds.push(g.read.at);
+        fieldBinds.push(g.read.at, g.read.at);
         maxAt = Math.max(maxAt, g.read.at);
       }
       if (g.starred !== undefined) {
@@ -435,16 +440,18 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           "starred_at = CASE WHEN starred_at IS NULL OR ? > starred_at THEN ? ELSE starred_at END",
         );
         fieldBinds.push(g.starred.at, g.starred.value);
-        fieldBinds.push(g.starred.at);
+        fieldBinds.push(g.starred.at, g.starred.at);
         maxAt = Math.max(maxAt, g.starred.at);
       }
-      fieldSets.push(
-        "row_at = MAX(COALESCE(read_at, 0), COALESCE(starred_at, 0))",
-      );
       stmts.push(
         db
           .prepare(`UPDATE flags SET ${fieldSets.join(', ')} WHERE sync_key = ? AND item_id = ?`)
           .bind(...fieldBinds, syncKey, g.itemId),
+      );
+      stmts.push(
+        db
+          .prepare('UPDATE flags SET row_at = ? WHERE sync_key = ? AND item_id = ? AND ? > COALESCE(row_at, 0)')
+          .bind(maxAt, syncKey, g.itemId, maxAt),
       );
       assertNoUrlLog(g.feedUrl);
     }

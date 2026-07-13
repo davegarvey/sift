@@ -1,17 +1,18 @@
 import { createSignal, createMemo, createContext, useContext } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { listFeeds, upsertFeed, unsubscribeFeed } from './db/feeds';
+import { listFeeds } from './db/feeds';
 import { listItems, listItemsByFeed, markRead, toggleStar as dbToggleStar } from './db/items';
 import type { Feed, Item } from './db/types';
 import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
 import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
 import { refreshStaleFeeds, fetchingState, startScheduler } from './feeds/scheduler';
-import { enqueueFeed, enqueueFeedDelete, enqueueFlag } from './sync/queue';
+import { enqueueFlag } from './sync/queue';
 import { scheduleFlush } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
 import { redeemCode } from './sync/client';
+import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, type SubscribeInput } from './feeds/service';
 
 type ViewKind = 'river' | 'reading';
 type ModalKind =
@@ -68,6 +69,8 @@ interface AppContext {
   regenerateSyncKey: () => Promise<void>;
   syncNow: () => Promise<void>;
   syncKey: () => string | null;
+  subscribeFeed: (input: SubscribeInput) => Promise<void>;
+  unsubscribeFeed: (feedUrl: string) => Promise<void>;
   markReadAndSync: (item: Item, read: boolean) => Promise<void>;
   toggleStar: (item: Item) => Promise<void>;
 }
@@ -118,17 +121,12 @@ export const AppProvider: ParentComponent = (props) => {
       if (typeof data.feed?.url !== 'string') return;
       try {
         const feed = data.feed as Feed;
-        await upsertFeed(feed);
-        enqueueFeed({
-          feedUrl: feed.url,
-          folder: feed.folder ?? null,
-          folderAt: Date.now(),
+        await subscribeFeedCtx({
+          url: feed.url,
           title: feed.title,
-          titleAt: Date.now(),
-          deleted: 0,
-          deletedAt: Date.now(),
+          folder: feed.folder,
+          htmlUrl: feed.htmlUrl,
         });
-        await reloadFeeds();
         await fetch('/api/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -141,12 +139,7 @@ export const AppProvider: ParentComponent = (props) => {
       const data = JSON.parse(e.data);
       if (typeof data.url !== 'string') return;
       try {
-        await unsubscribeFeed(data.url);
-        enqueueFeedDelete(data.url, Date.now());
-        if (state.riverScope === data.url) {
-          setState({ riverScope: null });
-        }
-        await reloadFeeds();
+        await unsubscribeFeedCtx(data.url);
         await fetch('/api/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -337,6 +330,21 @@ export const AppProvider: ParentComponent = (props) => {
     return isValidSyncKey(k ?? null) ? (k as string) : null;
   };
 
+  const subscribeFeedCtx = async (input: SubscribeInput) => {
+    await subscribeFeedSvc(input);
+    await reloadFeeds();
+    await reloadItems();
+  };
+
+  const unsubscribeFeedCtx = async (feedUrl: string) => {
+    await unsubscribeFeedSvc(feedUrl);
+    if (state.riverScope === feedUrl) {
+      setRiverScope(null);
+    }
+    await reloadFeeds();
+    await reloadItems();
+  };
+
   const value: AppContext = {
     state,
     setState,
@@ -368,6 +376,8 @@ export const AppProvider: ParentComponent = (props) => {
     regenerateSyncKey,
     syncNow,
     syncKey,
+    subscribeFeed: subscribeFeedCtx,
+    unsubscribeFeed: unsubscribeFeedCtx,
     markReadAndSync,
     toggleStar,
   };
@@ -427,7 +437,7 @@ export const AppProvider: ParentComponent = (props) => {
     // Online event → pull.
     window.addEventListener('online', () => { void pullNow(); });
     // Boot sync: pull / first-time setup.
-    void bootSync();
+    await bootSync();
     // QR auto-pairing: redeem ?pair= code on boot.
     const params = new URLSearchParams(window.location.search);
     const pairCode = params.get('pair');
@@ -437,6 +447,8 @@ export const AppProvider: ParentComponent = (props) => {
         await setStoredSyncKey(key);
         await updateSettingsWith({ syncKey: key });
         await triggerFirstTime();
+        await reloadFeeds();
+        await reloadItems();
       } catch (e) {
         console.error('QR pairing failed:', e);
       }

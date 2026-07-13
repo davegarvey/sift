@@ -1,6 +1,6 @@
 import type { ParsedSubscription } from './parse';
 import { listFeeds } from '../db/feeds';
-import { upsertFeed } from '../db/feeds';
+import { subscribeFeed } from '../feeds/service';
 
 /** Strip the query string for matching only; the original URL is still stored. */
 function normalizeUrl(url: string): string {
@@ -41,13 +41,11 @@ export async function buildMergePreview(
 
 export async function applyMerge(preview: MergePreview): Promise<void> {
   for (const p of preview.newSubscriptions) {
-    await upsertFeed({
+    await subscribeFeed({
       url: p.xmlUrl,
       title: p.title || p.xmlUrl,
       htmlUrl: p.htmlUrl,
       folder: p.folderPath.length > 0 ? p.folderPath : undefined,
-      learnedIntervalMs: 60 * 60 * 1000,
-      lastFetched: null,
     });
   }
 }

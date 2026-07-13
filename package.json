@@ -12,11 +12,14 @@
   },
   "description": "Sift — a simple, slick, browser-first RSS reader.",
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.4",
     "@cloudflare/workers-types": "^4.20260628.1",
     "@hono/vite-dev-server": "^0.26.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^26.0.1",
     "eslint": "^9.0.0",
     "globals": "^17.7.0",
+    "miniflare": "^4.20260708.1",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.0",
@@ -40,6 +43,7 @@
     "preview": "vite preview",
     "start": "tsx server/node.ts",
     "test": "vitest run",
+    "test:smoke": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "type": "module",

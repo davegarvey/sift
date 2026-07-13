@@ -54,15 +54,8 @@ export function AddFeedModal() {
   const subscribe = async () => {
     const d = discovered();
     if (!d) return;
-    await upsertFeed({
-      url: d.url,
-      title: d.title,
-      learnedIntervalMs: 60 * 60 * 1000,
-      lastFetched: null,
-      lastItemPublishedAt: null,
-    });
+    await ctx.subscribeFeed({ url: d.url, title: d.title });
     ctx.closeModal();
-    void ctx.reloadFeeds();
     void ctx.mcpNotifySync();
     const items = parsedToItems(d.parsed, d.url);
     if (items.length > 0) {
