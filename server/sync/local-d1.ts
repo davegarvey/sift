@@ -232,10 +232,10 @@ export class LocalD1Database {
 
       // Assemble CASE assignments into field sections so we can track
       // param consumption correctly. Each field section (folder/title/
-      // deleted) contributes 2 case strings and 3 bind params:
-      //   [at, value, at]
-      // where the first CASE takes 2 params (at, value) and the second
-      // CASE takes 1 param (at, used for both comparison and new value).
+      // deleted) contributes 2 case strings and 4 bind params:
+      //   [at, value, at, at]
+      // where each CASE consumes 2 params (at for comparison, value/at
+      // for the THEN clause).
       const caseFields: string[] = [];
       const otherParts: string[] = [];
       for (const part of assignments.split(',')) {
@@ -251,13 +251,11 @@ export class LocalD1Database {
         const caseStr = caseFields[fi];      // field = CASE ...
         const atStr = caseFields[fi + 1];    // field_at = CASE ...
         this._applyCase(row, caseStr, params, paramOffset);
-        paramOffset += 2; // consumed at (comparison) + value
+        paramOffset += 2; // at (comparison) + value
         if (atStr) {
-          // field_at CASE: both ? share the same bind (the "at" timestamp)
           this._applyCase(row, atStr, params, paramOffset);
-          // But it only consumed 1 param (at), used for both ?s.
+          paramOffset += 2; // at (comparison) + at (THEN)
         }
-        paramOffset += 1; // consumed at for the _at CASE
       }
       for (const trimmed of otherParts) {
         if (/^row_at\s*=\s*MAX/i.test(trimmed)) {
@@ -435,14 +433,9 @@ export class LocalD1Database {
   }
 
   /**
-   * Apply a single CASE assignment.
-   *
-   * For value columns (field = CASE WHEN ... THEN ?) the binds are
-   * [at, value] — the first ? is the comparison timestamp, the second
-   * ? is the new value.
-   *
-   * For _at columns (field_at = CASE WHEN ... THEN ?) the binds have
-   * only [at] — both ?s share the same timestamp value.
+   * Apply a single CASE assignment. Both ?s in the CASE consume params:
+   * params[offset] is the comparison timestamp, params[offset + 1] is
+   * the THEN value.
    */
   private _applyCase(
     row: Record<string, unknown>,
@@ -453,16 +446,14 @@ export class LocalD1Database {
     const fieldMatch = sql.match(/^(\w+)\s*=\s*CASE/i);
     if (!fieldMatch) return;
     const fieldName = fieldMatch[1];
-    const isAtColumn = fieldName.endsWith('_at');
-    const atName = isAtColumn ? fieldName : `${fieldName}_at`;
+    const atName = fieldName.endsWith('_at') ? fieldName : `${fieldName}_at`;
     const newAt = params[offset] as number | undefined;
+    const newValue = params[offset + 1];
     if (newAt == null) return;
-    // For the _at column, both ? in the CASE use the same param.
-    const newValue = isAtColumn ? params[offset] : params[offset + 1];
     const existingAt = row[atName] as number | null | undefined;
     if (existingAt == null || newAt > existingAt) {
       row[fieldName] = newValue;
-      if (!isAtColumn) row[atName] = newAt;
+      row[atName] = newAt;
     }
   }
 

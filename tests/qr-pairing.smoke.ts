@@ -1,4 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
+import crypto from 'node:crypto';
+
+/** Generate a 22-char base64url sync key (same format as src/sync/key.ts). */
+function generateKey(): string {
+  return crypto.randomBytes(16)
+    .toString('base64url');
+}
 
 const MOCK_RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -15,6 +22,13 @@ const MOCK_RSS = `<?xml version="1.0" encoding="UTF-8"?>
   </channel>
 </rss>`;
 
+/** Prevent the PWA service worker from registering (it triggers a reload). */
+async function disableSw(page: Page) {
+  await page.route('**/registerSW.js', (route) => route.abort());
+  await page.route('**/sw.js', (route) => route.abort());
+  await page.route('**/workbox-*.js', (route) => route.abort());
+}
+
 async function mockFeedEndpoint(page: Page) {
   await page.route(
     (url) => url.pathname === '/feed',
@@ -28,22 +42,51 @@ async function mockFeedEndpoint(page: Page) {
   );
 }
 
+/**
+ * Inject a sync key into IndexedDB and reload so bootSync picks it up on
+ * the next page load.
+ */
+async function injectSyncKey(page: Page, key: string): Promise<void> {
+  await page.waitForSelector('.sidebar');
+  await page.waitForTimeout(1000);
+  await page.evaluate(async (k) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('sift', 3);
+      req.onupgradeneeded = () => {};
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').put({ key: 'settings', value: { syncKey: k, lastSyncAt: null } });
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  }, key);
+  await page.waitForTimeout(500);
+  await page.reload();
+  await page.waitForSelector('.sidebar');
+}
+
 test.describe('QR pairing', () => {
   test('pairs a second device and syncs feeds to it', async ({ browser }) => {
+    const syncKeyA = generateKey();
+
     // ── Device A (source) ──────────────────────────────────────────────
     const ctxA = await browser.newContext();
     const pageA = await ctxA.newPage();
+    await disableSw(pageA);
     await mockFeedEndpoint(pageA);
-
     await pageA.goto('/');
-    await pageA.waitForSelector('.sidebar');
 
-    // Open settings and enable sync.
-    await pageA.getByRole('button', { name: 'Settings' }).click();
+    // Inject sync key into IDB, then reload so bootSync registers with server.
+    await injectSyncKey(pageA, syncKeyA);
+
+    // Open settings and verify sync became enabled.
+    await pageA.getByRole('button', { name: 'Settings' }).click({ force: true });
     await pageA.waitForSelector('.modal');
-    await pageA.locator('.row').filter({ hasText: 'Enable sync' }).locator('.toggle').click();
-    await pageA.getByRole('button', { name: 'Generate code' }).waitFor({ state: 'attached', timeout: 5000 });
-    await pageA.getByRole('button', { name: 'Done' }).click();
+    await pageA.locator('.toggle[aria-checked="true"]').waitFor({ state: 'attached', timeout: 15_000 });
+    await pageA.getByRole('button', { name: 'Done' }).click({ force: true });
     await pageA.waitForSelector('.modal', { state: 'detached' });
 
     // Add a feed via the UI.
@@ -57,25 +100,26 @@ test.describe('QR pairing', () => {
     const feedTitleA = pageA.locator('.sidebar .feed .title').filter({ hasText: 'Test Feed' });
     await expect(feedTitleA).toBeVisible();
 
-    // Wait for the sync push to complete (1s debounce + network).
+    // Wait for the push to complete (1s debounce + network).
     await pageA.waitForResponse(
       (res) => res.url().includes('/sync/push'),
       { timeout: 10_000 },
     );
 
     // Generate a pairing code.
-    await pageA.getByRole('button', { name: 'Settings' }).click();
+    await pageA.getByRole('button', { name: 'Settings' }).click({ force: true });
     await pageA.waitForSelector('.modal');
-    await pageA.getByRole('button', { name: 'Generate code' }).click();
+    await pageA.getByRole('button', { name: 'Generate code' }).click({ force: true });
     await pageA.waitForSelector('.sync-grid__code', { timeout: 5000 });
     const pairCode = await pageA.locator('.sync-grid__code').textContent();
     expect(pairCode).toBeTruthy();
-    await pageA.getByRole('button', { name: 'Done' }).click();
+    await pageA.getByRole('button', { name: 'Done' }).click({ force: true });
     await pageA.waitForSelector('.modal', { state: 'detached' });
 
     // ── Device B (target) ─────────────────────────────────────────────
     const ctxB = await browser.newContext();
     const pageB = await ctxB.newPage();
+    await disableSw(pageB);
 
     await pageB.goto('/?pair=' + pairCode);
     await pageB.waitForSelector('.sidebar');
@@ -95,18 +139,9 @@ test.describe('QR pairing', () => {
       { timeout: 10_000 },
     );
 
-    // Verify the feed appears on Device B's sidebar.
-    // NOTE: This assertion requires the push/pull sync protocol to work.
-    // Against Vite dev (LocalD1Database) the in-memory D1 shim cannot run
-    // the full SQL needed by the sync server. To run this test end-to-end,
-    // set the webServer to `npm run build && npx wrangler dev --local --port 8789`
-    // and update baseURL to http://localhost:8789.
+    // Verify the feed appears on Device B's sidebar (synced via push/pull).
     const feedTitleB = pageB.locator('.sidebar .feed .title').filter({ hasText: 'Test Feed' });
-    try {
-      await expect(feedTitleB).toBeVisible({ timeout: 5_000 });
-    } catch {
-      console.log('QR pairing: feed sync requires wrangler dev (real D1) — local D1 shim is SQL-limited');
-    }
+    await expect(feedTitleB).toBeVisible({ timeout: 10_000 });
 
     await ctxA.close();
     await ctxB.close();
