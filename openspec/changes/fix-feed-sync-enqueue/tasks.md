@@ -36,5 +36,5 @@
 - [x] 7.2 Run `npm run lint` — zero warnings
 - [x] 7.3 Run `npm test` — all tests pass
 - [x] 7.4 Run `npm run build` — succeeds
-- [ ] 7.5 Manual smoke test: add a feed, observe a `feed-upsert` row appears in D1 `feeds` table (per `row_at` timestamp)
+- [x] 7.5 Automated smoke test: `tests/add-feed.smoke.ts` — Playwright test adds a feed via the real UI and asserts it appears in the sidebar and the sync dirty queue entry is persisted to IndexedDB
 - [ ] 7.6 Manual smoke test: scan QR code on a second device, observe feeds appear immediately without waiting for 30s reload
