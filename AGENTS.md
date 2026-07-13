@@ -28,6 +28,7 @@ Sift — a simple, slick, browser-first RSS reader.
 - Code style: no comments unless asked. Match existing patterns in the file you're editing.
 - Test files live alongside source where appropriate (`*.test.ts`) or under `tests/` for integration tests.
 - The `LICENSE` is MIT. Do not introduce third-party code that is incompatible.
+- **README freshness.** If your change adds, removes, or modifies a feature the README describes (deploy targets, architecture, scripts, known limitations, configuration, etc.), update the README in the same PR. Search README for keywords related to your change to find stale text.
 
 ## Git workflow
 
