@@ -12,6 +12,7 @@
 import { listFeeds, upsertFeed, unsubscribeFeed } from '../db/feeds';
 import { listItems } from '../db/items';
 import { getItemFlags, bulkSetFlags } from '../db/flags';
+import { enqueueFeed, enqueueFlag } from './queue';
 import { flushNow, scheduleFlush } from './push';
 import { pullSince, type PullPayload } from './client';
 import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
@@ -59,7 +60,33 @@ export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: Remot
  * The full first-time setup flow. Returns the new serverTime.
  */
 export async function runFirstTimeSetup(): Promise<number> {
-  // 1) Push current local state (will be a no-op if dirty is empty).
+  // 0) Enqueue existing local state so the first flush pushes it to the server.
+  const existingFeeds = await listFeeds();
+  const existingFlags = await getItemFlags();
+  const now = Date.now();
+  for (const feed of existingFeeds) {
+    enqueueFeed({
+      feedUrl: feed.url,
+      folder: feed.folder ?? null,
+      folderAt: now,
+      title: feed.title,
+      titleAt: now,
+      deleted: 0,
+      deletedAt: now,
+    });
+  }
+  for (const flag of existingFlags) {
+    enqueueFlag({
+      itemId: flag.id,
+      feedUrl: flag.feedUrl,
+      read: flag.read,
+      readAt: now,
+      starred: flag.starred,
+      starredAt: now,
+    });
+  }
+
+  // 1) Push current local state (includes existing feeds + flags now).
   await flushNow();
 
   // 2) Pull everything.

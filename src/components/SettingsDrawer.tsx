@@ -1,4 +1,4 @@
-import { ExternalLink, Check, Copy } from 'lucide-solid';
+import { ExternalLink, Check, Copy, RefreshCw } from 'lucide-solid';
 import { version } from '../../package.json';
 import { Show, For, createSignal, createMemo } from 'solid-js';
 import { useApp } from '../state';
@@ -254,10 +254,16 @@ function SyncSection() {
               <span class="sync-grid__label">Pairing code</span>
               <span class="sync-grid__code">{code()}</span>
               <span class="sync-grid__expiry">{expiresAt() && `valid for ${Math.ceil((expiresAt()! - Date.now()) / 60000)} min`}</span>
-              <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
-                {copied() ? <Check size={14} /> : <Copy size={14} />}
-                <span style={{ 'font-size': '12px' }}>Copy</span>
-              </button>
+              <div style={{ display: 'flex', gap: '6px', 'justify-content': 'center' }}>
+                <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
+                  {copied() ? <Check size={14} /> : <Copy size={14} />}
+                  <span style={{ 'font-size': '12px' }}>Copy</span>
+                </button>
+                <button class="sync-grid__copy" onClick={() => void generateCode()} aria-label="Generate new pairing code">
+                  <RefreshCw size={14} />
+                  <span style={{ 'font-size': '12px' }}>Regenerate</span>
+                </button>
+              </div>
               <span class="sync-grid__hint">Enter this code on your other device</span>
             </div>
             <div class="sync-grid__cell">
