@@ -17,28 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bump version
-        id: bump
-        uses: davegarvey/grubble@v5.2.1
+      - uses: davegarvey/grubble@v5.3.0
         with:
-          push: false
+          push: true
           tag: true
           package-files: "package.json"
           preset: node
-
-      - name: Push release branch and create PR
-        if: steps.bump.outputs.bump_type != 'none'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION="${{ steps.bump.outputs.version }}"
-          BRANCH="release/v${VERSION}"
-          git checkout -b "${BRANCH}"
-          git push --set-upstream origin "${BRANCH}"
-          git push --tags --force
-          PR_URL=$(gh pr create \
-            --base main \
-            --head "${BRANCH}" \
-            --title "Release v${VERSION}" \
-            --body "Automated release PR created by grubble.")
-          gh pr merge "$PR_URL" --auto --squash
+          create-pr: true
+          auto-merge: true
