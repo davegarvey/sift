@@ -17,11 +17,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: davegarvey/grubble@v5.3.0
-        with:
-          push: true
-          tag: true
-          package-files: "package.json"
-          preset: node
-          create-pr: true
-          auto-merge: true
+      - name: Install grubble
+        run: |
+          curl -sSL -o grubble.tar.gz \
+            "https://github.com/davegarvey/grubble/releases/download/v5.3.0/grubble-linux-x86_64.tar.gz"
+          tar xzf grubble.tar.gz
+          chmod +x grubble
+
+      - name: Bump version
+        id: bump
+        run: |
+          ./grubble --tag --preset node --package-files package.json
+          echo "version=$(./grubble --raw --preset node)" >> $GITHUB_OUTPUT
+          echo "bump_type=$(./grubble --bump-type)" >> $GITHUB_OUTPUT
+
+      - name: Push release branch and create PR
+        if: steps.bump.outputs.bump_type != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          BRANCH="release/v${VERSION}"
+          git checkout -b "${BRANCH}"
+          git push --set-upstream origin "${BRANCH}"
+          git push --tags --force
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "Release v${VERSION}" \
+            --body "Automated release PR created by grubble.")
+          gh pr merge "$PR_URL" --auto --squash
