@@ -17,10 +17,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bump version and release
-        uses: davegarvey/grubble@v5
+      - uses: davegarvey/grubble@v5
         with:
           push: true
+          tag: true
           package-files: "package.json"
           preset: node
           create-pr: true
