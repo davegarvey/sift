@@ -40,7 +40,7 @@ jobs:
       - name: Push release branch and create PR
         if: steps.bump.outputs.bump_type != 'none'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           VERSION="${{ steps.bump.outputs.version }}"
           BRANCH="release/v${VERSION}"
