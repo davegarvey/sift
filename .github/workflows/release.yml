@@ -27,9 +27,15 @@ jobs:
       - name: Bump version
         id: bump
         run: |
+          PREV=$(./grubble --raw --preset node)
           ./grubble --tag --preset node --package-files package.json
-          echo "version=$(./grubble --raw --preset node)" >> $GITHUB_OUTPUT
-          echo "bump_type=$(./grubble --bump-type)" >> $GITHUB_OUTPUT
+          NEW=$(./grubble --raw --preset node)
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          if [ "$NEW" != "$PREV" ]; then
+            echo "bump_type=changed" >> $GITHUB_OUTPUT
+          else
+            echo "bump_type=none" >> $GITHUB_OUTPUT
+          fi
 
       - name: Push release branch and create PR
         if: steps.bump.outputs.bump_type != 'none'
