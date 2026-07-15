@@ -298,7 +298,12 @@ export const AppProvider: ParentComponent = (props) => {
       await setStoredSyncKey(key);
     }
     await updateSettingsWith({ syncKey: key });
-    await triggerFirstTime();
+    try {
+      await triggerFirstTime();
+    } catch (e) {
+      await disableSync();
+      throw e;
+    }
   };
 
   const disableSync = async () => {

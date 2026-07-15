@@ -50,7 +50,7 @@ export async function checkRateLimit(
 }
 
 export const RATE_LIMITS = {
-  registerPerIp: { windowSeconds: 3600, limit: 10 },
+  registerPerIp: { windowSeconds: 3600, limit: 100 },
   registerGlobal: { windowSeconds: 86400, limit: 1000 },
   otp: { windowSeconds: 3600, limit: 20 },
   redeem: { windowSeconds: 60, limit: 10 },
