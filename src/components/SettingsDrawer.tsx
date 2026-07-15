@@ -143,6 +143,7 @@ function SyncSection() {
   const [pairInput, setPairInput] = createSignal('');
   const [pairError, setPairError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [syncError, setSyncError] = createSignal<string | null>(null);
   const enabled = () => Boolean(ctx.syncKey());
 
   const generateCode = async () => {
@@ -187,13 +188,20 @@ function SyncSection() {
   };
 
   const toggleOn = async () => {
-    await ctx.enableSync();
+    setSyncError(null);
+    try {
+      await ctx.enableSync();
+    } catch (e) {
+      console.error('Failed to enable sync:', e);
+      setSyncError(e instanceof Error ? e.message : 'Failed to enable sync');
+    }
   };
 
   const toggleOff = () => {
     void ctx.disableSync();
     setCode(null);
     setExpiresAt(null);
+    setSyncError(null);
   };
 
   return (
@@ -210,6 +218,9 @@ function SyncSection() {
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' || e.key === ' ' ? (e.preventDefault(), void (enabled() ? toggleOff() : toggleOn())) : null}
         />
+        <Show when={syncError()}>
+          <p class="error" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{syncError()}</p>
+        </Show>
       </div>
       <Show when={enabled()}>
         <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '12px 0 6px' }}>
