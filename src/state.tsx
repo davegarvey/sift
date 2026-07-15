@@ -317,6 +317,8 @@ export const AppProvider: ParentComponent = (props) => {
     await setStoredSyncKey(key);
     await updateSettingsWith({ syncKey: key });
     await triggerFirstTime();
+    await reloadFeeds();
+    await reloadItems();
   };
 
   const regenerateSyncKey = async () => {
