@@ -7,3 +7,5 @@
 - [x] 2.1 Add try/catch in `state.tsx:enableSync()` that calls `disableSync()` on failure and rethrows
 - [x] 2.2 Add `syncError` signal and try/catch in `SettingsDrawer.tsx:SyncSection.toggleOn()` that logs to console and sets error message
 - [x] 2.3 Render error message inline in the Settings drawer JSX below the sync toggle
+- [x] 2.4 Move `reloadFeeds()`/`reloadItems()` in the QR boot path outside try/catch so they run even if `triggerFirstTime()` throws after storing feeds
+- [x] 2.5 Wrap `reloadFeeds()`/`reloadItems()` in `pairSyncWithKey` in a `finally` block so they run regardless of `triggerFirstTime()` success/failure
