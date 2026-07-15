@@ -316,9 +316,12 @@ export const AppProvider: ParentComponent = (props) => {
     }
     await setStoredSyncKey(key);
     await updateSettingsWith({ syncKey: key });
-    await triggerFirstTime();
-    await reloadFeeds();
-    await reloadItems();
+    try {
+      await triggerFirstTime();
+    } finally {
+      await reloadFeeds();
+      await reloadItems();
+    }
   };
 
   const regenerateSyncKey = async () => {
@@ -454,11 +457,11 @@ export const AppProvider: ParentComponent = (props) => {
         await setStoredSyncKey(key);
         await updateSettingsWith({ syncKey: key });
         await triggerFirstTime();
-        await reloadFeeds();
-        await reloadItems();
       } catch (e) {
         console.error('QR pairing failed:', e);
       }
+      await reloadFeeds();
+      await reloadItems();
       history.replaceState(null, '', window.location.pathname);
     }
   })();
