@@ -47,5 +47,5 @@
     "typecheck": "tsc --noEmit"
   },
   "type": "module",
-  "version": "0.238.0"
+  "version": "0.239.0"
 }
