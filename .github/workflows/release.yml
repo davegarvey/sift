@@ -56,4 +56,4 @@ jobs:
             --head "${BRANCH}" \
             --title "Release v${VERSION}" \
             --body "Automated release PR created by grubble.")
-          gh pr merge "$PR_URL" --auto --squash
+          gh pr merge "$PR_URL" --auto --merge
