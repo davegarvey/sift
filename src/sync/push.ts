@@ -96,6 +96,9 @@ export async function flushNow(): Promise<void> {
   })();
   try {
     await inFlight;
+  } catch (e) {
+    console.error('Sync push failed:', e);
+    throw e;
   } finally {
     inFlight = null;
   }
