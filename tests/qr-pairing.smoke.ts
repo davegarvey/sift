@@ -110,7 +110,7 @@ test.describe('QR pairing', () => {
     await pageA.getByRole('button', { name: 'Settings' }).click({ force: true });
     await pageA.waitForSelector('.modal');
     await pageA.getByRole('button', { name: 'Generate' }).click({ force: true });
-    await pageA.waitForSelector('.sync-grid__code', { timeout: 5000 });
+    await pageA.waitForSelector('.sync-grid__qr svg', { timeout: 5000 });
     const pairCode = await pageA.locator('.sync-grid__code').textContent();
     expect(pairCode).toBeTruthy();
     await pageA.locator('.modal-center .btn.primary').click({ force: true });
