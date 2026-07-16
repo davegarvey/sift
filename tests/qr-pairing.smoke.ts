@@ -113,9 +113,9 @@ test.describe('QR pairing', () => {
     await pageA.waitForSelector('.sync-grid__code', { timeout: 5000 });
     const pairCode = await pageA.locator('.sync-grid__code').textContent();
     expect(pairCode).toBeTruthy();
-    await pageA.locator('.modal-footer .btn.primary').click({ force: true });
-    await pageA.locator('.modal-header:has-text("Add another device")').waitFor({ state: 'detached' });
-    await pageA.getByRole('button', { name: 'Done' }).click({ force: true });
+    await pageA.locator('.modal-center .btn.primary').click({ force: true });
+    await pageA.locator('.modal-center').waitFor({ state: 'detached' });
+    await pageA.locator('.settings .btn.primary').click({ force: true });
     await pageA.waitForSelector('.modal', { state: 'detached' });
 
     // ── Device B (target) ─────────────────────────────────────────────
