@@ -1,13 +1,15 @@
-import { For, Show } from 'solid-js';
+import { For, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
-import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, X } from 'lucide-solid';
+import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
 import type { Feed } from '../db/types';
+import { normalizeTag } from '../util/tags';
 
 export function Sidebar(props: { onNavigate?: () => void }) {
   const ctx = useApp();
 
   const selectAllFeeds = () => {
+    ctx.clearTags();
     ctx.setRiverScope(null);
     void ctx.saveSettingsPatch({ lastFeedUrl: null });
     void ctx.reloadItems();
@@ -15,11 +17,21 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   };
 
   const selectFeed = (feedUrl: string) => {
+    ctx.clearTags();
     ctx.setRiverScope(feedUrl);
     void ctx.saveSettingsPatch({ lastFeedUrl: feedUrl });
     void ctx.reloadItems();
     props.onNavigate?.();
   };
+
+  const hasActiveTags = () => ctx.state.activeTags.length > 0;
+
+  const visibleFeeds = createMemo(() => {
+    const tags = ctx.state.activeTags;
+    if (tags.length === 0) return ctx.feeds();
+    const tagSet = new Set(tags);
+    return ctx.feeds().filter((f) => f.tags?.some((t) => tagSet.has(normalizeTag(t))));
+  });
 
   const refreshing = () => ctx.fetching() > 0;
   const collapsed = () => ctx.state.sidebarHiddenDesktop;
@@ -57,13 +69,28 @@ export function Sidebar(props: { onNavigate?: () => void }) {
 
         <div class="section">
           <div class="heading">Feeds</div>
+          <Show when={ctx.allTags().length > 0}>
+            <div class="tag-chips">
+              <For each={ctx.allTags()}>
+                {(tag) => (
+                  <button
+                    class={`tag-chip ${ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
+                    onClick={() => ctx.toggleTag(tag)}
+                    type="button"
+                  >
+                    {tag}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
           <div
-            class={`feed all-feeds ${ctx.state.riverScope === null ? 'active' : ''}`}
+            class={`feed all-feeds ${ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
             onClick={selectAllFeeds}
           >
             <span class="title">All Feeds</span>
           </div>
-          <For each={ctx.feeds()}>
+          <For each={visibleFeeds()}>
             {(feed) => (
               <FeedRow
                 feed={feed}
@@ -71,9 +98,9 @@ export function Sidebar(props: { onNavigate?: () => void }) {
                 fetchingFeeds={ctx.fetchingFeeds()}
                 active={ctx.state.riverScope === feed.url}
                 onClick={() => selectFeed(feed.url)}
-                onDelete={() =>
+                onEdit={() =>
                   ctx.openModal({
-                    kind: 'confirm-unsubscribe',
+                    kind: 'feed-editor',
                     feedUrl: feed.url,
                     feedTitle: feed.title,
                   })
@@ -156,7 +183,7 @@ interface FeedRowProps {
   active: boolean;
   fetchingFeeds: Set<string>;
   onClick: () => void;
-  onDelete: () => void;
+  onEdit: () => void;
 }
 
 function FeedRow(props: FeedRowProps) {
@@ -171,8 +198,8 @@ function FeedRow(props: FeedRowProps) {
       <Show when={error()}>
         <span class="error-mark" data-error={error()} title="Last refresh failed"><TriangleAlert size={12} /></span>
       </Show>
-      <button class="delete-btn" title={`Unsubscribe from ${props.feed.title}`} onClick={(e) => { e.stopPropagation(); props.onDelete(); }}>
-        <X size={12} strokeWidth={2.5} />
+      <button class="edit-btn" title={`Edit ${props.feed.title}`} onClick={(e) => { e.stopPropagation(); props.onEdit(); }}>
+        <span class="edit-dots">…</span>
       </button>
     </div>
   );

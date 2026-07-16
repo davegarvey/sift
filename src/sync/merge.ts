@@ -71,6 +71,8 @@ export async function runFirstTimeSetup(): Promise<number> {
       folderAt: now,
       title: feed.title,
       titleAt: now,
+      tags: feed.tags ?? null,
+      tagsAt: now,
       deleted: 0,
       deletedAt: now,
     });

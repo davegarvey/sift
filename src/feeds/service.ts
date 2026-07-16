@@ -13,7 +13,7 @@
  * tooling) can call these service functions directly.
  */
 
-import { upsertFeed, unsubscribeFeed as dbUnsubscribeFeed } from '../db/feeds';
+import { upsertFeed, updateFeed, unsubscribeFeed as dbUnsubscribeFeed } from '../db/feeds';
 import { enqueueFeed, enqueueFeedDelete } from '../sync/queue';
 import { scheduleFlush } from '../sync/push';
 import { DEFAULT_LEARNED_INTERVAL_MS } from '../db/types';
@@ -23,6 +23,7 @@ export interface SubscribeInput {
   title: string;
   folder?: string[];
   htmlUrl?: string;
+  tags?: string[];
 }
 
 export async function subscribeFeed(input: SubscribeInput): Promise<void> {
@@ -32,6 +33,8 @@ export async function subscribeFeed(input: SubscribeInput): Promise<void> {
     title: input.title,
     htmlUrl: input.htmlUrl,
     folder: input.folder,
+    tags: input.tags,
+    tagsAt: now,
     learnedIntervalMs: DEFAULT_LEARNED_INTERVAL_MS,
     lastFetched: null,
     lastItemPublishedAt: null,
@@ -42,6 +45,25 @@ export async function subscribeFeed(input: SubscribeInput): Promise<void> {
     folderAt: now,
     title: input.title,
     titleAt: now,
+    tags: input.tags ?? null,
+    tagsAt: now,
+    deleted: 0,
+    deletedAt: now,
+  });
+  scheduleFlush();
+}
+
+export async function updateFeedTags(feedUrl: string, tags: string[]): Promise<void> {
+  const now = Date.now();
+  await updateFeed(feedUrl, { tags, tagsAt: now });
+  enqueueFeed({
+    feedUrl,
+    folder: null,
+    folderAt: now,
+    title: null,
+    titleAt: now,
+    tags,
+    tagsAt: now,
     deleted: 0,
     deletedAt: now,
   });

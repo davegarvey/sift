@@ -10,8 +10,12 @@ export interface Feed {
   title: string;
   /** Human-facing home page (e.g., the blog itself, not the feed). */
   htmlUrl?: string;
-  /** OPML-assigned folder path (array of folder names from root to parent). */
+  /** @deprecated OPML-assigned folder path — no longer written. Kept for backward compat during transition. */
   folder?: string[];
+  /** User-assigned tags. Stored normalized (trimmed, whitespace-collapsed, lowercase). */
+  tags?: string[];
+  /** Epoch ms of last tag edit, used for sync conflict resolution. */
+  tagsAt?: number | null;
   /** Last successful fetch (epoch ms). */
   lastFetched: number | null;
   /** ETag received from the upstream, forwarded on next conditional request. */
@@ -64,7 +68,7 @@ export interface DBSchema {
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;

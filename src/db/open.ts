@@ -93,6 +93,10 @@ export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
             flags.createIndex('by-feed-url', 'feedUrl');
           }
         }
+        // v4: no-op — tags stored inline on Feed, no store/index changes needed
+        if (_oldVersion < 4) {
+          // No structural changes; tags field is optional and IndexedDB is schemaless.
+        }
       },
     }).then(async (db) => {
       await backfillFlags(db);

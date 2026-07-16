@@ -15,7 +15,7 @@ import { MAX_DIRTY_PER_PUSH } from './client';
 const DIRTY_KEY = 'sync_dirty';
 
 export type DirtyEntry =
-  | { kind: 'feed-upsert'; feedUrl: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; deleted: 0 | 1; deletedAt: number }
+  | { kind: 'feed-upsert'; feedUrl: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; tags: string[] | null; tagsAt: number; deleted: 0 | 1; deletedAt: number }
   | { kind: 'feed-delete'; feedUrl: string; at: number }
   | { kind: 'flag-update'; itemId: string; feedUrl: string; read: 0 | 1 | null; readAt: number; starred: 0 | 1 | null; starredAt: number };
 
@@ -65,7 +65,7 @@ export async function persistDirty(): Promise<void> {
 function entryAt(e: DirtyEntry): number {
   switch (e.kind) {
     case 'feed-upsert':
-      return Math.max(e.folderAt, e.titleAt, e.deletedAt);
+      return Math.max(e.folderAt, e.titleAt, e.tagsAt, e.deletedAt);
     case 'feed-delete':
       return e.at;
     case 'flag-update':
@@ -87,6 +87,8 @@ export function enqueueFeed(feed: {
   folderAt: number;
   title: string | null;
   titleAt: number;
+  tags: string[] | null;
+  tagsAt: number;
   deleted: 0 | 1;
   deletedAt: number;
 }): void {
@@ -97,6 +99,8 @@ export function enqueueFeed(feed: {
     folderAt: feed.folderAt,
     title: feed.title,
     titleAt: feed.titleAt,
+    tags: feed.tags,
+    tagsAt: feed.tagsAt,
     deleted: feed.deleted,
     deletedAt: feed.deletedAt,
   });

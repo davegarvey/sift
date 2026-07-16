@@ -26,13 +26,16 @@ function chunkToBody(chunk: DirtyEntry[]): { feeds?: unknown[]; flags?: unknown[
     if (e.kind === 'feed-upsert' || e.kind === 'feed-delete') {
       const folder = e.kind === 'feed-upsert' ? e.folder : null;
       const title = e.kind === 'feed-upsert' ? e.title : null;
+      const tags = e.kind === 'feed-upsert' ? e.tags : null;
       const deleted = e.kind === 'feed-upsert' ? e.deleted : 1;
       const folderAt = e.kind === 'feed-upsert' ? e.folderAt : entryAt(e);
       const titleAt = e.kind === 'feed-upsert' ? e.titleAt : entryAt(e);
+      const tagsAt = e.kind === 'feed-upsert' ? e.tagsAt : entryAt(e);
       const deletedAt = e.kind === 'feed-upsert' ? e.deletedAt : entryAt(e);
       const feedPayload: Record<string, unknown> = { feedUrl: e.feedUrl };
       if (folder !== null) feedPayload.folder = { value: folder, at: folderAt };
       if (title !== null) feedPayload.title = { value: title, at: titleAt };
+      if (tags !== null) feedPayload.tags = { value: tags, at: tagsAt };
       feedPayload.deleted = { value: deleted, at: deletedAt };
       feeds.push(feedPayload);
     } else {

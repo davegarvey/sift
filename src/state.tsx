@@ -21,6 +21,7 @@ type ModalKind =
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
   | { kind: 'add-feed' }
+  | { kind: 'feed-editor'; feedUrl: string; feedTitle: string }
   | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string }
   | { kind: 'pair-result'; success: boolean; message: string }
   ;
@@ -29,6 +30,8 @@ export interface AppState {
   view: ViewKind;
   /** The feed URL the river is currently scoped to; null = All. */
   riverScope: string | null;
+  /** Active tag filters (OR semantics). Mutually exclusive with riverScope. */
+  activeTags: string[];
   /** "current" item being viewed in the reading view; null when in river. */
   currentItem: Item | null;
   sidebarOpen: boolean;        // mobile drawer state
@@ -45,6 +48,8 @@ interface AppContext {
   feeds: () => Feed[];
   feedMap: () => Map<string, Feed>;
   items: () => Item[];
+  allTags: () => string[];
+  activeTagSet: () => Set<string>;
   settings: () => AppSettings;
   fetching: () => number;
   feedErrors: () => Record<string, string>;
@@ -52,6 +57,8 @@ interface AppContext {
   reloadFeeds: () => Promise<Feed[]>;
   reloadItems: () => Promise<void>;
   setRiverScope: (feedUrl: string | null) => void;
+  toggleTag: (tag: string) => void;
+  clearTags: () => void;
   openItem: (item: Item, replace?: boolean) => Promise<void>;
   closeReading: () => Promise<void>;
   toggleSidebar: () => void;
@@ -88,6 +95,7 @@ export const AppProvider: ParentComponent = (props) => {
   const [state, setStateInternal] = createStore<AppState>({
     view: 'river',
     riverScope: null,
+    activeTags: [],
     currentItem: null,
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
@@ -100,6 +108,14 @@ export const AppProvider: ParentComponent = (props) => {
 
   const [feeds, setFeeds] = createSignal<Feed[]>([]);
   const feedMap = createMemo(() => new Map(feeds().map((f) => [f.url, f])));
+  const allTags = createMemo(() => {
+    const seen = new Set<string>();
+    for (const f of feeds()) {
+      for (const t of f.tags ?? []) seen.add(t);
+    }
+    return [...seen];
+  });
+  const activeTagSet = createMemo(() => new Set(state.activeTags));
   const [items, setItems] = createSignal<Item[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>({
     theme: 'system',
@@ -220,7 +236,26 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const setRiverScope = (feedUrl: string | null) => {
-    setState({ riverScope: feedUrl, focusedIndex: 0, view: 'river' });
+    setState({ riverScope: feedUrl, activeTags: [], focusedIndex: 0, view: 'river' });
+  };
+
+  const toggleTag = (tag: string) => {
+    const current = state.activeTags;
+    const idx = current.indexOf(tag);
+    if (idx >= 0) {
+      const next = current.filter((t) => t !== tag);
+      setState({ activeTags: next, riverScope: null, focusedIndex: 0 });
+      if (next.length > 0) void reloadItems();
+    } else {
+      setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: 0 });
+      void reloadItems();
+    }
+  };
+
+  const clearTags = () => {
+    if (state.activeTags.length === 0) return;
+    setState({ activeTags: [], focusedIndex: 0 });
+    void reloadItems();
   };
 
   const openItem = async (item: Item, replace = false) => {
@@ -367,6 +402,8 @@ export const AppProvider: ParentComponent = (props) => {
     feeds,
     feedMap,
     items,
+    allTags,
+    activeTagSet,
     settings,
     fetching: fetchingState.inFlight,
     feedErrors: fetchingState.feedErrors,
@@ -374,6 +411,8 @@ export const AppProvider: ParentComponent = (props) => {
     reloadFeeds,
     reloadItems,
     setRiverScope,
+    toggleTag,
+    clearTags,
     openItem,
     closeReading,
     toggleSidebar,
