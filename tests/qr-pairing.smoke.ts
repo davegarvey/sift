@@ -114,8 +114,6 @@ test.describe('QR pairing', () => {
     const pairCode = await pageA.locator('.sync-grid__code').textContent();
     expect(pairCode).toBeTruthy();
     await pageA.locator('.modal-center .btn.primary').click({ force: true });
-    await pageA.locator('.modal-center').waitFor({ state: 'detached' });
-    await pageA.locator('.settings .btn.primary').click({ force: true });
     await pageA.waitForSelector('.modal', { state: 'detached' });
 
     // ── Device B (target) ─────────────────────────────────────────────
