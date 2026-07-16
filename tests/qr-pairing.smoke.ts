@@ -106,13 +106,15 @@ test.describe('QR pairing', () => {
       { timeout: 10_000 },
     );
 
-    // Generate a pairing code.
+    // Generate a pairing code via the SyncShareModal.
     await pageA.getByRole('button', { name: 'Settings' }).click({ force: true });
     await pageA.waitForSelector('.modal');
-    await pageA.getByRole('button', { name: 'Generate code' }).click({ force: true });
+    await pageA.getByRole('button', { name: 'Add another device' }).click({ force: true });
     await pageA.waitForSelector('.sync-grid__code', { timeout: 5000 });
     const pairCode = await pageA.locator('.sync-grid__code').textContent();
     expect(pairCode).toBeTruthy();
+    await pageA.getByRole('button', { name: 'Close' }).click({ force: true });
+    await pageA.waitForSelector('.modal-header', { state: 'detached' });
     await pageA.getByRole('button', { name: 'Done' }).click({ force: true });
     await pageA.waitForSelector('.modal', { state: 'detached' });
 
