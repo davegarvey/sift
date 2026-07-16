@@ -64,7 +64,7 @@ test.describe('Add feed', () => {
 
     // Verify a feed-upsert entry was persisted to IndexedDB meta.
     const dirty = await page.evaluate(async () => {
-      const req = indexedDB.open('sift', 3);
+      const req = indexedDB.open('sift');
       return new Promise((resolve, reject) => {
         req.onsuccess = () => {
           const tx = req.result.transaction('meta', 'readonly');
