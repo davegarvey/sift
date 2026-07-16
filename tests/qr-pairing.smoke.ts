@@ -51,7 +51,7 @@ async function injectSyncKey(page: Page, key: string): Promise<void> {
   await page.waitForTimeout(1000);
   await page.evaluate(async (k) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('sift', 3);
+      const req = indexedDB.open('sift');
       req.onupgradeneeded = () => {};
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);

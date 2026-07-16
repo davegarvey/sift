@@ -11,6 +11,7 @@ import { SettingsDrawer } from './components/SettingsDrawer';
 import { PairResultModal } from './components/PairResultModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { ConfirmUnsubscribeModal } from './components/ConfirmUnsubscribeModal';
+import { FeedEditorModal } from './components/FeedEditorModal';
 import './styles.css';
 
 function Shell() {
@@ -182,6 +183,9 @@ function Shell() {
       </Show>
       <Show when={ctx.state.modal.kind === 'shortcuts'}>
         <Backdrop><ShortcutsOverlay /></Backdrop>
+      </Show>
+      <Show when={ctx.state.modal.kind === 'feed-editor'}>
+        <Backdrop><FeedEditorModal /></Backdrop>
       </Show>
       <Show when={ctx.state.modal.kind === 'confirm-unsubscribe'}>
         <Backdrop><ConfirmUnsubscribeModal /></Backdrop>

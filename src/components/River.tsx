@@ -3,6 +3,7 @@ import { useApp } from '../state';
 import { markRead } from '../db/items';
 import type { Item } from '../db/types';
 import { relativeTime } from '../util/time';
+import { normalizeTag } from '../util/tags';
 import { Star } from 'lucide-solid';
 import { CircleIcon, CircleCheckIcon } from './Icons';
 
@@ -12,6 +13,15 @@ export function River() {
 
   const visibleItems = createMemo(() => {
     const items = ctx.items();
+    const tags = ctx.state.activeTags;
+    if (tags.length > 0) {
+      const tagSet = new Set(tags);
+      const matchingFeeds = new Set(
+        ctx.feeds().filter((f) => f.tags?.some((t) => tagSet.has(normalizeTag(t)))).map((f) => f.url)
+      );
+      if (matchingFeeds.size === 0) return items;
+      return items.filter((i) => matchingFeeds.has(i.feedUrl));
+    }
     if (ctx.state.riverScope == null) return items;
     return items.filter((i) => i.feedUrl === ctx.state.riverScope);
   });

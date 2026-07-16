@@ -20,6 +20,8 @@ export interface RemoteFeed {
   folder_at?: number | null;
   title?: string | null;
   title_at?: number | null;
+  tags?: string | null;
+  tags_at?: number | null;
   deleted?: 0 | 1;
   deleted_at?: number | null;
   row_at: number;
@@ -58,6 +60,17 @@ function parseFolder(s: string | null | undefined): string[] | undefined {
   return undefined;
 }
 
+function parseTags(s: string | null | undefined): string[] | undefined {
+  if (s == null) return undefined;
+  try {
+    const v = JSON.parse(s);
+    if (Array.isArray(v)) return v as string[];
+  } catch {
+    // fall through
+  }
+  return undefined;
+}
+
 export async function applyRemoteState(payload: RemotePayload): Promise<void> {
   // 1) Feeds.
   const localFeeds = await listFeeds();
@@ -66,11 +79,14 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
   for (const rf of payload.feeds) {
     const local = localByUrl.get(rf.feed_url);
     const remoteFolder = parseFolder(rf.folder);
+    const remoteTags = parseTags(rf.tags);
     const merged: Feed = {
       url: rf.feed_url,
       title: newer(rf.title ?? null, local?.title ?? null, rf.title_at ?? null, local?.lastFetched ?? null) ?? '',
       htmlUrl: local?.htmlUrl,
       folder: newer(remoteFolder ?? null, local?.folder ?? null, rf.folder_at ?? null, local?.lastFetched ?? null) ?? undefined,
+      tags: newer(remoteTags ?? null, local?.tags ?? null, rf.tags_at ?? null, local?.tagsAt ?? null) ?? undefined,
+      tagsAt: Math.max(rf.tags_at ?? 0, local?.tagsAt ?? 0) || null,
       lastFetched: Math.max(local?.lastFetched ?? 0, rf.row_at),
       etag: local?.etag,
       lastModified: local?.lastModified,

@@ -5,7 +5,7 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
-import { upsertFeed, listFeeds } from '../src/db/feeds';
+import { upsertFeed, listFeeds, getFeedByUrl } from '../src/db/feeds';
 import { insertOrUpdateItem, listItems } from '../src/db/items';
 import { applyRemoteState } from '../src/sync/apply';
 import { encodeItemId, decodeItemId } from '../src/sync/itemId';
@@ -145,6 +145,81 @@ describe('applyRemoteState', () => {
     expect(items.length).toBe(1);
     expect(items[0].read).toBe(true);
     expect(items[0].starred).toBe(true);
+  });
+
+  it('applies remote tags when newer than local', async () => {
+    await upsertFeed({
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      tags: ['old'],
+      tagsAt: 100,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 1000,
+    });
+    await applyRemoteState({
+      serverTime: 2000,
+      feeds: [
+        {
+          feed_url: 'https://example.com/feed.xml',
+          tags: JSON.stringify(['rust', 'dev']),
+          tags_at: 500,
+          row_at: 500,
+        },
+      ],
+      flags: [],
+    });
+    const feed = await getFeedByUrl('https://example.com/feed.xml');
+    expect(feed?.tags).toEqual(['rust', 'dev']);
+  });
+
+  it('preserves local tags when remote is older', async () => {
+    await upsertFeed({
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      tags: ['rust'],
+      tagsAt: 1000,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 500,
+    });
+    await applyRemoteState({
+      serverTime: 2000,
+      feeds: [
+        {
+          feed_url: 'https://example.com/feed.xml',
+          tags: JSON.stringify(['old']),
+          tags_at: 500,
+          row_at: 500,
+        },
+      ],
+      flags: [],
+    });
+    const feed = await getFeedByUrl('https://example.com/feed.xml');
+    expect(feed?.tags).toEqual(['rust']);
+  });
+
+  it('does not clear local tags when remote has null tags', async () => {
+    await upsertFeed({
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      tags: ['rust'],
+      tagsAt: 100,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 1000,
+    });
+    await applyRemoteState({
+      serverTime: 2000,
+      feeds: [
+        {
+          feed_url: 'https://example.com/feed.xml',
+          tags: null,
+          tags_at: null,
+          row_at: 500,
+        },
+      ],
+      flags: [],
+    });
+    const feed = await getFeedByUrl('https://example.com/feed.xml');
+    expect(feed?.tags).toEqual(['rust']);
   });
 
   it('stores a remote flag for an unknown item', async () => {

@@ -4,6 +4,7 @@ import { discoverFeed } from '../feeds/discover';
 import { upsertFeed } from '../db/feeds';
 import { bulkUpsertItems } from '../db/items';
 import { parsedToItems } from '../feeds/parse';
+import { TagInput } from './TagInput';
 import type { DiscoveredFeed } from '../feeds/discover';
 
 export function AddFeedModal() {
@@ -12,6 +13,7 @@ export function AddFeedModal() {
   const [discovered, setDiscovered] = createSignal<DiscoveredFeed | null>(null);
   const [discovering, setDiscovering] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [tags, setTags] = createSignal<string[]>([]);
 
   let inputRef: HTMLInputElement | undefined;
 
@@ -51,10 +53,18 @@ export function AddFeedModal() {
     }
   };
 
+  const allTags = () => {
+    const seen = new Set<string>();
+    for (const f of ctx.feeds()) {
+      for (const t of f.tags ?? []) seen.add(t);
+    }
+    return [...seen];
+  };
+
   const subscribe = async () => {
     const d = discovered();
     if (!d) return;
-    await ctx.subscribeFeed({ url: d.url, title: d.title });
+    await ctx.subscribeFeed({ url: d.url, title: d.title, tags: tags() });
     ctx.closeModal();
     void ctx.mcpNotifySync();
     const items = parsedToItems(d.parsed, d.url);
@@ -99,19 +109,22 @@ export function AddFeedModal() {
           <button class="btn" onClick={() => void discover()}>Retry</button>{' '}
           <button class="btn subtle" onClick={() => ctx.closeModal()}>Cancel</button>
         </Show>
-        <Show when={discovered()}>
-          <div class="samples">
-            <div>Found: <strong>{discovered()!.title}</strong></div>
-            <Show when={discovered()!.samples.length > 0}>
-              <div style={{ "font-size": "12px", "margin-top": "6px", color: "var(--subtext)" }}>
-                Recent items:
-              </div>
-              <ul>
-                <For each={discovered()!.samples}>{(s) => <li>{s}</li>}</For>
-              </ul>
-            </Show>
-          </div>
-        </Show>
+          <Show when={discovered()}>
+            <div class="samples">
+              <div>Found: <strong>{discovered()!.title}</strong></div>
+              <Show when={discovered()!.samples.length > 0}>
+                <div style={{ "font-size": "12px", "margin-top": "6px", color: "var(--subtext)" }}>
+                  Recent items:
+                </div>
+                <ul>
+                  <For each={discovered()!.samples}>{(s) => <li>{s}</li>}</For>
+                </ul>
+              </Show>
+            </div>
+            <div style={{ "margin-top": "10px" }}>
+              <TagInput allTags={allTags()} value={tags()} onChange={setTags} placeholder="Add tags…" />
+            </div>
+          </Show>
       </div>
       <div class="modal-footer">
         <button class="btn subtle" onClick={() => ctx.closeModal()}>Cancel</button>

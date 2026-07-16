@@ -510,10 +510,44 @@ a:hover { text-decoration: underline; }
 }
 .sidebar .feed .error-mark[data-error]:hover::after { opacity: 1; }
 
-/* Sidebar feed delete button: hover-reveal on desktop, always-visible on touch.
-   The @media (hover: hover) query targets devices with a hover-capable pointer
-   (i.e. mice), while the fallback covers touch-only devices. */
-.sidebar .feed .delete-btn {
+/* Sidebar tag chips — inline row between Feeds heading and All Feeds. */
+.sidebar .tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 16px 0;
+}
+.sidebar .tag-chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--subtext);
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  line-height: 1.5;
+  transition: background 0.1s, color 0.1s;
+}
+.sidebar .tag-chip:hover {
+  background: var(--overlay);
+  color: var(--text);
+}
+.sidebar .tag-chip.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+/* Touch-friendly sizing for tag chips. */
+@media (any-pointer: coarse) {
+  .sidebar .tag-chip {
+    min-height: 36px;
+    padding: 4px 12px;
+    font-size: 14px;
+  }
+}
+
+/* Sidebar feed edit button: hover-reveal on desktop, always-visible on touch. */
+.sidebar .feed .edit-btn {
   width: 20px;
   height: 20px;
   display: flex;
@@ -522,23 +556,118 @@ a:hover { text-decoration: underline; }
   border-radius: 4px;
   color: var(--subtext);
   flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
   opacity: 1;
+  font-size: 14px;
+  line-height: 1;
+}
+.sidebar .feed .edit-dots {
+  font-weight: 700;
+  letter-spacing: 1px;
 }
 @media (hover: hover) {
-  .sidebar .feed .delete-btn {
+  .sidebar .feed .edit-btn {
     opacity: 0;
   }
-  .sidebar .feed:hover .delete-btn {
+  .sidebar .feed:hover .edit-btn {
     opacity: 1;
   }
 }
-.sidebar .feed .delete-btn:hover,
-.sidebar .feed .delete-btn:focus-visible {
-  color: #d20f39;
+.sidebar .feed .edit-btn:hover,
+.sidebar .feed .edit-btn:focus-visible {
+  color: var(--accent);
   background: var(--accent-dim);
 }
-.sidebar .feed .delete-btn:focus-visible {
+.sidebar .feed .edit-btn:focus-visible {
   opacity: 1;
+}
+
+/* Tag input component (used in modals). */
+.tag-input {
+}
+.tag-input .tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--base);
+  min-height: 36px;
+  align-items: center;
+  cursor: text;
+}
+.tag-input .tag-chips:focus-within {
+  border-color: var(--accent);
+}
+.tag-input .tag-chip {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.5;
+}
+.tag-input .tag-chip.removable {
+  padding-right: 2px;
+}
+.tag-input .tag-chip-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--subtext);
+  font-size: 12px;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: 2px;
+}
+.tag-input .tag-chip-remove:hover {
+  color: var(--red);
+  background: var(--accent-dim);
+}
+.tag-input-field {
+  border: none;
+  outline: none;
+  background: none;
+  font-size: 13px;
+  color: var(--text);
+  flex: 1;
+  min-width: 80px;
+  padding: 2px 4px;
+  font-family: inherit;
+}
+.tag-input-field::placeholder {
+  color: var(--overlay);
+}
+.tag-suggestions {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  max-height: 150px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+.tag-suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 13px;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+.tag-suggestion:hover {
+  background: var(--surface);
+  color: var(--accent);
 }
 
 /* River. */
