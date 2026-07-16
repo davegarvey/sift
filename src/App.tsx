@@ -9,6 +9,8 @@ import { CommandPalette } from './components/CommandPalette';
 import { AddFeedModal } from './components/AddFeedModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { PairResultModal } from './components/PairResultModal';
+import { SyncJoinModal } from './components/SyncJoinModal';
+import { SyncShareModal } from './components/SyncShareModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { ConfirmUnsubscribeModal } from './components/ConfirmUnsubscribeModal';
 import { FeedEditorModal } from './components/FeedEditorModal';
@@ -192,6 +194,12 @@ function Shell() {
       </Show>
       <Show when={ctx.state.modal.kind === 'pair-result'}>
         <Backdrop><PairResultModal /></Backdrop>
+      </Show>
+      <Show when={ctx.state.modal.kind === 'sync-join'}>
+        <Backdrop><SyncJoinModal /></Backdrop>
+      </Show>
+      <Show when={ctx.state.modal.kind === 'sync-share'}>
+        <Backdrop><SyncShareModal /></Backdrop>
       </Show>
     </div>
   );

@@ -24,6 +24,8 @@ type ModalKind =
   | { kind: 'feed-editor'; feedUrl: string; feedTitle: string }
   | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string }
   | { kind: 'pair-result'; success: boolean; message: string }
+  | { kind: 'sync-join' }
+  | { kind: 'sync-share' }
   ;
 
 export interface AppState {

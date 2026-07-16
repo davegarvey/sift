@@ -1487,11 +1487,33 @@ a:hover { text-decoration: underline; }
   background: var(--crust, var(--base));
   border-radius: 4px;
   color: var(--text);
+  position: relative;
 }
 .sync-grid__expiry {
   font-size: 12px;
   color: var(--subtext);
   text-align: center;
+}
+
+.code-timer {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.code-timer__bg {
+  fill: none;
+  stroke: var(--hairline);
+  stroke-width: 2;
+}
+.code-timer__progress {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 12px 12px;
+  transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
 }
 .sync-grid__copy {
   display: inline-flex;
@@ -1532,6 +1554,122 @@ a:hover { text-decoration: underline; }
     grid-template-columns: 1fr;
   }
 }
+
+/* Sync "or" divider. */
+.sync-or-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+}
+.sync-or-divider span:first-child,
+.sync-or-divider span:last-child {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+.sync-or-divider span:nth-child(2) {
+  font-size: 11px;
+  color: var(--overlay);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+/* QR scanner overlay. */
+.scanner-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+}
+.scanner-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: 12px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 24px;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  opacity: 0.7;
+}
+.scanner-close:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+.scanner-viewfinder {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+.scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.scanner-canvas { display: none; }
+.scanner-target {
+  position: absolute;
+  inset: 12%;
+  pointer-events: none;
+}
+.scanner-target-svg {
+  width: 100%;
+  height: 100%;
+  color: #fff;
+  opacity: 0.8;
+}
+.scanner-status {
+  margin-top: 20px;
+  font-size: 14px;
+  color: rgba(255,255,255,0.7);
+}
+.scanner-error {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--red);
+  text-align: center;
+  max-width: 360px;
+  line-height: 1.5;
+}
+.scanner-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+.scanner-actions .btn {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.scanner-actions .btn.subtle {
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+}
+.scanner-actions .btn:hover { background: rgba(255,255,255,0.2); }
+.scanner-cancel {
+  margin-top: 24px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.6);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 16px;
+}
+.scanner-cancel:hover { color: #fff; }
 
 /* Shortcuts overlay. */
 .shortcuts-list { padding: 0; }
