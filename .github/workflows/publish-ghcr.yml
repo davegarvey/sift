@@ -2,8 +2,12 @@ name: Publish to GHCR
 
 on:
   push:
-    branches: [main]
     tags: ['v*.*.*']
+    paths-ignore:
+      - '**/*.md'
+      - LICENSE
+      - openspec/**
+      - .opencode/**
   workflow_dispatch:
 
 jobs:

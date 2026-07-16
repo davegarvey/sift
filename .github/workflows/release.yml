@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  create-release:
     if: github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
     permissions:
@@ -27,12 +27,11 @@ jobs:
             "https://github.com/davegarvey/grubble/releases/download/v5.6.2/grubble-linux-x86_64.tar.gz"
           tar xzf grubble.tar.gz
           chmod +x grubble
+          rm grubble.tar.gz
 
       - name: Bump version
         id: bump
         run: |
-          PREV=$(./grubble --raw --preset node)
-          echo "PREV=$PREV"
           BUMP_TYPE=$(./grubble --bump-type)
           echo "BUMP_TYPE=$BUMP_TYPE"
           ./grubble --tag --preset node --package-files package.json
@@ -50,10 +49,25 @@ jobs:
           BRANCH="release/v${VERSION}"
           git checkout -b "${BRANCH}"
           git push --set-upstream origin "${BRANCH}"
-          git push --tags --force
           PR_URL=$(gh pr create \
             --base main \
             --head "${BRANCH}" \
             --title "Release v${VERSION}" \
             --body "Automated release PR created by grubble.")
-          gh pr merge "$PR_URL" --auto --merge
+          gh pr merge "$PR_URL" --auto
+
+  push-tag:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push version tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"

@@ -4,9 +4,11 @@ on:
   workflow_call:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
-    tags: ['v*.*.*']
+    paths-ignore:
+      - '**/*.md'
+      - LICENSE
+      - openspec/**
+      - .opencode/**
 
 jobs:
   test:
