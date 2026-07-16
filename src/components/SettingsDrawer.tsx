@@ -1,14 +1,12 @@
-import { ExternalLink, Check, Copy, RefreshCw } from 'lucide-solid';
+import { Check, Copy } from 'lucide-solid';
 import { version } from '../../package.json';
-import { Show, For, createSignal, createMemo } from 'solid-js';
+import { Show, createSignal, createMemo } from 'solid-js';
 import { useApp } from '../state';
 import type { ThemePreference } from '../db/types';
 import { serializeOpml } from '../opml/serialize';
 import { parseOpml } from '../opml/parse';
 import { buildMergePreview, applyMerge } from '../opml/merge';
 import { isSyncAvailable } from '../sync/capabilities';
-import { issueOtp, redeemCode } from '../sync/client';
-import { renderSyncKeyQr } from '../sync/qr';
 
 export function SettingsDrawer() {
   const ctx = useApp();
@@ -137,58 +135,8 @@ export function SettingsDrawer() {
 
 function SyncSection() {
   const ctx = useApp();
-  const [code, setCode] = createSignal<string | null>(null);
-  const [expiresAt, setExpiresAt] = createSignal<number | null>(null);
-  const [copied, setCopied] = createSignal(false);
-  const [pairInput, setPairInput] = createSignal('');
-  const [pairError, setPairError] = createSignal<string | null>(null);
-  const [pairSuccess, setPairSuccess] = createSignal<string | null>(null);
-  const [busy, setBusy] = createSignal(false);
   const [syncError, setSyncError] = createSignal<string | null>(null);
   const enabled = () => Boolean(ctx.syncKey());
-
-  const generateCode = async () => {
-    setBusy(true);
-    try {
-      const res = await issueOtp();
-      setCode(res.code);
-      setExpiresAt(res.expiresAt);
-    } catch {
-      setCode(null);
-      setExpiresAt(null);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copyCode = async () => {
-    if (!code()) return;
-    await navigator.clipboard.writeText(code()!);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const doPair = async () => {
-    const v = pairInput().trim();
-    if (!v) return;
-    if (v.length !== 8) {
-      setPairError('Enter an 8-character pairing code');
-      return;
-    }
-    setBusy(true);
-    setPairError(null);
-    setPairSuccess(null);
-    try {
-      const key = await redeemCode(v);
-      await ctx.pairSyncWithKey(key);
-      setPairInput('');
-      setPairSuccess('Paired successfully');
-    } catch (e) {
-      setPairError(e instanceof Error ? e.message : 'Pairing failed');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const toggleOn = async () => {
     setSyncError(null);
@@ -202,8 +150,6 @@ function SyncSection() {
 
   const toggleOff = () => {
     void ctx.disableSync();
-    setCode(null);
-    setExpiresAt(null);
     setSyncError(null);
   };
 
@@ -226,70 +172,14 @@ function SyncSection() {
         </Show>
       </div>
       <Show when={enabled()}>
-        <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '12px 0 6px' }}>
-          Join existing sync
-        </p>
-        <div class="row" style={{ 'border-bottom': 0 }}>
-          <form
-            onSubmit={(e) => { e.preventDefault(); void doPair(); }}
-            style={{ display: 'flex', gap: '6px', 'align-items': 'center', width: '100%' }}
-          >
-            <input
-              type="text"
-              value={pairInput()}
-              onInput={(e) => setPairInput(e.currentTarget.value)}
-              placeholder="Enter pairing code"
-              autocomplete="off"
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck={false}
-              disabled={busy()}
-              style={{ flex: 1, 'font-size': '13px', padding: '4px 6px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--hairline)', 'border-radius': '4px' }}
-            />
-            <button class="btn" disabled={busy() || !pairInput().trim()}>{busy() ? 'Pairing…' : 'Pair'}</button>
-          </form>
+        <div class="row">
+          <label>Pair this device</label>
+          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-join' })}>Join</button>
         </div>
-        <Show when={pairError()}>
-          <p class="error" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{pairError()}</p>
-        </Show>
-        <Show when={pairSuccess()}>
-          <p class="success" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{pairSuccess()}</p>
-        </Show>
-
-        <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '12px 0 6px' }}>
-          Start syncing another device
-        </p>
-        <Show when={code()} fallback={
-          <div class="row">
-            <button class="btn" disabled={busy()} onClick={() => void generateCode()}>
-              Generate code
-            </button>
-          </div>
-        }>
-          <div class="sync-grid">
-            <div class="sync-grid__cell">
-              <span class="sync-grid__label">Pairing code</span>
-              <span class="sync-grid__code">{code()}</span>
-              <span class="sync-grid__expiry">{expiresAt() && `valid for ${Math.ceil((expiresAt()! - Date.now()) / 60000)} min`}</span>
-              <div style={{ display: 'flex', gap: '6px', 'justify-content': 'center' }}>
-                <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
-                  {copied() ? <Check size={14} /> : <Copy size={14} />}
-                  <span style={{ 'font-size': '12px' }}>Copy</span>
-                </button>
-                <button class="sync-grid__copy" onClick={() => void generateCode()} aria-label="Generate new pairing code">
-                  <RefreshCw size={14} />
-                  <span style={{ 'font-size': '12px' }}>Regenerate</span>
-                </button>
-              </div>
-              <span class="sync-grid__hint">Enter this code on your other device</span>
-            </div>
-            <div class="sync-grid__cell">
-              <span class="sync-grid__label">QR code</span>
-              <div class="sync-grid__qr" innerHTML={renderSyncKeyQr(window.location.origin + '/?pair=' + code()!)} />
-              <span class="sync-grid__hint">Open Sift on your other device and scan</span>
-            </div>
-          </div>
-        </Show>
+        <div class="row" style="border-top: 0">
+          <label>Add another device</label>
+          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-share' })}>Generate</button>
+        </div>
       </Show>
     </div>
   );
