@@ -22,6 +22,7 @@ type ModalKind =
   | { kind: 'settings' }
   | { kind: 'add-feed' }
   | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string }
+  | { kind: 'pair-result'; success: boolean; message: string }
   ;
 
 export interface AppState {
@@ -259,6 +260,11 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const refreshAll = async () => {
+    try {
+      await pullNow();
+    } catch {
+      // Sync server unreachable — continue with local feeds only.
+    }
     await refreshStaleFeeds(true);
     await reloadFeeds();
     await reloadItems();
@@ -452,17 +458,22 @@ export const AppProvider: ParentComponent = (props) => {
     const params = new URLSearchParams(window.location.search);
     const pairCode = params.get('pair');
     if (pairCode) {
+      let success = false;
+      let message = '';
       try {
         const key = await redeemCode(pairCode);
         await setStoredSyncKey(key);
         await updateSettingsWith({ syncKey: key });
         await triggerFirstTime();
+        success = true;
+        message = 'Paired successfully';
       } catch (e) {
-        console.error('QR pairing failed:', e);
+        message = e instanceof Error ? e.message : 'Pairing failed';
       }
       await reloadFeeds();
       await reloadItems();
       history.replaceState(null, '', window.location.pathname);
+      openModal({ kind: 'pair-result', success, message });
     }
   })();
 

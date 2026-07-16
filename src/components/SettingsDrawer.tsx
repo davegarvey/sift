@@ -142,6 +142,7 @@ function SyncSection() {
   const [copied, setCopied] = createSignal(false);
   const [pairInput, setPairInput] = createSignal('');
   const [pairError, setPairError] = createSignal<string | null>(null);
+  const [pairSuccess, setPairSuccess] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [syncError, setSyncError] = createSignal<string | null>(null);
   const enabled = () => Boolean(ctx.syncKey());
@@ -176,10 +177,12 @@ function SyncSection() {
     }
     setBusy(true);
     setPairError(null);
+    setPairSuccess(null);
     try {
       const key = await redeemCode(v);
       await ctx.pairSyncWithKey(key);
       setPairInput('');
+      setPairSuccess('Paired successfully');
     } catch (e) {
       setPairError(e instanceof Error ? e.message : 'Pairing failed');
     } finally {
@@ -243,11 +246,14 @@ function SyncSection() {
               disabled={busy()}
               style={{ flex: 1, 'font-size': '13px', padding: '4px 6px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--hairline)', 'border-radius': '4px' }}
             />
-            <button class="btn" disabled={busy() || !pairInput().trim()}>Pair</button>
+            <button class="btn" disabled={busy() || !pairInput().trim()}>{busy() ? 'Pairing…' : 'Pair'}</button>
           </form>
         </div>
         <Show when={pairError()}>
           <p class="error" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{pairError()}</p>
+        </Show>
+        <Show when={pairSuccess()}>
+          <p class="success" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{pairSuccess()}</p>
         </Show>
 
         <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '12px 0 6px' }}>

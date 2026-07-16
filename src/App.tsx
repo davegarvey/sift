@@ -8,6 +8,7 @@ import { ReadingView } from './components/ReadingView';
 import { CommandPalette } from './components/CommandPalette';
 import { AddFeedModal } from './components/AddFeedModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
+import { PairResultModal } from './components/PairResultModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { ConfirmUnsubscribeModal } from './components/ConfirmUnsubscribeModal';
 import './styles.css';
@@ -184,6 +185,9 @@ function Shell() {
       </Show>
       <Show when={ctx.state.modal.kind === 'confirm-unsubscribe'}>
         <Backdrop><ConfirmUnsubscribeModal /></Backdrop>
+      </Show>
+      <Show when={ctx.state.modal.kind === 'pair-result'}>
+        <Backdrop><PairResultModal /></Backdrop>
       </Show>
     </div>
   );
