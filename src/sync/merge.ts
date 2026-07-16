@@ -19,6 +19,12 @@ import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag 
 import { getStoredLastSyncAt, setStoredLastSyncAt } from './key';
 import type { Feed, Item } from '../db/types';
 
+let onSync: (() => void) | null = null;
+
+export function setOnSync(fn: (() => void) | null): void {
+  onSync = fn;
+}
+
 function toRemotePayload(p: PullPayload): RemotePayload {
   return {
     serverTime: p.serverTime,
@@ -54,6 +60,7 @@ export async function snapshotLocal(): Promise<LocalSnapshot> {
  */
 export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: RemotePayload): Promise<void> {
   await applyRemoteState(payload);
+  onSync?.();
 }
 
 /**
@@ -127,5 +134,6 @@ export async function runPull(): Promise<number | null> {
   const newTime = Math.max(since, pull.serverTime);
   await setStoredLastSyncAt(newTime);
   scheduleFlush();
+  onSync?.();
   return newTime;
 }

@@ -10,6 +10,7 @@ import {
   MIN_LEARNED_INTERVAL_MS,
   MAX_LEARNED_INTERVAL_MS,
 } from '../db/types';
+import { isIdle } from '../util/idle';
 
 const TICK_MS = 5 * 60 * 1000;
 
@@ -18,6 +19,11 @@ const [feedErrors, setFeedErrors] = createSignal<Record<string, string>>({});
 const [fetchingFeeds, setFetchingFeeds] = createSignal<Set<string>>(new Set());
 
 let tickTimer: ReturnType<typeof setInterval> | null = null;
+let onRefresh: (() => void) | null = null;
+
+export function setOnRefresh(fn: (() => void) | null): void {
+  onRefresh = fn;
+}
 
 /**
  * Single entry point: kick the scheduler once on app open, and start a
@@ -59,6 +65,9 @@ export async function refreshStaleFeeds(forceAll = false): Promise<void> {
   });
   await mapConcurrent(stale, (f) => refreshFeed(f), 4);
   void runEviction();
+  if (!forceAll && stale.length > 0 && onRefresh && !isIdle()) {
+    onRefresh();
+  }
 }
 
 /** Run async tasks with at most `concurrency` in-flight at once. */

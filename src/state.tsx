@@ -6,13 +6,15 @@ import { listItems, listItemsByFeed, markRead, toggleStar as dbToggleStar } from
 import type { Feed, Item } from './db/types';
 import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
 import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
-import { refreshStaleFeeds, fetchingState, startScheduler } from './feeds/scheduler';
+import { refreshStaleFeeds, fetchingState, startScheduler, setOnRefresh } from './feeds/scheduler';
 import { enqueueFlag } from './sync/queue';
 import { scheduleFlush } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
+import { setOnSync } from './sync/merge';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
 import { redeemCode } from './sync/client';
 import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, type SubscribeInput } from './feeds/service';
+import { isIdle, onCatchup, clearActivityOnHide } from './util/idle';
 
 type ViewKind = 'river' | 'reading';
 type ModalKind =
@@ -229,11 +231,19 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const reloadFeeds = async () => setFeeds(await listFeeds());
+
+  let reloadingItems = false;
   const reloadItems = async () => {
-    if (state.riverScope != null) {
-      setItems(await listItemsByFeed(state.riverScope, 500));
-    } else {
-      setItems(await listItems(500));
+    if (reloadingItems) return;
+    reloadingItems = true;
+    try {
+      if (state.riverScope != null) {
+        setItems(await listItemsByFeed(state.riverScope, 500));
+      } else {
+        setItems(await listItems(500));
+      }
+    } finally {
+      reloadingItems = false;
     }
   };
 
@@ -306,6 +316,8 @@ export const AppProvider: ParentComponent = (props) => {
     await reloadFeeds();
     await reloadItems();
   };
+
+  const reloadBoth = () => { void reloadFeeds(); void reloadItems(); };
 
   const toggleStar = async (item: Item) => {
     await toggleStarAndSync(item);
@@ -477,23 +489,32 @@ export const AppProvider: ParentComponent = (props) => {
       }
     }
     startScheduler();
-    // After the first refresh sweep, keep feeds/items in sync.
-    setInterval(async () => {
-      if (document.visibilityState === 'hidden') return;
-      await reloadFeeds();
-      await reloadItems();
-    }, 30_000);
-    // Refresh immediately on tab return.
+    setOnRefresh(reloadBoth);
+    setOnSync(() => { if (!isIdle()) reloadBoth(); });
+    onCatchup(() => { void pullIfStale(30_000); void reloadItems(); });
+
+    let hiddenAt = 0;
+    let idleAtHide = false;
+
     document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
-        await reloadFeeds();
-        await reloadItems();
-        await pullIfStale(30_000);
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        idleAtHide = isIdle();
+        clearActivityOnHide();
+      } else if (document.visibilityState === 'visible') {
+        const away = Date.now() - hiddenAt;
+        if (away > 5 * 60_000) {
+          await reloadFeeds();
+          await reloadItems();
+          if (!idleAtHide) {
+            await pullIfStale(30_000);
+          }
+        }
       }
     }, { once: false });
-    // Online event → pull.
-    window.addEventListener('online', () => { void pullNow(); });
-    // Boot sync: pull / first-time setup.
+
+    window.addEventListener('online', () => { void pullIfStale(120_000); });
+
     await bootSync();
     // QR auto-pairing: redeem ?pair= code on boot.
     const params = new URLSearchParams(window.location.search);
