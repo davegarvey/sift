@@ -54,7 +54,7 @@ jobs:
             --head "${BRANCH}" \
             --title "Release v${VERSION}" \
             --body "Automated release PR created by grubble.")
-          gh pr merge "$PR_URL" --auto
+          gh pr merge "$PR_URL" --auto --squash
 
   push-tag:
     if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
