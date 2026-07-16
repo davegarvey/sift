@@ -88,6 +88,11 @@ button {
   border: 0;
   padding: 0;
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+input, select {
+  touch-action: manipulation;
 }
 
 input {
@@ -98,8 +103,13 @@ input {
 a {
   color: var(--accent-text);
   text-decoration: none;
+  touch-action: manipulation;
 }
 a:hover { text-decoration: underline; }
+
+[cursor="pointer"], [role="button"] {
+  touch-action: manipulation;
+}
 
 /* App shell grid: sidebar | main. Sidebar becomes a drawer on mobile.
    When the reading view is active, the sidebar is hidden and the reading
@@ -1467,5 +1477,147 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
   clip: rect(0,0,0,0);
   border: 0;
+}
+
+/* Touch-device optimisations — larger tap targets and safe-area support. */
+@media (any-pointer: coarse) {
+  /* Increase sidebar feed row tap target */
+  .sidebar .feed {
+    padding: 10px 16px;
+    min-height: 44px;
+  }
+
+  .sidebar .feed .delete-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* Increase sidebar action rows */
+  .sidebar-action {
+    padding: 10px 16px;
+    min-height: 44px;
+  }
+
+  .sidebar-collapse {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Increase topbar touch area */
+  .topbar {
+    height: 44px;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .topbar .sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+  }
+
+  .app-shell .sidebar {
+    inset: 44px env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+
+  /* Increase reading chrome button targets */
+  .reading .reading-chrome .back,
+  .reading .reading-chrome .chrome-chevron,
+  .reading .reading-chrome .star,
+  .reading .reading-chrome .open-original,
+  .reading .reading-chrome .desktop-only {
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Increase river action button targets and make them always visible */
+  .river-item .action-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .river-item .actions {
+    opacity: 1;
+  }
+
+  /* Increase button targets */
+  .btn {
+    min-height: 44px;
+    padding: 10px 16px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Increase palette row targets */
+  .palette .row {
+    padding: 12px 16px;
+    min-height: 44px;
+  }
+
+  /* Increase settings row targets */
+  .settings .row {
+    padding: 10px 0;
+    min-height: 44px;
+  }
+
+  .settings .toggle {
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .settings .toggle::after {
+    width: 18px;
+    height: 18px;
+    top: 2px;
+    left: 2px;
+  }
+
+  .settings .toggle.on::after {
+    transform: translateX(20px);
+  }
+
+  .settings select {
+    padding: 8px 12px;
+    min-height: 44px;
+  }
+
+  /* Increase modal header/footer */
+  .modal .modal-header,
+  .modal .modal-footer {
+    padding: 14px 16px;
+  }
+
+  /* Increase shortcut row targets */
+  .shortcuts-list .row {
+    padding: 10px 16px;
+    min-height: 44px;
+  }
+
+  /* Increase collapsed rail action touch targets */
+  .collapsed-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Increase sidebar section heading spacing */
+  .sidebar .section .heading {
+    padding: 8px 16px 4px;
+  }
+
+  /* Add safe-area bottom padding to reading body */
+  .reading .reading-body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Add bottom safe area to modal backdrop */
+  .modal-backdrop {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
