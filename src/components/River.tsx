@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createEffect } from 'solid-js';
+import { For, Show, createMemo, createEffect, onCleanup } from 'solid-js';
 import { useApp } from '../state';
 import { markRead } from '../db/items';
 import type { Item } from '../db/types';
@@ -26,13 +26,27 @@ export function River() {
     return items.filter((i) => i.feedUrl === ctx.state.riverScope);
   });
 
-  // Auto navigation via state.focusedIndex and scroll into view on change.
+  // Auto-scroll to the focused item when focusedIndex changes.
+  // Guards against re-scrolling on periodic data reloads (idx === lastFocusedIdx).
   let lastFocusedEl: HTMLElement | null = null;
+  let lastFocusedIdx = -1;
   let mouseNav = false;
-  const onFocusChange = () => {
-    const list = visibleItems();
+  createEffect(() => {
+    const items = visibleItems();
+    const returnToId = ctx.state.returnToItemId;
     const idx = ctx.state.focusedIndex;
-    if (idx < 0 || idx >= list.length) return;
+
+    // Handle return-to-item restoration from reading view.
+    if (returnToId != null) {
+      const found = items.findIndex((i) => i.id === returnToId);
+      if (found >= 0) {
+        ctx.setState({ focusedIndex: found, returnToItemId: null });
+      }
+      return;
+    }
+
+    if (idx < 0 || idx >= items.length) { lastFocusedIdx = -1; return; }
+    if (idx === lastFocusedIdx) return;
     const els = containerRef?.querySelectorAll('[data-item-idx]') ?? [];
     const target = els[idx] as HTMLElement | undefined;
     if (target && target !== lastFocusedEl) {
@@ -43,18 +57,20 @@ export function River() {
       lastFocusedEl = target;
       mouseNav = false;
     }
-  };
+    lastFocusedIdx = idx;
+  });
 
-  createEffect(onFocusChange);
-
-  // When returning from reading view, restore focus to the item that was opened.
+  // Clear focusedIndex when the user scrolls manually (touch / scrollbar / wheel).
   createEffect(() => {
-    const items = visibleItems();
-    const returnToId = ctx.state.returnToItemId;
-    if (returnToId == null) return;
-    const idx = items.findIndex((i) => i.id === returnToId);
-    if (idx === -1) return;
-    ctx.setState({ focusedIndex: idx, returnToItemId: null });
+    const el = containerRef;
+    if (!el) return;
+    const onScroll = () => {
+      if (ctx.state.focusedIndex >= 0) {
+        ctx.setState({ focusedIndex: -1 });
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    onCleanup(() => el.removeEventListener('scroll', onScroll));
   });
 
   // Render items swipe handler.
