@@ -144,6 +144,47 @@ describe('sync D1 integration', () => {
     }
   });
 
+  it('push -> pull round-trips tags on a feed', async () => {
+    const mf = await createMf();
+    try {
+      const key = makeSyncKey('tags-round-');
+
+      await mf.dispatchFetch('http://localhost/sync/register', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': key },
+      });
+
+      const now = Date.now();
+      const pushRes = await mf.dispatchFetch('http://localhost/sync/push', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feeds: [{
+            feedUrl: 'https://example.com/tagged',
+            title: { value: 'Tagged Feed', at: now },
+            tags: { value: ['news', 'tech'], at: now },
+            deleted: { value: 0, at: now },
+          }],
+        }),
+      });
+      expect(pushRes.status).toBe(204);
+
+      const pullRes = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
+        headers: { 'X-Sync-Key': key },
+      });
+      expect(pullRes.status).toBe(200);
+      const pull = await pullRes.json() as { feeds: Array<Record<string, unknown>> };
+      expect(pull.feeds).toBeDefined();
+      expect(pull.feeds.length).toBe(1);
+      expect(pull.feeds[0].feed_url).toBe('https://example.com/tagged');
+      // tags should be stored as JSON text and returned as-is
+      expect(pull.feeds[0].tags).toBe(JSON.stringify(['news', 'tech']));
+      expect(pull.feeds[0].tags_at).toBe(now);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
   it('push -> pull round-trips a flag', async () => {
     const mf = await createMf();
     try {

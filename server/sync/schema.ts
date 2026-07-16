@@ -19,6 +19,8 @@ export async function ensureSchema(db: D1Database): Promise<void> {
       folder_at   INTEGER,
       title       TEXT,
       title_at    INTEGER,
+      tags        TEXT,
+      tags_at     INTEGER,
       deleted     INTEGER NOT NULL DEFAULT 0,
       deleted_at  INTEGER,
       row_at      INTEGER NOT NULL,

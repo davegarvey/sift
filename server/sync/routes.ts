@@ -24,6 +24,7 @@ interface FeedPayload {
   feedUrl: string;
   folder?: { value: string[] | null; at: number };
   title?: { value: string; at: number };
+  tags?: { value: string[] | null; at: number };
   deleted?: { value: 0 | 1; at: number };
 }
 
@@ -316,6 +317,14 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           return jsonError('feed.title.value must be a string', 'title.value');
         }
       }
+      if (f.tags !== undefined) {
+        if (typeof f.tags.at !== 'number' || f.tags.at < 0) {
+          return jsonError('feed.tags.at must be a non-negative integer', 'tags.at');
+        }
+        if (f.tags.value !== null && !Array.isArray(f.tags.value)) {
+          return jsonError('feed.tags.value must be an array or null', 'tags.value');
+        }
+      }
       if (f.deleted !== undefined) {
         if (typeof f.deleted.at !== 'number' || f.deleted.at < 0) {
           return jsonError('feed.deleted.at must be a non-negative integer', 'deleted.at');
@@ -361,6 +370,15 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         fieldBinds.push(f.title.at, f.title.value);
         fieldBinds.push(f.title.at, f.title.at);
         maxAt = Math.max(maxAt, f.title.at);
+      }
+      if (f.tags !== undefined) {
+        fieldSets.push(
+          "tags = CASE WHEN tags_at IS NULL OR ? > tags_at THEN ? ELSE tags END",
+          "tags_at = CASE WHEN tags_at IS NULL OR ? > tags_at THEN ? ELSE tags_at END",
+        );
+        fieldBinds.push(f.tags.at, f.tags.value === null ? null : JSON.stringify(f.tags.value));
+        fieldBinds.push(f.tags.at, f.tags.at);
+        maxAt = Math.max(maxAt, f.tags.at);
       }
       if (f.deleted !== undefined) {
         fieldSets.push(
