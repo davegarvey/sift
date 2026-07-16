@@ -113,8 +113,8 @@ test.describe('QR pairing', () => {
     await pageA.waitForSelector('.sync-grid__code', { timeout: 5000 });
     const pairCode = await pageA.locator('.sync-grid__code').textContent();
     expect(pairCode).toBeTruthy();
-    await pageA.getByRole('button', { name: 'Close' }).click({ force: true });
-    await pageA.waitForSelector('.modal-header', { state: 'detached' });
+    await pageA.locator('.modal-footer .btn.primary').click({ force: true });
+    await pageA.locator('.modal-header:has-text("Add another device")').waitFor({ state: 'detached' });
     await pageA.getByRole('button', { name: 'Done' }).click({ force: true });
     await pageA.waitForSelector('.modal', { state: 'detached' });
 
