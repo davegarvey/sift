@@ -29,6 +29,7 @@ Sift — a simple, slick, browser-first RSS reader.
 - Test files live alongside source where appropriate (`*.test.ts`) or under `tests/` for integration tests.
 - The `LICENSE` is MIT. Do not introduce third-party code that is incompatible.
 - **README freshness.** If your change adds, removes, or modifies a feature the README describes (deploy targets, architecture, scripts, known limitations, configuration, etc.), update the README in the same PR. Search README for keywords related to your change to find stale text.
+- **Version bumps are automated.** The release workflow handles version bumps, release branch creation, and tag pushes. Never run `grubble` locally or ask an AI agent to bump the version. Doing so will collide with the automated pipeline and create duplicate commits/PRs.
 
 ## Git workflow
 
@@ -38,7 +39,7 @@ Sift — a simple, slick, browser-first RSS reader.
 
 ## OpenSpec
 
-Change artifacts live in `openspec/changes/`. Current change: `add-core-reader`.
-Specs (the WHAT) live in `openspec/changes/add-core-reader/specs/`. Design (the HOW) lives in `design.md`. Tasks are tracked in `tasks.md`.
+Change artifacts live in `openspec/changes/`. Current change: `guard-release-process`.
+Specs (the WHAT) live in `openspec/changes/guard-release-process/specs/`. Design (the HOW) lives in `design.md`. Tasks are tracked in `tasks.md`.
 
 If implementation requires a spec deviation, update the relevant spec or design artifact AND mention the divergence in the task summary.
