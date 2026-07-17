@@ -470,7 +470,7 @@ export const AppProvider: ParentComponent = (props) => {
 
     await reloadFeeds();
     // Restore last sidebar selection from persisted setting, falling
-    // back to all-feeds view if the saved feed no longer exists.
+    // back to all view if the saved feed no longer exists.
     const validFeed =
       s.lastFeedUrl && feeds().some((f) => f.url === s.lastFeedUrl)
         ? s.lastFeedUrl

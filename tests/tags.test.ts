@@ -27,4 +27,10 @@ describe('normalizeTag', () => {
   it('rejects whitespace-only string', () => {
     expect(normalizeTag('   ')).toBe('');
   });
+
+  it('reserves "all" tag', () => {
+    expect(normalizeTag('all')).toBeNull();
+    expect(normalizeTag('ALL')).toBeNull();
+    expect(normalizeTag('  All  ')).toBeNull();
+  });
 });
