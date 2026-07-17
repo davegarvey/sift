@@ -8,18 +8,18 @@ import { normalizeTag } from '../util/tags';
 export function Sidebar(props: { onNavigate?: () => void }) {
   const ctx = useApp();
 
-  const selectAllFeeds = () => {
-    ctx.clearTags();
-    ctx.setRiverScope(null);
-    void ctx.saveSettingsPatch({ lastFeedUrl: null });
-    void ctx.reloadItems();
-    props.onNavigate?.();
-  };
-
   const selectFeed = (feedUrl: string) => {
     ctx.clearTags();
     ctx.setRiverScope(feedUrl);
     void ctx.saveSettingsPatch({ lastFeedUrl: feedUrl });
+    void ctx.reloadItems();
+    props.onNavigate?.();
+  };
+
+  const selectAll = () => {
+    ctx.clearTags();
+    ctx.setRiverScope(null);
+    void ctx.saveSettingsPatch({ lastFeedUrl: null });
     void ctx.reloadItems();
     props.onNavigate?.();
   };
@@ -30,7 +30,10 @@ export function Sidebar(props: { onNavigate?: () => void }) {
     const tags = ctx.state.activeTags;
     if (tags.length === 0) return ctx.feeds();
     const tagSet = new Set(tags);
-    return ctx.feeds().filter((f) => f.tags?.some((t) => tagSet.has(normalizeTag(t))));
+    return ctx.feeds().filter((f) => f.tags?.some((t) => {
+      const normalized = normalizeTag(t);
+      return normalized !== null && tagSet.has(normalized);
+    }));
   });
 
   const refreshing = () => ctx.fetching() > 0;
@@ -69,26 +72,25 @@ export function Sidebar(props: { onNavigate?: () => void }) {
 
         <div class="section">
           <div class="heading">Feeds</div>
-          <Show when={ctx.allTags().length > 0}>
-            <div class="tag-chips">
-              <For each={ctx.allTags()}>
-                {(tag) => (
-                  <button
-                    class={`tag-chip ${ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
-                    onClick={() => ctx.toggleTag(tag)}
-                    type="button"
-                  >
-                    {tag}
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
-          <div
-            class={`feed all-feeds ${ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
-            onClick={selectAllFeeds}
-          >
-            <span class="title">All Feeds</span>
+          <div class="tag-chips">
+            <button
+              class={`tag-chip ${ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
+              onClick={selectAll}
+              type="button"
+            >
+              all
+            </button>
+            <For each={ctx.allTags()}>
+              {(tag) => (
+                <button
+                  class={`tag-chip ${ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
+                  onClick={() => ctx.toggleTag(tag)}
+                  type="button"
+                >
+                  {tag}
+                </button>
+              )}
+            </For>
           </div>
           <For each={visibleFeeds()}>
             {(feed) => (

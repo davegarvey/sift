@@ -17,7 +17,10 @@ export function River() {
     if (tags.length > 0) {
       const tagSet = new Set(tags);
       const matchingFeeds = new Set(
-        ctx.feeds().filter((f) => f.tags?.some((t) => tagSet.has(normalizeTag(t)))).map((f) => f.url)
+        ctx.feeds().filter((f) => f.tags?.some((t) => {
+          const normalized = normalizeTag(t);
+          return normalized !== null && tagSet.has(normalized);
+        })).map((f) => f.url)
       );
       if (matchingFeeds.size === 0) return items;
       return items.filter((i) => matchingFeeds.has(i.feedUrl));
