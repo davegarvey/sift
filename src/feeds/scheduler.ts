@@ -45,6 +45,7 @@ export function stopScheduler(): void {
 
 export const fetchingState = {
   inFlight,
+  setInFlight,
   feedErrors,
   fetchingFeeds,
 };

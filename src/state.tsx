@@ -307,12 +307,17 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const refreshAll = async () => {
+    fetchingState.setInFlight(n => n + 1);
     try {
-      await pullNow();
-    } catch {
-      // Sync server unreachable — continue with local feeds only.
+      try {
+        await pullNow();
+      } catch {
+        // Sync server unreachable — continue with local feeds only.
+      }
+      await refreshStaleFeeds(true);
+    } finally {
+      fetchingState.setInFlight(n => Math.max(0, n - 1));
     }
-    await refreshStaleFeeds(true);
     await reloadFeeds();
     await reloadItems();
   };
