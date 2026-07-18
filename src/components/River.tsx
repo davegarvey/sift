@@ -36,6 +36,7 @@ export function River() {
   let mouseNav = false;
   let lastKeyboardNav = 0;
   let mouseMoved = false;
+  let lastMouseMoveTime = 0;
 
   createEffect(() => {
     const items = visibleItems();
@@ -134,7 +135,7 @@ export function River() {
   };
 
   return (
-    <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; }}>
+    <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
       <div class="river-inner">
         <For each={visibleItems()} fallback={shouldShowSkeleton() ? <SkeletonState /> : <EmptyState />}>
           {(item, idx) => (
@@ -149,6 +150,9 @@ export function River() {
                 void ctx.openItem(item);
               }}
               onMouseEnter={() => {
+                // Ignore enter events when content shifts under a
+                // stationary cursor (refresh, mark-read removal, etc.).
+                if (performance.now() - lastMouseMoveTime > 200) return;
                 // Ignore enter events triggered by scrolling items under a
                 // stationary cursor during keyboard navigation.
                 if (performance.now() - lastKeyboardNav < 500 && !mouseMoved) return;
