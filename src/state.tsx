@@ -302,7 +302,24 @@ export const AppProvider: ParentComponent = (props) => {
   const jumpTo = (offset: number) => {
     const list = items();
     if (list.length === 0) return;
-    const next = Math.max(0, Math.min(list.length - 1, state.focusedIndex + offset));
+    let idx = state.focusedIndex;
+    if (idx < 0) {
+      const els = document.querySelectorAll<HTMLElement>('[data-item-idx]');
+      let closest = 0;
+      let closestDist = Infinity;
+      const viewportCenter = window.innerHeight / 2;
+      els.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        const dist = Math.abs(rect.top + rect.height / 2 - viewportCenter);
+        const itemIdx = parseInt(el.dataset.itemIdx ?? '0');
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = itemIdx;
+        }
+      });
+      idx = closest;
+    }
+    const next = Math.max(0, Math.min(list.length - 1, idx + offset));
     setState({ focusedIndex: next });
   };
 
