@@ -55,6 +55,13 @@ export function River() {
     const els = containerRef?.querySelectorAll('[data-item-idx]') ?? [];
     const target = els[idx] as HTMLElement | undefined;
     if (target && target !== lastFocusedEl) {
+      if (mouseNav) {
+        // Mouse hover: highlight only, don't scroll.
+        lastFocusedEl = target;
+        lastFocusedIdx = idx;
+        mouseNav = false;
+        return;
+      }
       lastKeyboardNav = performance.now();
       mouseMoved = false;
       target.scrollIntoView({
