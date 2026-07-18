@@ -324,6 +324,10 @@ a:hover { text-decoration: underline; }
     grid-template-columns: 1fr;
   }
 
+  .river {
+    padding-top: 40px;
+  }
+
   .app-shell[data-reading="true"] .topbar {
     display: none;
   }
@@ -1774,6 +1778,10 @@ a:hover { text-decoration: underline; }
   .topbar {
     height: 44px;
     padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .river {
+    padding-top: 44px;
   }
 
   .topbar .sidebar-toggle {
