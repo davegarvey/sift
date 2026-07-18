@@ -35,9 +35,7 @@ export function River() {
   let lastFocusedIdx = -1;
   let mouseNav = false;
   let lastKeyboardNav = 0;
-  // Ignore mouse events triggered by scrolling items (not actual mouse movement)
-  // for a short window after keyboard navigation.
-  const isKeyboardInert = () => performance.now() - lastKeyboardNav < 500;
+  let mouseMoved = false;
 
   createEffect(() => {
     const items = visibleItems();
@@ -58,6 +56,7 @@ export function River() {
     const target = els[idx] as HTMLElement | undefined;
     if (target && target !== lastFocusedEl) {
       lastKeyboardNav = performance.now();
+      mouseMoved = false;
       target.scrollIntoView({
         behavior: 'auto',
         block: 'center',
@@ -128,7 +127,7 @@ export function River() {
   };
 
   return (
-    <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })}>
+    <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; }}>
       <div class="river-inner">
         <For each={visibleItems()} fallback={shouldShowSkeleton() ? <SkeletonState /> : <EmptyState />}>
           {(item, idx) => (
@@ -143,7 +142,9 @@ export function River() {
                 void ctx.openItem(item);
               }}
               onMouseEnter={() => {
-                if (isKeyboardInert()) return;
+                // Ignore enter events triggered by scrolling items under a
+                // stationary cursor during keyboard navigation.
+                if (performance.now() - lastKeyboardNav < 500 && !mouseMoved) return;
                 mouseNav = true;
                 ctx.setState({ focusedIndex: idx() });
               }}
