@@ -34,7 +34,7 @@ export function River() {
   let lastFocusedEl: HTMLElement | null = null;
   let lastFocusedIdx = -1;
   let mouseNav = false;
-  let programmaticScroll = false;
+  let lastKeyboardScroll = 0;
 
   createEffect(() => {
     const items = visibleItems();
@@ -42,11 +42,10 @@ export function River() {
     const idx = ctx.state.focusedIndex;
 
     // Handle return-to-item restoration from reading view.
+    // Always clear returnToItemId so it can't get stuck if the item is gone.
     if (returnToId != null) {
       const found = items.findIndex((i) => i.id === returnToId);
-      if (found >= 0) {
-        ctx.setState({ focusedIndex: found, returnToItemId: null });
-      }
+      ctx.setState({ returnToItemId: null, ...(found >= 0 ? { focusedIndex: found } : {}) });
       return;
     }
 
@@ -55,7 +54,7 @@ export function River() {
     const els = containerRef?.querySelectorAll('[data-item-idx]') ?? [];
     const target = els[idx] as HTMLElement | undefined;
     if (target && target !== lastFocusedEl) {
-      programmaticScroll = true;
+      lastKeyboardScroll = performance.now();
       target.scrollIntoView({
         behavior: 'auto',
         block: 'center',
@@ -66,16 +65,13 @@ export function River() {
     lastFocusedIdx = idx;
   });
 
-  // Clear focusedIndex when the user scrolls manually (touch / scrollbar / wheel).
-  // Guard: ignore scroll events triggered by programmatic scrollIntoView above.
+  // Clear focusedIndex when the user scrolls manually.
+  // Ignore scroll events caused by programmatic scrollIntoView within 200ms.
   createEffect(() => {
     const el = containerRef;
     if (!el) return;
     const onScroll = () => {
-      if (programmaticScroll) {
-        programmaticScroll = false;
-        return;
-      }
+      if (performance.now() - lastKeyboardScroll < 200) return;
       if (ctx.state.focusedIndex >= 0) {
         ctx.setState({ focusedIndex: -1 });
       }
@@ -146,7 +142,6 @@ export function River() {
                 void ctx.openItem(item);
               }}
               onMouseEnter={() => { mouseNav = true; ctx.setState({ focusedIndex: idx() }); }}
-              onMouseLeave={() => ctx.setState({ focusedIndex: -1 })}
             >
               <div class="body">
                 <div class="meta">
