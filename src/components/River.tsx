@@ -34,6 +34,8 @@ export function River() {
   let lastFocusedEl: HTMLElement | null = null;
   let lastFocusedIdx = -1;
   let mouseNav = false;
+  let programmaticScroll = false;
+
   createEffect(() => {
     const items = visibleItems();
     const returnToId = ctx.state.returnToItemId;
@@ -53,9 +55,10 @@ export function River() {
     const els = containerRef?.querySelectorAll('[data-item-idx]') ?? [];
     const target = els[idx] as HTMLElement | undefined;
     if (target && target !== lastFocusedEl) {
+      programmaticScroll = true;
       target.scrollIntoView({
-        behavior: mouseNav ? 'auto' : 'smooth',
-        block: mouseNav ? 'nearest' : 'center',
+        behavior: 'auto',
+        block: 'center',
       });
       lastFocusedEl = target;
       mouseNav = false;
@@ -64,10 +67,15 @@ export function River() {
   });
 
   // Clear focusedIndex when the user scrolls manually (touch / scrollbar / wheel).
+  // Guard: ignore scroll events triggered by programmatic scrollIntoView above.
   createEffect(() => {
     const el = containerRef;
     if (!el) return;
     const onScroll = () => {
+      if (programmaticScroll) {
+        programmaticScroll = false;
+        return;
+      }
       if (ctx.state.focusedIndex >= 0) {
         ctx.setState({ focusedIndex: -1 });
       }
