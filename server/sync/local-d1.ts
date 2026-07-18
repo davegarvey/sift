@@ -58,6 +58,7 @@ class LocalD1Stmt {
     if (upper.startsWith('INSERT')) return this.db._insert(trimmed, this.params);
     if (upper.startsWith('UPDATE')) return this.db._update(trimmed, this.params);
     if (upper.startsWith('DELETE')) return this.db._delete(trimmed, this.params);
+    if (upper.startsWith('DROP TABLE')) return this.db._dropTable(trimmed);
     if (upper.startsWith('SELECT')) return this.db._select(trimmed, this.params);
 
     throw new Error(`local-d1: unsupported SQL: ${trimmed.slice(0, 80)}`);
@@ -457,12 +458,19 @@ export class LocalD1Database {
     }
   }
 
-  private _pkCols(name: string): string[] {
+  private   _dropTable(sql: string): Record<string, unknown>[] {
+    const m = sql.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)/i);
+    if (!m) return [];
+    this.tables.delete(m[1]);
+    return [];
+  }
+
+  _pkCols(name: string): string[] {
     switch (name) {
       case 'users':
         return ['sync_key'];
       case 'feeds':
-        return ['sync_key', 'feed_url'];
+        return ['sync_key', 'feed_id'];
       case 'flags':
         return ['sync_key', 'item_id'];
       case 'pairing_codes':
