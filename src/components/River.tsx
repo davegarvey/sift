@@ -43,10 +43,12 @@ export function River() {
     const returnToId = ctx.state.returnToItemId;
     const idx = ctx.state.focusedIndex;
 
-    // Handle return-to-item restoration from reading view.
-    // Always clear returnToItemId so it can't get stuck if the item is gone.
     if (returnToId != null) {
       const found = items.findIndex((i) => i.id === returnToId);
+      if (found >= 0) {
+        const els = containerRef?.querySelectorAll('[data-item-idx]') ?? [];
+        (els[found] as HTMLElement | undefined)?.scrollIntoView({ behavior: 'instant', block: 'center' });
+      }
       ctx.setState({ returnToItemId: null, ...(found >= 0 ? { focusedIndex: found } : {}) });
       return;
     }
