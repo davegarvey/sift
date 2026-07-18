@@ -5,9 +5,15 @@
  */
 
 export interface Feed {
-  /** Canonical feed URL (used as the IndexedDB key). */
+  /** Stable UUID — primary key, never changes. Generated at subscribe time. */
+  id: string;
+  /** Feed fetch URL (mutable — user may edit it). */
   url: string;
   title: string;
+  /** Epoch ms of last title edit, used for sync conflict resolution. */
+  titleAt?: number | null;
+  /** Epoch ms of last URL edit, used for sync conflict resolution. */
+  urlAt?: number | null;
   /** Human-facing home page (e.g., the blog itself, not the feed). */
   htmlUrl?: string;
   /** @deprecated OPML-assigned folder path — no longer written. Kept for backward compat during transition. */
@@ -33,9 +39,9 @@ export interface Feed {
 }
 
 export interface Item {
-  /** Stable id: `${feedUrl}::${guid}`. */
+  /** Stable id: `${feedId}::${guid}`. */
   id: string;
-  feedUrl: string;
+  feedId: string;
   guid: string;
   title: string;
   author?: string;
@@ -68,7 +74,7 @@ export interface DBSchema {
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;

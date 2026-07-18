@@ -18,12 +18,12 @@ describe('key lifecycle', () => {
     expect(isValidSyncKey(b)).toBe(true);
   });
 
-  it('decodes an encoded item ID into feedUrl and guid', () => {
-    const feedUrl = 'https://example.com/feed.xml';
+  it('decodes an encoded item ID into feedId and guid', () => {
+    const feedId = 'https://example.com/feed.xml';
     const guid = 'post-123';
-    const id = encodeItemId(feedUrl, guid);
+    const id = encodeItemId(feedId, guid);
     const parsed = decodeItemId(id);
-    expect(parsed?.feedUrl).toBe(feedUrl);
+    expect(parsed?.feedId).toBe(feedId);
     expect(parsed?.guid).toBe(guid);
   });
 });

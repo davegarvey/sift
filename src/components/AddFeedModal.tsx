@@ -65,20 +65,20 @@ export function AddFeedModal() {
     const d = discovered();
     if (!d) return;
     await ctx.subscribeFeed({ url: d.url, title: d.title, tags: tags() });
-    ctx.closeModal();
-    void ctx.mcpNotifySync();
-    const items = parsedToItems(d.parsed, d.url);
+    const feed = ctx.feeds().find((f) => f.url === d.url);
+    if (!feed) return;
+    const items = parsedToItems(d.parsed, feed.id);
     if (items.length > 0) {
       await bulkUpsertItems(items);
       const lastPublished = Math.max(...items.map((i) => i.publishedAt));
       await upsertFeed({
-        url: d.url,
-        title: d.title,
-        learnedIntervalMs: 60 * 60 * 1000,
+        ...feed,
         lastFetched: Date.now(),
         lastItemPublishedAt: lastPublished ?? null,
       });
     }
+    ctx.closeModal();
+    void ctx.mcpNotifySync();
     void ctx.reloadItems();
   };
 

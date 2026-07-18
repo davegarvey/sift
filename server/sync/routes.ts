@@ -21,7 +21,8 @@ const PAIRING_TTL_SECONDS = 5 * 60;
 const MAX_USERS = 100_000;
 
 interface FeedPayload {
-  feedUrl: string;
+  feedId: string;
+  feedUrl?: { value: string; at: number };
   folder?: { value: string[] | null; at: number };
   title?: { value: string; at: number };
   tags?: { value: string[] | null; at: number };
@@ -30,7 +31,7 @@ interface FeedPayload {
 
 interface FlagPayload {
   itemId: string;
-  feedUrl: string;
+  feedId: string;
   read?: { value: 0 | 1 | null; at: number };
   starred?: { value: 0 | 1 | null; at: number };
 }
@@ -69,7 +70,7 @@ function isPairingCode(s: string): boolean {
   return true;
 }
 
-function deriveFeedUrlFromItemId(itemId: string): string | null {
+function deriveFeedIdFromItemId(itemId: string): string | null {
   const lastSep = itemId.lastIndexOf('::');
   if (lastSep === -1) return null;
   try {
@@ -297,8 +298,16 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     let maxAt = 0;
 
     for (const f of feeds) {
-      if (typeof f.feedUrl !== 'string' || !f.feedUrl) {
-        return jsonError('feed.feedUrl must be a non-empty string', 'feedUrl');
+      if (typeof f.feedId !== 'string' || !f.feedId) {
+        return jsonError('feed.feedId must be a non-empty string', 'feedId');
+      }
+      if (f.feedUrl !== undefined) {
+        if (typeof f.feedUrl.at !== 'number' || f.feedUrl.at < 0) {
+          return jsonError('feed.feedUrl.at must be a non-negative integer', 'feedUrl.at');
+        }
+        if (typeof f.feedUrl.value !== 'string') {
+          return jsonError('feed.feedUrl.value must be a string', 'feedUrl.value');
+        }
       }
       if (f.folder !== undefined) {
         const v = f.folder;
@@ -337,22 +346,31 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       // Step 1: insert new row.
       stmts.push(
         db
-          .prepare('INSERT OR IGNORE INTO feeds (sync_key, feed_url, row_at) VALUES (?, ?, 0)')
-          .bind(syncKey, f.feedUrl),
+          .prepare('INSERT OR IGNORE INTO feeds (sync_key, feed_id, row_at) VALUES (?, ?, 0)')
+          .bind(syncKey, f.feedId),
       );
 
       // Step 2: clear tombstone if present.
       stmts.push(
         db
           .prepare(
-            'UPDATE feeds SET deleted = 0, deleted_at = NULL WHERE sync_key = ? AND feed_url = ? AND deleted = 1',
+            'UPDATE feeds SET deleted = 0, deleted_at = NULL WHERE sync_key = ? AND feed_id = ? AND deleted = 1',
           )
-          .bind(syncKey, f.feedUrl),
+          .bind(syncKey, f.feedId),
       );
 
       // Step 3: per-field PATCH.
       const fieldSets: string[] = [];
       const fieldBinds: unknown[] = [];
+      if (f.feedUrl !== undefined) {
+        fieldSets.push(
+          "feed_url = CASE WHEN feed_url_at IS NULL OR ? > feed_url_at THEN ? ELSE feed_url END",
+          "feed_url_at = CASE WHEN feed_url_at IS NULL OR ? > feed_url_at THEN ? ELSE feed_url_at END",
+        );
+        fieldBinds.push(f.feedUrl.at, f.feedUrl.value);
+        fieldBinds.push(f.feedUrl.at, f.feedUrl.at);
+        maxAt = Math.max(maxAt, f.feedUrl.at);
+      }
       if (f.folder !== undefined) {
         fieldSets.push(
           "folder = CASE WHEN folder_at IS NULL OR ? > folder_at THEN ? ELSE folder END",
@@ -392,31 +410,28 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       stmts.push(
         db
           .prepare(
-            `UPDATE feeds SET ${fieldSets.join(', ')} WHERE sync_key = ? AND feed_url = ?`,
+            `UPDATE feeds SET ${fieldSets.join(', ')} WHERE sync_key = ? AND feed_id = ?`,
           )
-          .bind(...fieldBinds, syncKey, f.feedUrl),
+          .bind(...fieldBinds, syncKey, f.feedId),
       );
-      // row_at is set in a separate UPDATE because SQLite evaluates all SET
-      // expressions against the old row values — MAX(COALESCE(field_at, 0))
-      // inside the same statement would always see NULL from the INSERT.
       stmts.push(
         db
-          .prepare('UPDATE feeds SET row_at = ? WHERE sync_key = ? AND feed_url = ? AND ? > COALESCE(row_at, 0)')
-          .bind(maxAt, syncKey, f.feedUrl, maxAt),
+          .prepare('UPDATE feeds SET row_at = ? WHERE sync_key = ? AND feed_id = ? AND ? > COALESCE(row_at, 0)')
+          .bind(maxAt, syncKey, f.feedId, maxAt),
       );
-      assertNoUrlLog(f.feedUrl);
+      assertNoUrlLog(f.feedUrl?.value ?? '');
     }
 
     for (const g of flags) {
       if (typeof g.itemId !== 'string' || !g.itemId) {
         return jsonError('flag.itemId must be a non-empty string', 'itemId');
       }
-      const derived = deriveFeedUrlFromItemId(g.itemId);
+      const derived = deriveFeedIdFromItemId(g.itemId);
       if (!derived) {
         return jsonError('flag.itemId must contain "::"', 'itemId');
       }
-      if (typeof g.feedUrl !== 'string' || g.feedUrl !== derived) {
-        return jsonError('flag.feedUrl does not match itemId', 'feedUrl');
+      if (typeof g.feedId !== 'string' || g.feedId !== derived) {
+        return jsonError('flag.feedId does not match itemId', 'feedId');
       }
       if (g.read !== undefined) {
         if (typeof g.read.at !== 'number' || g.read.at < 0) {
@@ -437,7 +452,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
 
       stmts.push(
         db
-          .prepare('INSERT OR IGNORE INTO flags (sync_key, item_id, feed_url, row_at) VALUES (?, ?, ?, 0)')
+          .prepare('INSERT OR IGNORE INTO flags (sync_key, item_id, feed_id, row_at) VALUES (?, ?, ?, 0)')
           .bind(syncKey, g.itemId, derived),
       );
 
@@ -471,7 +486,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           .prepare('UPDATE flags SET row_at = ? WHERE sync_key = ? AND item_id = ? AND ? > COALESCE(row_at, 0)')
           .bind(maxAt, syncKey, g.itemId, maxAt),
       );
-      assertNoUrlLog(g.feedUrl);
+      assertNoUrlLog(g.feedId);
     }
 
     // Assign a server monotonic timestamp for this batch (used as row_at for new rows).

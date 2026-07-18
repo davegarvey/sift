@@ -37,7 +37,7 @@ export function ReadingView() {
   };
 
   const feedName = () =>
-    ctx.feeds().find((f) => f.url === currentItem()?.feedUrl)?.title ?? '';
+    ctx.feeds().find((f) => f.id === currentItem()?.feedId)?.title ?? '';
 
   createEffect(() => {
     const item = currentItem();

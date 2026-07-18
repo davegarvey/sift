@@ -8,10 +8,10 @@ import { normalizeTag } from '../util/tags';
 export function Sidebar(props: { onNavigate?: () => void }) {
   const ctx = useApp();
 
-  const selectFeed = (feedUrl: string) => {
+  const selectFeed = (feed: Feed) => {
     ctx.clearTags();
-    ctx.setRiverScope(feedUrl);
-    void ctx.saveSettingsPatch({ lastFeedUrl: feedUrl });
+    ctx.setRiverScope(feed.id);
+    void ctx.saveSettingsPatch({ lastFeedUrl: feed.url });
     void ctx.reloadItems();
     props.onNavigate?.();
   };
@@ -98,13 +98,12 @@ export function Sidebar(props: { onNavigate?: () => void }) {
                 feed={feed}
                 errors={ctx.feedErrors()}
                 fetchingFeeds={ctx.fetchingFeeds()}
-                active={ctx.state.riverScope === feed.url}
-                onClick={() => selectFeed(feed.url)}
+                active={ctx.state.riverScope === feed.id}
+                onClick={() => selectFeed(feed)}
                 onEdit={() =>
                   ctx.openModal({
                     kind: 'feed-editor',
-                    feedUrl: feed.url,
-                    feedTitle: feed.title,
+                    feedId: feed.id,
                   })
                 }
               />
@@ -189,8 +188,8 @@ interface FeedRowProps {
 }
 
 function FeedRow(props: FeedRowProps) {
-  const error = () => props.errors[props.feed.url];
-  const isFetching = () => props.fetchingFeeds.has(props.feed.url);
+  const error = () => props.errors[props.feed.id];
+  const isFetching = () => props.fetchingFeeds.has(props.feed.id);
   return (
     <div class={`feed ${props.active ? 'active' : ''}`} onClick={props.onClick}>
       <span class="title">{props.feed.title}</span>

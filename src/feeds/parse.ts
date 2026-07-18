@@ -150,15 +150,15 @@ function parseDate(value: string | undefined): number {
 
 /**
  * Convert a ParsedFeed into IndexedDB Item rows. Each item's id is
- * `${feedUrl}::${guid}`, which gives stable identity across refreshes.
+ * `${feedId}::${guid}`, which gives stable identity across refreshes.
  */
-export function parsedToItems(parsed: ParsedFeed, feedUrl: string): Item[] {
+export function parsedToItems(parsed: ParsedFeed, feedId: string): Item[] {
   const now = Date.now();
   return parsed.items.map((p) => {
-    const id = `${feedUrl}::${p.guid}`;
+    const id = `${feedId}::${p.guid}`;
     return {
       id,
-      feedUrl,
+      feedId,
       guid: p.guid,
       title: p.title,
       author: p.author,

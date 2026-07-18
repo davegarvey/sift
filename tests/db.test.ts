@@ -17,6 +17,7 @@ import type { Feed, Item } from '../src/db/types';
 
 function makeFeed(overrides: Partial<Feed> = {}): Feed {
   return {
+    id: crypto.randomUUID(),
     url: 'https://example.com/feed.xml',
     title: 'Test',
     learnedIntervalMs: 60 * 60 * 1000,
@@ -26,12 +27,12 @@ function makeFeed(overrides: Partial<Feed> = {}): Feed {
 }
 
 function makeItem(overrides: Partial<Item> = {}): Item {
-  const feedUrl = overrides.feedUrl ?? 'https://example.com/feed.xml';
+  const feedId = overrides.feedId ?? 'https://example.com/feed.xml';
   const guid = overrides.guid ?? 'guid-1';
   const publishedAt = overrides.publishedAt ?? Date.now();
   return {
-    id: `${feedUrl}::${guid}`,
-    feedUrl,
+    id: `${feedId}::${guid}`,
+    feedId,
     guid,
     title: 'Item',
     excerpt: 'excerpt',
@@ -67,9 +68,10 @@ describe('feeds store', () => {
   });
 
   it('deletes a feed', async () => {
-    await upsertFeed(makeFeed());
-    await deleteFeed(makeFeed().url);
-    const got = await getFeedByUrl(makeFeed().url);
+    const feed = makeFeed();
+    await upsertFeed(feed);
+    await deleteFeed(feed.id);
+    const got = await getFeedByUrl(feed.url);
     expect(got).toBeUndefined();
   });
 });
@@ -152,7 +154,7 @@ describe('items store', () => {
     await insertOrUpdateItem(item);
     const flag = await getFlag(item.id);
     expect(flag?.id).toBe(item.id);
-    expect(flag?.feedUrl).toBe(item.feedUrl);
+    expect(flag?.feedId).toBe(item.feedId);
     expect(flag?.read).toBe(0);
     expect(flag?.starred).toBe(1);
   });

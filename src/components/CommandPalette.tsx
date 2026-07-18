@@ -125,7 +125,7 @@ export function CommandPalette() {
                 <div>
                   <div>{item.title}</div>
                   <div class="meta">
-                    {ctx.feedMap().get(item.feedUrl)?.title ?? ''}
+                    {ctx.feedMap().get(item.feedId)?.title ?? ''}
                   </div>
                 </div>
               </div>

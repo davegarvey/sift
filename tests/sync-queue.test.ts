@@ -34,15 +34,15 @@ describe('subscribeFeed', () => {
   it('enqueues a feed-upsert entry in the sync dirty queue', async () => {
     await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
     const dirty = getDirty();
-    expect(dirty).toContainEqual(
-      expect.objectContaining({
-        kind: 'feed-upsert',
-        feedUrl: 'https://example.com/feed',
-        title: 'Example',
-        folder: null,
-        deleted: 0,
-      }),
-    );
+      expect(dirty).toContainEqual(
+        expect.objectContaining({
+          kind: 'feed-upsert',
+          feedId: expect.any(String),
+          title: 'Example',
+          folder: null,
+          deleted: 0,
+        }),
+      );
   });
 
   it('includes folder in the enqueue when provided', async () => {
@@ -52,35 +52,38 @@ describe('subscribeFeed', () => {
       folder: ['Tech', 'RSS'],
     });
     const dirty = getDirty();
-    expect(dirty).toContainEqual(
-      expect.objectContaining({
-        kind: 'feed-upsert',
-        feedUrl: 'https://example.com/feed',
-        folder: ['Tech', 'RSS'],
-      }),
-    );
+      expect(dirty).toContainEqual(
+        expect.objectContaining({
+          kind: 'feed-upsert',
+          feedId: expect.any(String),
+          folder: ['Tech', 'RSS'],
+        }),
+      );
   });
 });
 
 describe('unsubscribeFeed', () => {
   it('removes the feed from local IndexedDB', async () => {
     await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
-    await unsubscribeFeed('https://example.com/feed');
     const feeds = await listFeeds();
-    expect(feeds.length).toBe(0);
+    await unsubscribeFeed(feeds[0].id);
+    const feedsAfter = await listFeeds();
+    expect(feedsAfter.length).toBe(0);
   });
 
   it('enqueues a feed-delete entry in the sync dirty queue', async () => {
     await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
+    const feeds = await listFeeds();
+    const feedId = feeds[0].id;
     const { clearAllDirty } = await import('../src/sync/queue');
     clearAllDirty();
-    await unsubscribeFeed('https://example.com/feed');
+    await unsubscribeFeed(feedId);
     const dirty = getDirty();
-    expect(dirty).toContainEqual(
-      expect.objectContaining({
-        kind: 'feed-delete',
-        feedUrl: 'https://example.com/feed',
-      }),
-    );
+      expect(dirty).toContainEqual(
+        expect.objectContaining({
+          kind: 'feed-delete',
+          feedId,
+        }),
+      );
   });
 });

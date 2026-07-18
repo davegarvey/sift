@@ -4,10 +4,12 @@ export function ConfirmUnsubscribeModal() {
   const ctx = useApp();
   const modal = ctx.state.modal;
   if (modal.kind !== 'confirm-unsubscribe') return null;
-  const { feedUrl, feedTitle } = modal;
+  const { feedId } = modal;
+
+  const feed = () => ctx.feedMap().get(feedId);
 
   const handleConfirm = async () => {
-    await ctx.unsubscribeFeed(feedUrl);
+    await ctx.unsubscribeFeed(feedId);
     void ctx.mcpNotifySync();
     ctx.closeModal();
   };
@@ -17,7 +19,7 @@ export function ConfirmUnsubscribeModal() {
       <div class="modal-header">Unsubscribe</div>
       <div class="modal-body">
         <p style={{ margin: 0, "line-height": "1.5" }}>
-          Unsubscribe from <strong>{feedTitle}</strong>?
+          Unsubscribe from <strong>{feed()?.title ?? ''}</strong>?
         </p>
         <p style={{ margin: "8px 0 0", "font-size": "13px", color: "var(--subtext)" }}>
           This will remove the feed and all its items. This cannot be undone.

@@ -13,7 +13,7 @@ import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { setOnSync } from './sync/merge';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
 import { redeemCode } from './sync/client';
-import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, type SubscribeInput } from './feeds/service';
+import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, updateFeedMeta, changeFeedUrl, type SubscribeInput } from './feeds/service';
 import { isIdle, onCatchup, clearActivityOnHide } from './util/idle';
 
 type ViewKind = 'river' | 'reading';
@@ -23,8 +23,8 @@ type ModalKind =
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
   | { kind: 'add-feed' }
-  | { kind: 'feed-editor'; feedUrl: string; feedTitle: string }
-  | { kind: 'confirm-unsubscribe'; feedUrl: string; feedTitle: string }
+  | { kind: 'feed-editor'; feedId: string }
+  | { kind: 'confirm-unsubscribe'; feedId: string }
   | { kind: 'pair-result'; success: boolean; message: string }
   | { kind: 'sync-join' }
   | { kind: 'sync-share' }
@@ -32,15 +32,15 @@ type ModalKind =
 
 export interface AppState {
   view: ViewKind;
-  /** The feed URL the river is currently scoped to; null = All. */
+  /** The feed ID the river is currently scoped to; null = All. */
   riverScope: string | null;
   /** Active tag filters (OR semantics). Mutually exclusive with riverScope. */
   activeTags: string[];
   /** "current" item being viewed in the reading view; null when in river. */
   currentItem: Item | null;
-  sidebarOpen: boolean;        // mobile drawer state
-  sidebarHiddenDesktop: boolean; // Cmd+\ toggle on desktop
-  focusedIndex: number;       // keyboard focus in the river
+  sidebarOpen: boolean;
+  sidebarHiddenDesktop: boolean;
+  focusedIndex: number;
   modal: ModalKind;
   /** Item ID to restore focus to when returning to the river. */
   returnToItemId: string | null;
@@ -60,7 +60,7 @@ interface AppContext {
   fetchingFeeds: () => Set<string>;
   reloadFeeds: () => Promise<Feed[]>;
   reloadItems: () => Promise<void>;
-  setRiverScope: (feedUrl: string | null) => void;
+  setRiverScope: (feedId: string | null) => void;
   toggleTag: (tag: string) => void;
   clearTags: () => void;
   openItem: (item: Item, replace?: boolean) => Promise<void>;
@@ -82,7 +82,10 @@ interface AppContext {
   syncNow: () => Promise<void>;
   syncKey: () => string | null;
   subscribeFeed: (input: SubscribeInput) => Promise<void>;
-  unsubscribeFeed: (feedUrl: string) => Promise<void>;
+  unsubscribeFeed: (feedId: string) => Promise<void>;
+  updateFeedMeta: (feedId: string, meta: { title?: string; tags?: string[] }) => Promise<void>;
+  changeFeedUrl: (feedId: string, newUrl: string) => Promise<void>;
+  updateFeedTags: (feedId: string, tags: string[]) => Promise<void>;
   markReadAndSync: (item: Item, read: boolean) => Promise<void>;
   toggleStar: (item: Item) => Promise<void>;
 }
@@ -111,7 +114,7 @@ export const AppProvider: ParentComponent = (props) => {
   const setState = (patch: Partial<AppState>) => setStateInternal(patch as Partial<AppState>);
 
   const [feeds, setFeeds] = createSignal<Feed[]>([]);
-  const feedMap = createMemo(() => new Map(feeds().map((f) => [f.url, f])));
+  const feedMap = createMemo(() => new Map(feeds().map((f) => [f.id, f])));
   const allTags = createMemo(() => {
     const seen = new Set<string>();
     for (const f of feeds()) {
@@ -160,7 +163,10 @@ export const AppProvider: ParentComponent = (props) => {
       const data = JSON.parse(e.data);
       if (typeof data.url !== 'string') return;
       try {
-        await unsubscribeFeedCtx(data.url);
+        const feed = feedMap().get(data.url);
+        if (feed) {
+          await unsubscribeFeedCtx(feed.id);
+        }
         await fetch('/api/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -207,7 +213,7 @@ export const AppProvider: ParentComponent = (props) => {
     const now = Date.now();
     enqueueFlag({
       itemId: item.id,
-      feedUrl: item.feedUrl,
+      feedId: item.feedId,
       read: read ? 1 : 0,
       readAt: now,
       starred: item.starred ? 1 : 0,
@@ -221,7 +227,7 @@ export const AppProvider: ParentComponent = (props) => {
     const now = Date.now();
     enqueueFlag({
       itemId: item.id,
-      feedUrl: item.feedUrl,
+      feedId: item.feedId,
       read: item.read ? 1 : 0,
       readAt: now,
       starred: !item.starred ? 1 : 0,
@@ -247,8 +253,8 @@ export const AppProvider: ParentComponent = (props) => {
     }
   };
 
-  const setRiverScope = (feedUrl: string | null) => {
-    setState({ riverScope: feedUrl, activeTags: [], focusedIndex: 0, view: 'river' });
+  const setRiverScope = (feedId: string | null) => {
+    setState({ riverScope: feedId, activeTags: [], focusedIndex: 0, view: 'river' });
   };
 
   const toggleTag = (tag: string) => {
@@ -423,9 +429,9 @@ export const AppProvider: ParentComponent = (props) => {
     await reloadItems();
   };
 
-  const unsubscribeFeedCtx = async (feedUrl: string) => {
-    await unsubscribeFeedSvc(feedUrl);
-    if (state.riverScope === feedUrl) {
+  const unsubscribeFeedCtx = async (feedId: string) => {
+    await unsubscribeFeedSvc(feedId);
+    if (state.riverScope === feedId) {
       setRiverScope(null);
     }
     await reloadFeeds();
@@ -469,6 +475,9 @@ export const AppProvider: ParentComponent = (props) => {
     syncKey,
     subscribeFeed: subscribeFeedCtx,
     unsubscribeFeed: unsubscribeFeedCtx,
+    updateFeedMeta,
+    changeFeedUrl,
+    updateFeedTags: (feedId, tags) => updateFeedMeta(feedId, { tags }),
     markReadAndSync,
     toggleStar,
   };
@@ -491,15 +500,10 @@ export const AppProvider: ParentComponent = (props) => {
     } catch {}
 
     await reloadFeeds();
-    // Restore last sidebar selection from persisted setting, falling
-    // back to all view if the saved feed no longer exists.
-    const validFeed =
-      s.lastFeedUrl && feeds().some((f) => f.url === s.lastFeedUrl)
-        ? s.lastFeedUrl
-        : null;
-    setState({ riverScope: validFeed });
+    const matchingFeed = s.lastFeedUrl ? feeds().find((f) => f.url === s.lastFeedUrl) : undefined;
+    const validFeedId = matchingFeed?.id ?? null;
+    setState({ riverScope: validFeedId });
     await reloadItems();
-    // If the URL references a specific article, restore it.
     const hash = parseItemIdFromUrl();
     if (hash) {
       const item = items().find(i => hashId(i.id) === hash);
@@ -538,7 +542,6 @@ export const AppProvider: ParentComponent = (props) => {
     window.addEventListener('online', () => { void pullIfStale(120_000); });
 
     await bootSync();
-    // QR auto-pairing: redeem ?pair= code on boot.
     const params = new URLSearchParams(window.location.search);
     const pairCode = params.get('pair');
     if (pairCode) {
@@ -564,12 +567,6 @@ export const AppProvider: ParentComponent = (props) => {
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
 };
 
-/**
- * Apply the theme and high-contrast mode by setting `data-theme` and
- * `data-a11y` on <html>. When the preference is `system`, we leave
- * `data-theme` unset and let the `@media (prefers-color-scheme: dark)`
- * rule do the work.
- */
 export function applyTheme(theme: ThemePreference, highContrast: boolean): void {
   const root = document.documentElement;
   root.removeAttribute('data-theme');

@@ -6,39 +6,28 @@ export async function insertOrUpdateItem(item: Item): Promise<void> {
   const db = await getDb();
   const existing = await db.get('items', item.id);
   if (existing) {
-    // Update path: preserve user-controlled state (read, starred, firstOpenedAt).
-    // The feed's "default" read/starred values are not authoritative.
     const merged = { ...existing, ...item, read: existing.read, starred: existing.starred, firstOpenedAt: existing.firstOpenedAt, id: existing.id };
     if (item.html) merged.extractedHtml = null;
     await db.put('items', merged);
-    // Sync flag if user state exists. Stored flag wins over the incoming item's
-    // defaults (sync state has higher priority than the feed's defaults).
     const flag = await db.get('itemFlags', item.id);
     await db.put('itemFlags', {
       id: item.id,
-      feedUrl: item.feedUrl,
+      feedId: item.feedId,
       read: flag ? flag.read : readToFlag(existing.read),
       starred: flag ? flag.starred : starToFlag(existing.starred),
     });
   } else {
     await db.put('items', item);
-    // Check if there's a stored sync flag (e.g., from a remote pull that
-    // arrived before the item was created locally). If present, the stored
-    // sync state wins over the new item's default read/starred values.
     const existingFlag = await db.get('itemFlags', item.id);
     await db.put('itemFlags', {
       id: item.id,
-      feedUrl: item.feedUrl,
+      feedId: item.feedId,
       read: existingFlag ? existingFlag.read : readToFlag(item.read),
       starred: existingFlag ? existingFlag.starred : starToFlag(item.starred),
     });
   }
 }
 
-/**
- * Upsert many items in a single IndexedDB transaction. Always preserves
- * user state (read, starred, firstOpenedAt, extractedHtml).
- */
 export async function bulkUpsertItems(items: Item[]): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(['items', 'itemFlags'], 'readwrite');
@@ -47,14 +36,13 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
   for (const item of items) {
     const existing = await itemsStore.get(item.id);
     if (existing) {
-      // Update path: preserve user-controlled state (read, starred, firstOpenedAt).
       const merged = { ...existing, ...item, read: existing.read, starred: existing.starred, firstOpenedAt: existing.firstOpenedAt, id: existing.id };
       if (item.html) merged.extractedHtml = null;
       await itemsStore.put(merged);
       const flag = await flagsStore.get(item.id);
       await flagsStore.put({
         id: item.id,
-        feedUrl: item.feedUrl,
+        feedId: item.feedId,
         read: flag ? flag.read : readToFlag(existing.read),
         starred: flag ? flag.starred : starToFlag(existing.starred),
       });
@@ -63,7 +51,7 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
       const existingFlag = await flagsStore.get(item.id);
       await flagsStore.put({
         id: item.id,
-        feedUrl: item.feedUrl,
+        feedId: item.feedId,
         read: existingFlag ? existingFlag.read : readToFlag(item.read),
         starred: existingFlag ? existingFlag.starred : starToFlag(item.starred),
       });
@@ -108,11 +96,11 @@ export async function updateItem(
 }
 
 export async function listItemsByFeed(
-  feedUrl: string,
+  feedId: string,
   limit = 500,
 ): Promise<Item[]> {
   const db = await getDb();
-  const range = IDBKeyRange.bound([feedUrl, -Infinity], [feedUrl, Infinity]);
+  const range = IDBKeyRange.bound([feedId, -Infinity], [feedId, Infinity]);
   const results: Item[] = [];
   let cursor = await db
     .transaction('items', 'readonly')
@@ -229,20 +217,20 @@ export async function searchItems(query: string, limit = 50, signal?: AbortSigna
   return results;
 }
 
-export async function deleteItemsByFeed(feedUrl: string): Promise<void> {
+export async function deleteItemsByFeed(feedId: string): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(['items', 'itemFlags'], 'readwrite');
   const itemsStore = tx.objectStore('items');
   const flagsStore = tx.objectStore('itemFlags');
   const itemIndex = itemsStore.index('by-feed-published');
   let itemCursor = await itemIndex.openCursor(
-    IDBKeyRange.bound([feedUrl, -Infinity], [feedUrl, Infinity]),
+    IDBKeyRange.bound([feedId, -Infinity], [feedId, Infinity]),
   );
   while (itemCursor) {
     itemCursor.delete();
     itemCursor = await itemCursor.continue();
   }
-  let flagCursor = await flagsStore.index('by-feed-url').openCursor(IDBKeyRange.only(feedUrl));
+  let flagCursor = await flagsStore.index('by-feed-id').openCursor(IDBKeyRange.only(feedId));
   while (flagCursor) {
     flagCursor.delete();
     flagCursor = await flagCursor.continue();

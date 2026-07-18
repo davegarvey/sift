@@ -1,12 +1,14 @@
-/**
- * Schema bootstrap for the sync tables. Idempotent: safe to call on every
- * request (or once on Worker cold start). The production schema is also
- * created via `wrangler d1 migrations apply` from `server/migrations/`,
- * so this is a defense-in-depth check for local dev and for cases where
- * the migration was not yet applied.
- */
-
 export async function ensureSchema(db: D1Database): Promise<void> {
+  // Detect and migrate from v1 (feed_url PK) to v2 (feed_id PK).
+  const tableInfo = await db.prepare("PRAGMA table_info('feeds')").all<{ name: string }>();
+  if (tableInfo.results && tableInfo.results.length > 0) {
+    const hasFeedId = tableInfo.results.some((r) => r.name === 'feed_id');
+    if (!hasFeedId) {
+      await db.prepare('DROP TABLE IF EXISTS feeds').run();
+      await db.prepare('DROP TABLE IF EXISTS flags').run();
+    }
+  }
+
   const statements = [
     `CREATE TABLE IF NOT EXISTS users (
       sync_key   TEXT PRIMARY KEY,
@@ -14,7 +16,9 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     )`,
     `CREATE TABLE IF NOT EXISTS feeds (
       sync_key    TEXT NOT NULL,
-      feed_url    TEXT NOT NULL,
+      feed_id     TEXT NOT NULL,
+      feed_url    TEXT,
+      feed_url_at INTEGER,
       folder      TEXT,
       folder_at   INTEGER,
       title       TEXT,
@@ -24,12 +28,12 @@ export async function ensureSchema(db: D1Database): Promise<void> {
       deleted     INTEGER NOT NULL DEFAULT 0,
       deleted_at  INTEGER,
       row_at      INTEGER NOT NULL,
-      PRIMARY KEY (sync_key, feed_url)
+      PRIMARY KEY (sync_key, feed_id)
     )`,
     `CREATE TABLE IF NOT EXISTS flags (
       sync_key   TEXT NOT NULL,
       item_id    TEXT NOT NULL,
-      feed_url   TEXT NOT NULL,
+      feed_id    TEXT NOT NULL,
       read       INTEGER,
       read_at    INTEGER,
       starred    INTEGER,
@@ -54,7 +58,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_feeds_row_at    ON feeds(sync_key, row_at)`,
     `CREATE INDEX IF NOT EXISTS idx_flags_row_at    ON flags(sync_key, row_at)`,
-    `CREATE INDEX IF NOT EXISTS idx_flags_feed_url  ON flags(sync_key, feed_url)`,
+    `CREATE INDEX IF NOT EXISTS idx_flags_feed_id   ON flags(sync_key, feed_id)`,
     `CREATE INDEX IF NOT EXISTS idx_pairing_expires ON pairing_codes(expires_at)`,
     `CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
   ];

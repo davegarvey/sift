@@ -7,7 +7,7 @@ export const STAR_STARRED = 1;
 
 export interface ItemFlag {
   id: string;
-  feedUrl: string;
+  feedId: string;
   read: 0 | 1;
   starred: 0 | 1;
 }
@@ -52,12 +52,12 @@ export async function bulkSetFlags(flags: ItemFlag[]): Promise<void> {
   await tx.done;
 }
 
-export async function deleteFlagsByFeed(feedUrl: string): Promise<void> {
+export async function deleteFlagsByFeed(feedId: string): Promise<void> {
   const db = await getDb();
   const tx = db.transaction('itemFlags', 'readwrite');
   let cursor = await tx.store
-    .index('by-feed-url')
-    .openCursor(IDBKeyRange.only(feedUrl));
+    .index('by-feed-id')
+    .openCursor(IDBKeyRange.only(feedId));
   while (cursor) {
     cursor.delete();
     cursor = await cursor.continue();
