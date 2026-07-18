@@ -283,13 +283,13 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const closeReading = async () => {
+    setState({ view: 'river', currentItem: null });
+    history.replaceState(null, '', '/');
     try {
       await reloadItems();
     } catch {
-      // reload failure is non-fatal; still switch back to river
+      // reload failure is non-fatal
     }
-    setState({ view: 'river', currentItem: null });
-    history.replaceState(null, '', '/');
   };
 
   const toggleSidebar = () => setState({ sidebarOpen: !state.sidebarOpen, sidebarHiddenDesktop: false });
