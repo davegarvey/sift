@@ -42,13 +42,13 @@ function Shell() {
       } else if (e.key === 'r') {
         e.preventDefault();
         void ctx.refreshAll();
-      } else if (e.key === 'j') {
+      } else if (e.key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault();
         ctx.jumpTo(1);
         const items = ctx.items();
         const item = items[ctx.state.focusedIndex];
         if (item) void ctx.openItem(item, true);
-      } else if (e.key === 'k') {
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
         e.preventDefault();
         ctx.jumpTo(-1);
         const items = ctx.items();
@@ -91,10 +91,10 @@ function Shell() {
       ctx.toggleSidebarDesktop();
       return;
     }
-    if (e.key === 'j') {
+    if (e.key === 'j' || e.key === 'ArrowDown') {
       e.preventDefault();
       ctx.jumpTo(1);
-    } else if (e.key === 'k') {
+    } else if (e.key === 'k' || e.key === 'ArrowUp') {
       e.preventDefault();
       ctx.jumpTo(-1);
     } else if (e.key === 'Enter') {
