@@ -458,7 +458,7 @@ export class LocalD1Database {
     }
   }
 
-  private   _dropTable(sql: string): Record<string, unknown>[] {
+  _dropTable(sql: string): Record<string, unknown>[] {
     const m = sql.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)/i);
     if (!m) return [];
     this.tables.delete(m[1]);
