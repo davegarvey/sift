@@ -1702,7 +1702,8 @@ a:hover { text-decoration: underline; }
 }
 
 /* Add Feed modal. */
-.add-feed input {
+.add-feed input,
+.feed-editor input {
   width: 100%;
   padding: 8px;
   border: 1px solid var(--hairline);

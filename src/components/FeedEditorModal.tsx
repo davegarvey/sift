@@ -78,7 +78,7 @@ export function FeedEditorModal() {
   const feedTitle = () => feed()?.title ?? '';
 
   return (
-    <div class="modal modal-center">
+    <div class="modal feed-editor modal-center">
       <div class="modal-header">Edit Feed</div>
       <div class="modal-body">
         <label style={{ display: 'block', 'margin-bottom': '12px' }}>
