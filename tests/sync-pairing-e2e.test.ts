@@ -78,12 +78,14 @@ describe('sync pairing first-time setup', () => {
 
     // Simulate user who has been using Sift: 2 feeds + 1 flag already in IndexedDB
     await upsertFeed({
+      id: crypto.randomUUID(),
       url: 'https://ex.com/a',
       title: 'Feed A',
       learnedIntervalMs: 3_600_000,
       lastFetched: null,
     });
     await upsertFeed({
+      id: crypto.randomUUID(),
       url: 'https://ex.com/b',
       title: 'Feed B',
       folder: ['Tech'],
@@ -92,7 +94,7 @@ describe('sync pairing first-time setup', () => {
     });
     await setFlag({
       id: 'https://ex.com/a::p1',
-      feedUrl: 'https://ex.com/a',
+      feedId: 'https://ex.com/a',
       read: 1,
       starred: 0,
     });
@@ -142,6 +144,7 @@ describe('sync pairing first-time setup', () => {
     await setStoredSyncKey(key1);
     await setStoredLastSyncAt(null);
     await upsertFeed({
+      id: crypto.randomUUID(),
       url: 'https://ex.com/a',
       title: 'Feed A',
       learnedIntervalMs: 3_600_000,
@@ -162,6 +165,7 @@ describe('sync pairing first-time setup', () => {
 
     // Add feed B while sync is disabled
     await upsertFeed({
+      id: crypto.randomUUID(),
       url: 'https://ex.com/b',
       title: 'Feed B',
       learnedIntervalMs: 3_600_000,
@@ -195,9 +199,11 @@ describe('sync pairing first-time setup', () => {
   it('pushes local feeds during pairing', async () => {
     // --- "Desktop" device: has a feed, enables sync ---
     const deskKey = makeSyncKey('pair-desk');
+    const deskFeedId = crypto.randomUUID();
     await setStoredSyncKey(deskKey);
     await setStoredLastSyncAt(null);
     await upsertFeed({
+      id: deskFeedId,
       url: 'https://ex.com/desk',
       title: 'Desktop Feed',
       learnedIntervalMs: 3_600_000,
@@ -237,7 +243,9 @@ describe('sync pairing first-time setup', () => {
       }
     }
 
+    const mobileFeedId = crypto.randomUUID();
     await upsertFeed({
+      id: mobileFeedId,
       url: 'https://ex.com/mobile',
       title: 'Mobile Feed',
       learnedIntervalMs: 3_600_000,
@@ -255,8 +263,8 @@ describe('sync pairing first-time setup', () => {
       'http://localhost/sync/pull?since=0',
       { headers: { 'X-Sync-Key': mobileKey } },
     );
-    pull = (await pullRes.json()) as { feeds: Array<{ feed_url: string }> };
-    const urls = pull.feeds.map((f) => f.feed_url).sort();
-    expect(urls).toEqual(['https://ex.com/desk', 'https://ex.com/mobile']);
+    pull = (await pullRes.json()) as { feeds: Array<{ feed_url: string; feed_id: string }> };
+    const ids = pull.feeds.map((f) => f.feed_id).sort();
+    expect(ids).toEqual([deskFeedId, mobileFeedId].sort());
   });
 });

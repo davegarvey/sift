@@ -25,10 +25,6 @@ export function setOnRefresh(fn: (() => void) | null): void {
   onRefresh = fn;
 }
 
-/**
- * Single entry point: kick the scheduler once on app open, and start a
- * periodic tick loop. Idempotent — safe to call multiple times.
- */
 export function startScheduler(): void {
   if (tickTimer) return;
   void refreshStaleFeeds();
@@ -50,12 +46,6 @@ export const fetchingState = {
   fetchingFeeds,
 };
 
-/**
- * Refresh all feeds whose `lastFetched + learnedIntervalMs < now`.
- * Called automatically on tick and on app open. Also exported for the
- * "Refresh all" command — that path bypasses staleness and refreshes
- * every feed regardless.
- */
 export async function refreshStaleFeeds(forceAll = false): Promise<void> {
   const feeds = await listFeeds();
   const now = Date.now();
@@ -71,7 +61,6 @@ export async function refreshStaleFeeds(forceAll = false): Promise<void> {
   }
 }
 
-/** Run async tasks with at most `concurrency` in-flight at once. */
 async function mapConcurrent<T, R>(
   items: T[],
   fn: (item: T) => Promise<R>,
@@ -89,44 +78,38 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
-/**
- * Refresh a single feed: fetch via the proxy, parse, insertOrUpdate each
- * item, update the feed record's metadata and the learned interval.
- * On 304 we update only `lastFetched` (no item parsing, no learned-interval
- * adaptation — there's nothing to learn from no-new-items).
- */
 export async function refreshFeed(feed: Feed): Promise<void> {
   setInFlight((n) => n + 1);
-  setFetchingFeeds((prev) => new Set(prev).add(feed.url));
+  setFetchingFeeds((prev) => new Set(prev).add(feed.id));
   try {
     const result = await fetchFeed(feed.url, {
       etag: feed.etag,
       lastModified: feed.lastModified,
     });
     if (result.kind === 'error') {
-      setFeedErrors((prev) => ({ ...prev, [feed.url]: result.message }));
-      await updateFeed(feed.url, { lastError: result.message });
+      setFeedErrors((prev) => ({ ...prev, [feed.id]: result.message }));
+      await updateFeed(feed.id, { lastError: result.message });
       return;
     }
     if (result.kind === 'not-modified') {
-      await updateFeed(feed.url, {
+      await updateFeed(feed.id, {
         lastFetched: Date.now(),
         lastError: null,
       });
       setFeedErrors((prev) => {
         const next = { ...prev };
-        delete next[feed.url];
+        delete next[feed.id];
         return next;
       });
       return;
     }
     const parsed = parseFeed(result.body);
     if (!parsed) {
-      setFeedErrors((prev) => ({ ...prev, [feed.url]: 'Failed to parse feed' }));
-      await updateFeed(feed.url, { lastError: 'Failed to parse feed' });
+      setFeedErrors((prev) => ({ ...prev, [feed.id]: 'Failed to parse feed' }));
+      await updateFeed(feed.id, { lastError: 'Failed to parse feed' });
       return;
     }
-    const items = parsedToItems(parsed, feed.url);
+    const items = parsedToItems(parsed, feed.id);
     if (items.length > 0) {
       await bulkUpsertItems(items);
     }
@@ -147,24 +130,19 @@ export async function refreshFeed(feed: Feed): Promise<void> {
     });
     setFeedErrors((prev) => {
       const next = { ...prev };
-      delete next[feed.url];
+      delete next[feed.id];
       return next;
     });
   } finally {
     setFetchingFeeds((prev) => {
       const next = new Set(prev);
-      next.delete(feed.url);
+      next.delete(feed.id);
       return next;
     });
     setInFlight((n) => Math.max(0, n - 1));
   }
 }
 
-/**
- * Heuristic from design D8: track observed item arrivals; if a feed
- * publishes >10 items/day, halve the interval toward the 30-min floor; if
- * <2 items/day observed for ≥5 days, double toward the 24-hour ceiling.
- */
 function adaptInterval(feed: Feed, newItems: { publishedAt: number }[], latest: number | null): number {
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;

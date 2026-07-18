@@ -158,6 +158,7 @@ async function handleAddFeed(relay: Relay, args: Record<string, unknown>): Promi
   if (!discovered) return textResult(`Could not find a feed at: ${url}`, true);
 
   const feed: Feed = {
+    id: crypto.randomUUID(),
     url: discovered.url,
     title: discovered.title,
     htmlUrl: discovered.htmlUrl,

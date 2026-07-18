@@ -84,7 +84,7 @@ test.describe('Add feed', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'feed-upsert',
-          feedUrl: 'https://example.com/blog',
+          feedId: expect.any(String),
         }),
       ]),
     );

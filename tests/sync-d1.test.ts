@@ -120,7 +120,8 @@ describe('sync D1 integration', () => {
         headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           feeds: [{
-            feedUrl: 'https://example.com/blog',
+            feedId: 'https://example.com/blog',
+            feedUrl: { value: 'https://example.com/blog', at: now },
             title: { value: 'Test Feed', at: now },
             deleted: { value: 0, at: now },
           }],
@@ -160,7 +161,8 @@ describe('sync D1 integration', () => {
         headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           feeds: [{
-            feedUrl: 'https://example.com/tagged',
+            feedId: 'https://example.com/tagged',
+            feedUrl: { value: 'https://example.com/tagged', at: now },
             title: { value: 'Tagged Feed', at: now },
             tags: { value: ['news', 'tech'], at: now },
             deleted: { value: 0, at: now },
@@ -195,8 +197,8 @@ describe('sync D1 integration', () => {
       });
 
       const now = Date.now();
-      const feedUrl = 'https://example.com/news';
-      const itemId = `${encodeURIComponent(feedUrl)}::article-1`;
+      const feedId = 'https://example.com/news';
+      const itemId = `${encodeURIComponent(feedId)}::article-1`;
 
       await mf.dispatchFetch('http://localhost/sync/push', {
         method: 'POST',
@@ -204,7 +206,7 @@ describe('sync D1 integration', () => {
         body: JSON.stringify({
           flags: [{
             itemId,
-            feedUrl,
+            feedId,
             read: { value: 1, at: now },
             starred: { value: 1, at: now },
           }],
@@ -242,7 +244,8 @@ describe('sync D1 integration', () => {
         headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           feeds: [{
-            feedUrl: 'https://example.com/old',
+            feedId: 'https://example.com/old',
+            feedUrl: { value: 'https://example.com/old', at: t1 },
             title: { value: 'Old Feed', at: t1 },
             deleted: { value: 0, at: t1 },
           }],
@@ -284,7 +287,8 @@ describe('sync D1 integration', () => {
         headers: { 'X-Sync-Key': keyA, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           feeds: [{
-            feedUrl: 'https://example.com/rss',
+            feedId: 'https://example.com/rss',
+            feedUrl: { value: 'https://example.com/rss', at: now },
             title: { value: 'Device A Feed', at: now },
             deleted: { value: 0, at: now },
           }],

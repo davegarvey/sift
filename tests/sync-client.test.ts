@@ -3,6 +3,7 @@
  */
 
 import 'fake-indexeddb/auto';
+import crypto from 'crypto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
 import { upsertFeed, listFeeds, getFeedByUrl } from '../src/db/feeds';
@@ -23,13 +24,13 @@ describe('item ID encoding', () => {
     const id = encodeItemId('https://example.com/feed.xml', 'guid-1');
     expect(id).toBe('https%3A%2F%2Fexample.com%2Ffeed.xml::guid-1');
     const parsed = decodeItemId(id);
-    expect(parsed).toEqual({ feedUrl: 'https://example.com/feed.xml', guid: 'guid-1' });
+    expect(parsed).toEqual({ feedId: 'https://example.com/feed.xml', guid: 'guid-1' });
   });
 
   it('round-trips a URL containing ::', () => {
     const id = encodeItemId('https://example.com/a::b/feed.xml', 'guid-1');
     const parsed = decodeItemId(id);
-    expect(parsed?.feedUrl).toBe('https://example.com/a::b/feed.xml');
+    expect(parsed?.feedId).toBe('https://example.com/a::b/feed.xml');
     expect(parsed?.guid).toBe('guid-1');
   });
 
@@ -44,6 +45,7 @@ describe('applyRemoteState', () => {
       serverTime: 1000,
       feeds: [
         {
+          feed_id: crypto.randomUUID(),
           feed_url: 'https://example.com/feed.xml',
           folder: '["Tech"]',
           folder_at: 500,
@@ -61,7 +63,9 @@ describe('applyRemoteState', () => {
   });
 
   it('unsubscribes a tombstoned feed when remote is newer', async () => {
+    const feedId = crypto.randomUUID();
     await upsertFeed({
+      id: feedId,
       url: 'https://example.com/feed.xml',
       title: 'Example',
       learnedIntervalMs: 3_600_000,
@@ -71,6 +75,7 @@ describe('applyRemoteState', () => {
       serverTime: 2000,
       feeds: [
         {
+          feed_id: feedId,
           feed_url: 'https://example.com/feed.xml',
           row_at: 2000,
           deleted: 1,
@@ -84,7 +89,9 @@ describe('applyRemoteState', () => {
   });
 
   it('preserves local feed when tombstone is older', async () => {
+    const feedId = crypto.randomUUID();
     await upsertFeed({
+      id: feedId,
       url: 'https://example.com/feed.xml',
       title: 'Example',
       learnedIntervalMs: 3_600_000,
@@ -94,6 +101,7 @@ describe('applyRemoteState', () => {
       serverTime: 2000,
       feeds: [
         {
+          feed_id: feedId,
           feed_url: 'https://example.com/feed.xml',
           row_at: 500,
           deleted: 1,
@@ -107,7 +115,9 @@ describe('applyRemoteState', () => {
   });
 
   it('applies a remote flag to an existing item', async () => {
+    const feedId = crypto.randomUUID();
     await upsertFeed({
+      id: feedId,
       url: 'https://example.com/feed.xml',
       title: 'Example',
       learnedIntervalMs: 3_600_000,
@@ -115,7 +125,7 @@ describe('applyRemoteState', () => {
     });
     await insertOrUpdateItem({
       id: 'https://example.com/feed.xml::guid-1',
-      feedUrl: 'https://example.com/feed.xml',
+      feedId: 'https://example.com/feed.xml',
       guid: 'guid-1',
       title: 'Hello',
       publishedAt: 100,
@@ -132,7 +142,7 @@ describe('applyRemoteState', () => {
       flags: [
         {
           item_id: itemId,
-          feed_url: 'https://example.com/feed.xml',
+          feed_id: 'https://example.com/feed.xml',
           read: 1,
           read_at: 1500,
           starred: 1,
@@ -148,7 +158,9 @@ describe('applyRemoteState', () => {
   });
 
   it('applies remote tags when newer than local', async () => {
+    const feedId = crypto.randomUUID();
     await upsertFeed({
+      id: feedId,
       url: 'https://example.com/feed.xml',
       title: 'Example',
       tags: ['old'],
@@ -160,6 +172,7 @@ describe('applyRemoteState', () => {
       serverTime: 2000,
       feeds: [
         {
+          feed_id: feedId,
           feed_url: 'https://example.com/feed.xml',
           tags: JSON.stringify(['rust', 'dev']),
           tags_at: 500,
@@ -173,7 +186,9 @@ describe('applyRemoteState', () => {
   });
 
   it('preserves local tags when remote is older', async () => {
+    const feedId = crypto.randomUUID();
     await upsertFeed({
+      id: feedId,
       url: 'https://example.com/feed.xml',
       title: 'Example',
       tags: ['rust'],
@@ -185,6 +200,7 @@ describe('applyRemoteState', () => {
       serverTime: 2000,
       feeds: [
         {
+          feed_id: feedId,
           feed_url: 'https://example.com/feed.xml',
           tags: JSON.stringify(['old']),
           tags_at: 500,
@@ -198,7 +214,9 @@ describe('applyRemoteState', () => {
   });
 
   it('does not clear local tags when remote has null tags', async () => {
+    const feedId = crypto.randomUUID();
     await upsertFeed({
+      id: feedId,
       url: 'https://example.com/feed.xml',
       title: 'Example',
       tags: ['rust'],
@@ -210,6 +228,7 @@ describe('applyRemoteState', () => {
       serverTime: 2000,
       feeds: [
         {
+          feed_id: feedId,
           feed_url: 'https://example.com/feed.xml',
           tags: null,
           tags_at: null,
@@ -230,7 +249,7 @@ describe('applyRemoteState', () => {
       flags: [
         {
           item_id: itemId,
-          feed_url: 'https://example.com/feed.xml',
+          feed_id: 'https://example.com/feed.xml',
           read: 1,
           read_at: 1500,
           starred: 0,

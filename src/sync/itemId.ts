@@ -1,19 +1,10 @@
-/**
- * Item-ID encoding/decoding.
- *
- * Wire format: `encodeURIComponent(feedUrl) + "::" + guid`.
- * On parse, split at the *last* `::` (in case feedUrl contains the literal
- * sequence after URL-encoding it — though encoded `%3A%3A` is no longer
- * literal `::`).
- */
-
 export interface ParsedItemId {
-  feedUrl: string;
+  feedId: string;
   guid: string;
 }
 
-export function encodeItemId(feedUrl: string, guid: string): string {
-  return encodeURIComponent(feedUrl) + '::' + guid;
+export function encodeItemId(feedId: string, guid: string): string {
+  return encodeURIComponent(feedId) + '::' + guid;
 }
 
 export function decodeItemId(itemId: string): ParsedItemId | null {
@@ -21,11 +12,11 @@ export function decodeItemId(itemId: string): ParsedItemId | null {
   if (lastSep === -1) return null;
   const encodedFeed = itemId.slice(0, lastSep);
   const guid = itemId.slice(lastSep + 2);
-  let feedUrl: string;
+  let feedId: string;
   try {
-    feedUrl = decodeURIComponent(encodedFeed);
+    feedId = decodeURIComponent(encodedFeed);
   } catch {
     return null;
   }
-  return { feedUrl, guid };
+  return { feedId, guid };
 }

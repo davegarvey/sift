@@ -1,9 +1,3 @@
-/**
- * Push flusher. Reads the dirty set, batches into chunks, pushes each.
- * On success, clears the cleared entries from the dirty set. On failure,
- * applies backoff and retries.
- */
-
 import { pushChunk, SyncClientError, MAX_DIRTY_PER_PUSH } from './client';
 import { getDirty, clearDirtyIds, entryAt, type DirtyEntry } from './queue';
 import { encodeItemId } from './itemId';
@@ -27,25 +21,26 @@ function chunkToBody(chunk: DirtyEntry[]): { feeds?: unknown[]; flags?: unknown[
       const folder = e.kind === 'feed-upsert' ? e.folder : null;
       const title = e.kind === 'feed-upsert' ? e.title : null;
       const tags = e.kind === 'feed-upsert' ? e.tags : null;
+      const feedUrl = e.kind === 'feed-upsert' ? e.feedUrl : null;
       const deleted = e.kind === 'feed-upsert' ? e.deleted : 1;
       const folderAt = e.kind === 'feed-upsert' ? e.folderAt : entryAt(e);
       const titleAt = e.kind === 'feed-upsert' ? e.titleAt : entryAt(e);
       const tagsAt = e.kind === 'feed-upsert' ? e.tagsAt : entryAt(e);
+      const feedUrlAt = e.kind === 'feed-upsert' ? (e.feedUrl?.at ?? entryAt(e)) : entryAt(e);
       const deletedAt = e.kind === 'feed-upsert' ? e.deletedAt : entryAt(e);
-      const feedPayload: Record<string, unknown> = { feedUrl: e.feedUrl };
+      const feedPayload: Record<string, unknown> = { feedId: e.feedId };
       if (folder !== null) feedPayload.folder = { value: folder, at: folderAt };
       if (title !== null) feedPayload.title = { value: title, at: titleAt };
+      if (feedUrl !== null) feedPayload.feedUrl = { value: feedUrl.value, at: feedUrlAt };
       if (tags !== null) feedPayload.tags = { value: tags, at: tagsAt };
       feedPayload.deleted = { value: deleted, at: deletedAt };
       feeds.push(feedPayload);
     } else {
-      // The wire format uses the encoded item_id so feed URLs containing
-      // literal `::` are not ambiguous with the separator.
       const lastSep = e.itemId.lastIndexOf('::');
-      const feedUrl = e.feedUrl;
+      const feedId = e.feedId;
       const guid = lastSep >= 0 ? e.itemId.slice(lastSep + 2) : e.itemId;
-      const itemId = encodeItemId(feedUrl, guid);
-      const flagPayload: Record<string, unknown> = { itemId, feedUrl };
+      const itemId = encodeItemId(feedId, guid);
+      const flagPayload: Record<string, unknown> = { itemId, feedId };
       if (e.read !== null) flagPayload.read = { value: e.read, at: e.readAt };
       if (e.starred !== null) flagPayload.starred = { value: e.starred, at: e.starredAt };
       flags.push(flagPayload);
@@ -62,7 +57,6 @@ async function pushChunkWithSplit(entries: DirtyEntry[]): Promise<void> {
   const body = chunkToBody(entries);
   try {
     await pushChunk(body);
-    // Entries consumed (mapped 1:1).
     const allIds = new Set(entries.map((_, i) => i));
     clearDirtyIds(allIds);
   } catch (err) {

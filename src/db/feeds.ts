@@ -7,9 +7,15 @@ export async function upsertFeed(feed: Feed): Promise<void> {
   await db.put('feeds', feed);
 }
 
+export async function getFeed(id: string): Promise<Feed | undefined> {
+  const db = await getDb();
+  return db.get('feeds', id);
+}
+
 export async function getFeedByUrl(url: string): Promise<Feed | undefined> {
   const db = await getDb();
-  return db.get('feeds', url);
+  const feeds = await db.getAll('feeds');
+  return feeds.find((f) => f.url === url);
 }
 
 export async function listFeeds(): Promise<Feed[]> {
@@ -17,23 +23,23 @@ export async function listFeeds(): Promise<Feed[]> {
   return db.getAll('feeds');
 }
 
-export async function deleteFeed(url: string): Promise<void> {
+export async function deleteFeed(id: string): Promise<void> {
   const db = await getDb();
-  await db.delete('feeds', url);
+  await db.delete('feeds', id);
 }
 
 export async function updateFeed(
-  url: string,
+  id: string,
   patch: Partial<Feed>,
 ): Promise<void> {
   const db = await getDb();
-  const existing = await db.get('feeds', url);
+  const existing = await db.get('feeds', id);
   if (!existing) return;
-  await db.put('feeds', { ...existing, ...patch, url });
+  await db.put('feeds', { ...existing, ...patch, id });
 }
 
 /** Delete a feed and all its items. This cannot be undone. */
-export async function unsubscribeFeed(url: string): Promise<void> {
-  await deleteItemsByFeed(url);
-  await deleteFeed(url);
+export async function unsubscribeFeed(id: string): Promise<void> {
+  await deleteItemsByFeed(id);
+  await deleteFeed(id);
 }

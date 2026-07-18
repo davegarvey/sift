@@ -20,13 +20,13 @@ export function River() {
         ctx.feeds().filter((f) => f.tags?.some((t) => {
           const normalized = normalizeTag(t);
           return normalized !== null && tagSet.has(normalized);
-        })).map((f) => f.url)
+        })).map((f) => f.id)
       );
       if (matchingFeeds.size === 0) return items;
-      return items.filter((i) => matchingFeeds.has(i.feedUrl));
+      return items.filter((i) => matchingFeeds.has(i.feedId));
     }
     if (ctx.state.riverScope == null) return items;
-    return items.filter((i) => i.feedUrl === ctx.state.riverScope);
+    return items.filter((i) => i.feedId === ctx.state.riverScope);
   });
 
   // Auto-scroll to the focused item when focusedIndex changes.
@@ -164,7 +164,7 @@ export function River() {
             >
               <div class="body">
                 <div class="meta">
-                  <span class="source">{ctx.feedMap().get(item.feedUrl)?.title ?? ''}</span>
+                  <span class="source">{ctx.feedMap().get(item.feedId)?.title ?? ''}</span>
                   <span class="time">{relativeTime(item.publishedAt)}</span>
                 </div>
                 <h3 class="title">

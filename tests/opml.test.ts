@@ -66,6 +66,7 @@ describe('OPML merge', () => {
   it('skip feeds whose normalized URL matches an existing subscription', async () => {
     await reset();
     await upsertFeed({
+      id: crypto.randomUUID(),
       url: 'https://a.example.com/feed?utm_source=opml',
       title: 'Alpha (already subscribed)',
       learnedIntervalMs: 60 * 60 * 1000,
