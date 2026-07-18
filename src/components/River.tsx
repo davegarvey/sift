@@ -34,7 +34,10 @@ export function River() {
   let lastFocusedEl: HTMLElement | null = null;
   let lastFocusedIdx = -1;
   let mouseNav = false;
-  let lastKeyboardScroll = 0;
+  let lastKeyboardNav = 0;
+  // Ignore mouse events triggered by scrolling items (not actual mouse movement)
+  // for a short window after keyboard navigation.
+  const isKeyboardInert = () => performance.now() - lastKeyboardNav < 500;
 
   createEffect(() => {
     const items = visibleItems();
@@ -54,7 +57,7 @@ export function River() {
     const els = containerRef?.querySelectorAll('[data-item-idx]') ?? [];
     const target = els[idx] as HTMLElement | undefined;
     if (target && target !== lastFocusedEl) {
-      lastKeyboardScroll = performance.now();
+      lastKeyboardNav = performance.now();
       target.scrollIntoView({
         behavior: 'auto',
         block: 'center',
@@ -65,19 +68,17 @@ export function River() {
     lastFocusedIdx = idx;
   });
 
-  // Clear focusedIndex when the user scrolls manually.
-  // Ignore scroll events caused by programmatic scrollIntoView within 200ms.
+  // Clear focusedIndex when the user scrolls manually (wheel / trackpad).
+  // Scroll events are unreliable — they fire for both programmatic and manual
+  // scrolls — so we use wheel events which are always user-initiated.
   createEffect(() => {
     const el = containerRef;
     if (!el) return;
-    const onScroll = () => {
-      if (performance.now() - lastKeyboardScroll < 200) return;
-      if (ctx.state.focusedIndex >= 0) {
-        ctx.setState({ focusedIndex: -1 });
-      }
+    const onWheel = () => {
+      if (ctx.state.focusedIndex >= 0) ctx.setState({ focusedIndex: -1 });
     };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    onCleanup(() => el.removeEventListener('scroll', onScroll));
+    el.addEventListener('wheel', onWheel, { passive: true });
+    onCleanup(() => el.removeEventListener('wheel', onWheel));
   });
 
   // Render items swipe handler.
@@ -141,7 +142,11 @@ export function River() {
                 if ((e.currentTarget as HTMLElement).style.transform) return;
                 void ctx.openItem(item);
               }}
-              onMouseEnter={() => { mouseNav = true; ctx.setState({ focusedIndex: idx() }); }}
+              onMouseEnter={() => {
+                if (isKeyboardInert()) return;
+                mouseNav = true;
+                ctx.setState({ focusedIndex: idx() });
+              }}
             >
               <div class="body">
                 <div class="meta">
