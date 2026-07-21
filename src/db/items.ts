@@ -29,17 +29,28 @@ export async function insertOrUpdateItem(item: Item): Promise<void> {
 }
 
 export async function bulkUpsertItems(items: Item[]): Promise<void> {
+  if (items.length === 0) return;
   const db = await getDb();
+  const feedId = items[0].feedId;
+
+  // Batch-read existing items and flags for this feed.
+  const itemRange = IDBKeyRange.bound([feedId, -Infinity], [feedId, Infinity]);
+  const existingItems = await db.getAllFromIndex('items', 'by-feed-published', itemRange);
+  const existingByKey = new Map(existingItems.map((e) => [e.id, e]));
+
+  const existingFlags = await db.getAllFromIndex('itemFlags', 'by-feed-id', feedId);
+  const flagByKey = new Map(existingFlags.map((f) => [f.id, f]));
+
   const tx = db.transaction(['items', 'itemFlags'], 'readwrite');
   const itemsStore = tx.objectStore('items');
   const flagsStore = tx.objectStore('itemFlags');
   for (const item of items) {
-    const existing = await itemsStore.get(item.id);
+    const existing = existingByKey.get(item.id);
     if (existing) {
       const merged = { ...existing, ...item, read: existing.read, starred: existing.starred, firstOpenedAt: existing.firstOpenedAt, id: existing.id };
       if (item.html) merged.extractedHtml = null;
       await itemsStore.put(merged);
-      const flag = await flagsStore.get(item.id);
+      const flag = flagByKey.get(item.id);
       await flagsStore.put({
         id: item.id,
         feedId: item.feedId,
@@ -48,7 +59,7 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
       });
     } else {
       await itemsStore.put(item);
-      const existingFlag = await flagsStore.get(item.id);
+      const existingFlag = flagByKey.get(item.id);
       await flagsStore.put({
         id: item.id,
         feedId: item.feedId,

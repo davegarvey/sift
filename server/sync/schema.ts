@@ -52,7 +52,5 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_pairing_expires ON pairing_codes(expires_at)`,
     `CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
   ];
-  for (const sql of statements) {
-    await db.prepare(sql).run();
-  }
+  await db.batch(statements.map((sql) => db.prepare(sql)));
 }

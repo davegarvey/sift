@@ -17,13 +17,9 @@ export function setOnSync(fn: (() => void) | null): void {
 function toRemotePayload(p: PullPayload): RemotePayload {
   return {
     serverTime: p.serverTime,
-    feeds: p.feeds as unknown as RemoteFeed[],
-    flags: p.flags as unknown as RemoteFlag[],
+    feeds: p.feeds as unknown as RemoteFeed[], // why: PullPayload.feeds arrives as unknown[] from JSON parse
+    flags: p.flags as unknown as RemoteFlag[], // why: same — runtime shape matches RemoteFlag after JSON parse
   };
-}
-
-function snapshotFeeds(): Feed[] {
-  return []; // placeholder — caller provides via async wrapper
 }
 
 export interface LocalSnapshot {

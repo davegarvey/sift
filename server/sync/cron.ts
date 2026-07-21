@@ -15,7 +15,7 @@ const RATE_LIMIT_MAX_WINDOW_SECONDS = 24 * 60 * 60; // the daily register:global
 export async function runSyncCron(db: D1Database, scheduledTime: number = Date.now()): Promise<void> {
   const now = scheduledTime;
   const tombstoneCutoff = now - TOMBSTONE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  const pairingCutoff = now - PAIRING_GRACE_DAYS * 24 * 60 * 60 * 1000;
+  const pairingCutoff = Math.floor(now / 1000) - PAIRING_GRACE_DAYS * 24 * 60 * 60;
   const rateLimitCutoff = Math.floor(now / 1000) - RATE_LIMIT_MAX_WINDOW_SECONDS;
 
   await db.batch([

@@ -10,6 +10,7 @@ export function getUpstreamUrl(reqUrl: string): string | null {
     try {
       parsed = new URL(raw);
     } catch {
+      console.warn('getUpstreamUrl: failed to parse URL, trying decoded', raw);
       parsed = new URL(decodeURIComponent(raw));
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
