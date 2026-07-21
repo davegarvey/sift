@@ -12,7 +12,7 @@ import { scheduleFlush } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { setOnSync } from './sync/merge';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
-import { redeemCode } from './sync/client';
+import { redeemCode, register } from './sync/client';
 import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, updateFeedMeta, changeFeedUrl, type SubscribeInput } from './feeds/service';
 import { isIdle, onCatchup, clearActivityOnHide } from './util/idle';
 
@@ -382,6 +382,10 @@ export const AppProvider: ParentComponent = (props) => {
     }
     await updateSettingsWith({ syncKey: key });
     try {
+      // Register the sync key on the server before any push attempt.
+      // pushChunk also auto-registers on 401, but an explicit register
+      // here avoids a 401 -> retry cycle on a fresh D1.
+      await register();
       await triggerFirstTime();
     } catch (e) {
       await disableSync();
