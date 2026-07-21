@@ -1,16 +1,4 @@
 export async function ensureSchema(db: D1Database): Promise<void> {
-  // v1→v2 migration: feed_id replaces feed_url as PK. Use a tracking table so
-  // it only runs once (in production D1) and is a no-op on subsequent cold
-  // starts. The local-d1 shim starts empty every time, so the migration always
-  // runs on first call — which is correct because there's no persisted data.
-  await db.prepare('CREATE TABLE IF NOT EXISTS _schema_migrate_v2 (done INTEGER PRIMARY KEY)').run();
-  const row = await db.prepare('SELECT done FROM _schema_migrate_v2 WHERE done = 1').first<{ done: number }>();
-  if (!row) {
-    await db.prepare('DROP TABLE IF EXISTS feeds').run();
-    await db.prepare('DROP TABLE IF EXISTS flags').run();
-    await db.prepare('INSERT INTO _schema_migrate_v2 (done) VALUES (1)').run();
-  }
-
   const statements = [
     `CREATE TABLE IF NOT EXISTS users (
       sync_key   TEXT PRIMARY KEY,

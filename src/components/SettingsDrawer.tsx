@@ -173,11 +173,11 @@ function SyncSection() {
       </div>
       <Show when={enabled()}>
         <div class="row">
-          <label>Pair this device</label>
+          <label>Pair this device with an existing sync</label>
           <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-join' })}>Join</button>
         </div>
         <div class="row" style="border-top: 0">
-          <label>Add another device</label>
+          <label>Add another device to this sync</label>
           <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-share' })}>Generate</button>
         </div>
       </Show>
