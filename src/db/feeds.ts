@@ -14,8 +14,8 @@ export async function getFeed(id: string): Promise<Feed | undefined> {
 
 export async function getFeedByUrl(url: string): Promise<Feed | undefined> {
   const db = await getDb();
-  const feeds = await db.getAll('feeds');
-  return feeds.find((f) => f.url === url);
+  const feeds = await db.getAllFromIndex('feeds', 'by-url', url);
+  return feeds[0];
 }
 
 export async function listFeeds(): Promise<Feed[]> {

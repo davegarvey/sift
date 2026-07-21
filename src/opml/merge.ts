@@ -9,6 +9,7 @@ function normalizeUrl(url: string): string {
     parsed.search = '';
     return parsed.toString();
   } catch {
+    console.warn('normalizeUrl: failed to parse URL', url);
     return url;
   }
 }

@@ -29,8 +29,9 @@ export function getDirty(): DirtyEntry[] {
   return inMemory;
 }
 
-export function clearDirtyIds(ids: Set<number>): void {
-  inMemory = inMemory.filter((_, i) => !ids.has(i));
+export function clearEntries(entries: DirtyEntry[]): void {
+  const remove = new Set(entries);
+  inMemory = inMemory.filter((e) => !remove.has(e));
   schedulePersist();
 }
 

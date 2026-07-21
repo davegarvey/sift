@@ -69,8 +69,8 @@ async function withMfFetch<T>(fn: () => Promise<T>): Promise<T> {
         ? (input as Request).url
         : `http://localhost${(input as Request).url}`;
     }
-    return (mf as any).dispatchFetch(url, init);
-  }) as unknown as typeof globalThis.fetch;
+    return (mf as any).dispatchFetch(url, init); // why: Miniflare types don't expose dispatchFetch on the main type
+  }) as unknown as typeof globalThis.fetch; // why: wrapping dispatchFetch to match fetch signature
   try {
     return await fn();
   } finally {

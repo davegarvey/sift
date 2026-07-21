@@ -9,29 +9,6 @@ export interface ParsedSubscription {
 const ATTR_RE = /(\w[\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 export function parseOpml(xml: string): ParsedSubscription[] {
-  const out: ParsedSubscription[] = [];
-  const stack: string[] = [];
-
-  const openRe = /<outline\b[^>]*\/?>/gi;
-  const closeRe = /<\/outline>/ig;
-
-  // Token scan: track opens/closes to maintain folder path.
-  const tokens: { type: 'open' | 'close'; tag: string }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = openRe.exec(xml)) !== null) {
-    tokens.push({ type: 'open', tag: m[0] });
-  }
-  while ((m = closeRe.exec(xml)) !== null) {
-    tokens.push({ type: 'close', tag: m[0] });
-  }
-  tokens.sort((a, b) => {
-    const ai = xml.indexOf(a.tag, 0);
-    const bi = xml.indexOf(b.tag, ai);
-    return ai - bi;
-  });
-
-  // Re-sort naively doesn't work for repeated tags; use a different approach
-  // by scanning sequentially through the source.
   return sequentialScan(xml);
 }
 

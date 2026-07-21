@@ -8,7 +8,7 @@
 import qrcode from 'qrcode-generator';
 
 export function renderSyncKeyQr(syncKey: string, cellSize = 6, margin = 2): string {
-  const qr = (qrcode as unknown as (type: number, ec: 'L' | 'M' | 'Q' | 'H') => {
+  const qr = (qrcode as unknown as (type: number, ec: 'L' | 'M' | 'Q' | 'H') => { // why: qrcode-generator types don't expose the callable factory
     addData: (s: string) => void;
     make: () => void;
     getModuleCount: () => number;
