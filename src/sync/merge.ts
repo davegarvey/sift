@@ -48,6 +48,7 @@ export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: Remot
 async function pushLocalState(feeds: Feed[], flags: ItemFlag[]): Promise<void> {
   const now = Date.now();
   for (const feed of feeds) {
+    if (!feed.url) continue;
     enqueueFeed({
       feedId: feed.id,
       folder: feed.folder ?? null,
