@@ -17,7 +17,7 @@ function honoDevMiddleware() {
     configureServer(server: ViteDevServer) {
       const mcpEnabled = process.env.MCP_ENABLED === 'true';
       const relay = mcpEnabled ? new Relay() : undefined;
-      const db = new LocalD1Database() as any;
+      const db = new LocalD1Database() as any; // why: LocalD1Database is a partial D1 shim, not the full interface
       const devApp = createApp({ relay, db });
       server.middlewares.use(
         async (
@@ -48,7 +48,7 @@ function honoDevMiddleware() {
                 }
                 const request = new Request(`http://${host}${url}`, {
                   method,
-                  headers: req.headers as unknown as Headers,
+                  headers: req.headers as unknown as Headers, // why: IncomingMessage.headers is IncomingHttpHeaders, not HeadersInit
                   body: bodyInit,
                 });
               const response = await devApp.fetch(request);
@@ -132,6 +132,7 @@ export default defineConfig({
     target: 'esnext',
     outDir: 'dist',
     assetsDir: 'assets',
+    sourcemap: 'hidden',
   },
   server: {
     port: 8787,

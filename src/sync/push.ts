@@ -1,5 +1,5 @@
 import { pushChunk, SyncClientError, MAX_DIRTY_PER_PUSH } from './client';
-import { getDirty, clearDirtyIds, entryAt, type DirtyEntry } from './queue';
+import { getDirty, clearEntries, entryAt, type DirtyEntry } from './queue';
 import { encodeItemId } from './itemId';
 
 const DEBOUNCE_MS = 1000;
@@ -14,9 +14,26 @@ function splitChunk<T>(items: T[], size: number): T[][] {
 }
 
 function chunkToBody(chunk: DirtyEntry[]): { feeds?: unknown[]; flags?: unknown[] } {
+  // Deduplicate flag-update entries: keep only the last entry per itemId.
+  const seen = new Map<string, DirtyEntry & { kind: 'flag-update' }>();
+  const deduped: DirtyEntry[] = [];
+  for (const e of chunk) {
+    if (e.kind === 'flag-update') {
+      const prev = seen.get(e.itemId);
+      if (prev) {
+        const idx = deduped.indexOf(prev);
+        deduped.splice(idx, 1);
+      }
+      seen.set(e.itemId, e);
+      deduped.push(e);
+    } else {
+      deduped.push(e);
+    }
+  }
+
   const feeds: unknown[] = [];
   const flags: unknown[] = [];
-  for (const e of chunk) {
+  for (const e of deduped) {
     if (e.kind === 'feed-upsert' || e.kind === 'feed-delete') {
       const folder = e.kind === 'feed-upsert' ? e.folder : null;
       const title = e.kind === 'feed-upsert' ? e.title : null;
@@ -57,8 +74,7 @@ async function pushChunkWithSplit(entries: DirtyEntry[]): Promise<void> {
   const body = chunkToBody(entries);
   try {
     await pushChunk(body);
-    const allIds = new Set(entries.map((_, i) => i));
-    clearDirtyIds(allIds);
+    clearEntries(entries);
   } catch (err) {
     if (err instanceof SyncClientError && err.status === 413 && entries.length > 1) {
       const half = Math.floor(entries.length / 2);

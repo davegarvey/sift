@@ -5,7 +5,20 @@ import { listFeeds } from './db/feeds';
 import { listItems, listItemsByFeed, markRead, toggleStar as dbToggleStar } from './db/items';
 import type { Feed, Item } from './db/types';
 import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
-import { getSettings, saveSettings, type AppSettings, type ThemePreference } from './settings';
+import { getMeta, setMeta } from './db/meta';
+import { DEFAULT_SETTINGS } from './db/types';
+import type { AppSettings, ThemePreference } from './db/types';
+
+const SETTINGS_KEY = 'settings';
+
+async function getSettings(): Promise<AppSettings> {
+  const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
+  return { ...DEFAULT_SETTINGS, ...stored };
+}
+
+async function saveSettings(settings: AppSettings): Promise<void> {
+  await setMeta(SETTINGS_KEY, settings);
+}
 import { refreshStaleFeeds, fetchingState, startScheduler, setOnRefresh } from './feeds/scheduler';
 import { enqueueFlag } from './sync/queue';
 import { scheduleFlush } from './sync/push';

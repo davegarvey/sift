@@ -14,6 +14,7 @@ import { RATE_LIMITS, checkRateLimit } from './ratelimit';
 import { nextMonotonicTime, currentMonotonicTime } from './monotonic';
 import { ensureSchema } from './schema';
 import { assertNoKeyLog, assertNoUserDataLog, assertNoUrlLog } from '../log';
+import { decodeItemId } from '../../src/sync/itemId';
 
 const PAIRING_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const PAIRING_CODE_LEN = 8;
@@ -68,16 +69,6 @@ function isPairingCode(s: string): boolean {
     if (!PAIRING_ALPHABET.includes(ch)) return false;
   }
   return true;
-}
-
-function deriveFeedIdFromItemId(itemId: string): string | null {
-  const lastSep = itemId.lastIndexOf('::');
-  if (lastSep === -1) return null;
-  try {
-    return decodeURIComponent(itemId.slice(0, lastSep));
-  } catch {
-    return null;
-  }
 }
 
 function jsonError(message: string, fieldName?: string, fieldValue?: unknown): Response {
@@ -426,11 +417,11 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       if (typeof g.itemId !== 'string' || !g.itemId) {
         return jsonError('flag.itemId must be a non-empty string', 'itemId');
       }
-      const derived = deriveFeedIdFromItemId(g.itemId);
-      if (!derived) {
+      const parsed = decodeItemId(g.itemId);
+      if (!parsed) {
         return jsonError('flag.itemId must contain "::"', 'itemId');
       }
-      if (typeof g.feedId !== 'string' || g.feedId !== derived) {
+      if (typeof g.feedId !== 'string' || g.feedId !== parsed.feedId) {
         return jsonError('flag.feedId does not match itemId', 'feedId');
       }
       if (g.read !== undefined) {
@@ -453,7 +444,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       stmts.push(
         db
           .prepare('INSERT OR IGNORE INTO flags (sync_key, item_id, feed_id, row_at) VALUES (?, ?, ?, 0)')
-          .bind(syncKey, g.itemId, derived),
+          .bind(syncKey, g.itemId, g.feedId),
       );
 
       const fieldSets: string[] = [];

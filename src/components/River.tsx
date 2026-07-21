@@ -94,6 +94,7 @@ export function River() {
   const onStart = (e: PointerEvent, item: Item) => {
     const startX = e.clientX, startY = e.clientY;
     const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
     let moved = false;
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;

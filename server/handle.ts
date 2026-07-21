@@ -1,5 +1,4 @@
 import { Hono, type Env } from 'hono';
-import { etag } from 'hono/etag';
 import {
   getUpstreamUrl,
   fetchUpstream,
@@ -27,9 +26,6 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
   }
   const mcpEnabled = relay !== undefined;
   const app = new Hono<E>();
-  app.use('/feed', etag());
-  app.use('/article', etag());
-  app.use('/img', etag());
 
   /**
    * GET /feed?url=<encoded>
@@ -76,6 +72,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
     const headers = new Headers();
     headers.set('Content-Type', 'application/xml; charset=utf-8');
+    headers.set('Cache-Control', 'no-cache, no-store');
     const etagHeader = upstreamRes.headers.get('ETag');
     if (etagHeader) headers.set('ETag', etagHeader);
     const lastModified = upstreamRes.headers.get('Last-Modified');
@@ -102,6 +99,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
     const headers = new Headers();
     headers.set('Content-Type', 'text/html; charset=utf-8');
+    headers.set('Cache-Control', 'no-cache, no-store');
     const etagHeader = upstreamRes.headers.get('ETag');
     if (etagHeader) headers.set('ETag', etagHeader);
     const lastModified = upstreamRes.headers.get('Last-Modified');
@@ -185,7 +183,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     app.route('/', syncApp);
     if (scheduledHandler) {
       // Mount scheduled handler as a module-level export so worker.ts can hook it.
-      (app as unknown as { __scheduledHandler?: typeof scheduledHandler }).__scheduledHandler = scheduledHandler;
+      (app as unknown as { __scheduledHandler?: typeof scheduledHandler }).__scheduledHandler = scheduledHandler; // why: stashing handler on Hono app; not in public types
     }
   }
 

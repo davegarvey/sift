@@ -6,6 +6,9 @@ interface RssReaderDB extends DBSchema {
   feeds: {
     key: string;
     value: Feed;
+    indexes: {
+      'by-url': string;
+    };
   };
   items: {
     key: string;
@@ -82,15 +85,12 @@ export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
         if (_oldVersion < 3) {
           if (!db.objectStoreNames.contains('itemFlags')) {
             const flags = db.createObjectStore('itemFlags', { keyPath: 'id' });
-            (flags.createIndex as any)('by-feed-url', 'feedUrl');
             flags.createIndex('by-read', 'read');
             flags.createIndex('by-starred', 'starred');
           }
         }
-        if (_oldVersion < 4) {
-        }
         if (_oldVersion < 5) {
-          const tx = transaction as any;
+          const tx = transaction as any; // why: idb Transaction type doesn't include objectStore/cursor from older schema versions
           const oldFeeds: any[] = [];
           let fc = await tx.objectStore('feeds').openCursor();
           while (fc) {
@@ -158,6 +158,12 @@ export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
             if (!feedId) continue;
             const guid = oldId.slice(lastSep + 2);
             await flagsStore.put(Object.assign({}, flag, { id: `${feedId}::${guid}`, feedId }));
+          }
+        }
+        if (_oldVersion < 6) {
+          const store = transaction.objectStore('feeds');
+          if (!store.indexNames.contains('by-url')) {
+            store.createIndex('by-url', 'url', { unique: false });
           }
         }
       },

@@ -27,8 +27,8 @@ export async function runEviction(): Promise<void> {
   }
 
   candidates.sort((a, b) => {
-    const aTime = a.firstOpenedAt ?? -Infinity;
-    const bTime = b.firstOpenedAt ?? -Infinity;
+    const aTime = a.firstOpenedAt ?? +Infinity;
+    const bTime = b.firstOpenedAt ?? +Infinity;
     return aTime - bTime;
   });
 

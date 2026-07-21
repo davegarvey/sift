@@ -24,7 +24,7 @@ function processLinks(html: string, baseUrl?: string): string {
           link.setAttribute('href', new URL(resolved.pathname + resolved.search + resolved.hash, baseUrl).toString());
         }
       } catch {
-        // leave invalid URLs as-is
+        console.warn('processLinks: failed to resolve URL', href, 'against', baseUrl);
       }
     }
     if (!link.hasAttribute('target') || link.getAttribute('target') !== '_blank') {
