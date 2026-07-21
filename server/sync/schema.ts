@@ -15,6 +15,8 @@ export async function ensureSchema(db: D1Database): Promise<void> {
       title_at    INTEGER,
       tags        TEXT,
       tags_at     INTEGER,
+      html_url    TEXT,
+      html_url_at INTEGER,
       deleted     INTEGER NOT NULL DEFAULT 0,
       deleted_at  INTEGER,
       row_at      INTEGER NOT NULL,
@@ -53,4 +55,17 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
   ];
   await db.batch(statements.map((sql) => db.prepare(sql)));
+
+  // Migration: add html_url / html_url_at to existing feeds tables.
+  const migrations = [
+    `ALTER TABLE feeds ADD COLUMN html_url TEXT`,
+    `ALTER TABLE feeds ADD COLUMN html_url_at INTEGER`,
+  ];
+  for (const sql of migrations) {
+    try {
+      await db.prepare(sql).run();
+    } catch {
+      // Column already exists — swallow the error.
+    }
+  }
 }
