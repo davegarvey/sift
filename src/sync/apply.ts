@@ -74,9 +74,18 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
     const local = localById.get(rf.feed_id);
     const remoteFolder = parseFolder(rf.folder);
     const remoteTags = parseTags(rf.tags);
+    const mergedUrl = rf.feed_url != null
+      ? newer(rf.feed_url, local?.url ?? null, rf.feed_url_at ?? null, local?.urlAt ?? local?.lastFetched ?? null) ?? rf.feed_url
+      : (local?.url ?? '');
+    if (!mergedUrl) {
+      if (local && rf.deleted === 1 && rf.deleted_at != null && (local.lastFetched ?? 0) < rf.deleted_at) {
+        tombstonedForUnsubscribe.push(rf.feed_id);
+      }
+      continue;
+    }
     const merged: Feed = {
       id: rf.feed_id,
-      url: newer(rf.feed_url ?? null, local?.url ?? null, rf.feed_url_at ?? null, local?.urlAt ?? local?.lastFetched ?? null) ?? local?.url ?? '',
+      url: mergedUrl,
       title: newer(rf.title ?? null, local?.title ?? null, rf.title_at ?? null, local?.titleAt ?? local?.lastFetched ?? null) ?? '',
       htmlUrl: newer(rf.html_url ?? null, local?.htmlUrl ?? null, rf.html_url_at ?? null, local?.htmlUrlAt ?? null) ?? undefined,
       htmlUrlAt: Math.max(rf.html_url_at ?? 0, local?.htmlUrlAt ?? 0) || null,

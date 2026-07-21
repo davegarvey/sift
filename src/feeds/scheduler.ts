@@ -50,6 +50,7 @@ export async function refreshStaleFeeds(forceAll = false): Promise<void> {
   const feeds = await listFeeds();
   const now = Date.now();
   const stale = feeds.filter((f) => {
+    if (!f.url) return false;
     if (forceAll) return true;
     if (f.lastFetched == null) return true;
     return f.lastFetched + f.learnedIntervalMs < now;
