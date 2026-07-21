@@ -67,6 +67,7 @@ export async function runFirstTimeSetup(): Promise<number> {
     });
   }
   for (const flag of existingFlags) {
+    if (flag.read === 0 && flag.starred === 0) continue;
     enqueueFlag({
       itemId: flag.id,
       feedId: flag.feedId,
