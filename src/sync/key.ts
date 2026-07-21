@@ -45,7 +45,7 @@ export async function setStoredSyncKey(key: string): Promise<void> {
 
 export async function clearStoredSyncKey(): Promise<void> {
   const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
-  await setMeta(SETTINGS_KEY, { ...stored, syncKey: null, lastSyncAt: null });
+  await setMeta(SETTINGS_KEY, { ...stored, syncKey: null });
 }
 
 export async function getStoredLastSyncAt(): Promise<number | null> {

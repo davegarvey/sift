@@ -7,6 +7,7 @@ import { pullSince, type PullPayload } from './client';
 import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
 import { getStoredLastSyncAt, setStoredLastSyncAt } from './key';
 import type { Feed, Item } from '../db/types';
+import type { ItemFlag } from '../db/flags';
 
 let onSync: (() => void) | null = null;
 
@@ -48,11 +49,9 @@ export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: Remot
   onSync?.();
 }
 
-export async function runFirstTimeSetup(): Promise<number> {
-  const existingFeeds = await listFeeds();
-  const existingFlags = await getItemFlags();
+async function pushLocalState(feeds: Feed[], flags: ItemFlag[]): Promise<void> {
   const now = Date.now();
-  for (const feed of existingFeeds) {
+  for (const feed of feeds) {
     enqueueFeed({
       feedId: feed.id,
       folder: feed.folder ?? null,
@@ -66,7 +65,7 @@ export async function runFirstTimeSetup(): Promise<number> {
       deletedAt: now,
     });
   }
-  for (const flag of existingFlags) {
+  for (const flag of flags) {
     if (flag.read === 0 && flag.starred === 0) continue;
     enqueueFlag({
       itemId: flag.id,
@@ -77,22 +76,43 @@ export async function runFirstTimeSetup(): Promise<number> {
       starredAt: now,
     });
   }
-
   await flushNow();
+}
 
-  const pull = await pullSince(0);
+async function mergePayload(payload: RemotePayload, serverTime: number): Promise<void> {
+  const snap = await snapshotLocal();
+  await mergeForFirstTime(snap, payload);
+  await flushNow();
+  const newTime = Math.max(await getStoredLastSyncAt() ?? 0, serverTime);
+  await setStoredLastSyncAt(newTime);
+}
+
+export async function runFirstTimeSetup(): Promise<number> {
+  const existingFeeds = await listFeeds();
+  const existingFlags = await getItemFlags();
+  const lastSyncAt = await getStoredLastSyncAt();
+
+  if (lastSyncAt == null) {
+    await pushLocalState(existingFeeds, existingFlags);
+    const pull = await pullSince(0);
+    const payload = toRemotePayload(pull);
+    await mergePayload(payload, pull.serverTime);
+    return (await getStoredLastSyncAt()) ?? 0;
+  }
+
+  const pull = await pullSince(lastSyncAt);
   const payload = toRemotePayload(pull);
 
-  const snap = await snapshotLocal();
+  if (payload.feeds.length === 0 && payload.flags.length === 0 && existingFeeds.length > 0) {
+    await pushLocalState(existingFeeds, existingFlags);
+    const pull2 = await pullSince(0);
+    const payload2 = toRemotePayload(pull2);
+    await mergePayload(payload2, pull2.serverTime);
+    return (await getStoredLastSyncAt()) ?? 0;
+  }
 
-  await mergeForFirstTime(snap, payload);
-
-  await flushNow();
-
-  const newTime = Math.max(await getStoredLastSyncAt() ?? 0, pull.serverTime);
-  await setStoredLastSyncAt(newTime);
-
-  return newTime;
+  await mergePayload(payload, pull.serverTime);
+  return (await getStoredLastSyncAt()) ?? 0;
 }
 
 export async function runPull(): Promise<number | null> {
