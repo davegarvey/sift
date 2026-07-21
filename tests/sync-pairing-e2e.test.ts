@@ -33,6 +33,12 @@ beforeEach(async () => {
   });
   await mf.ready;
 
+  // Reset server-side D1 state between tests (Miniflare may reuse a
+  // persistent SQLite file across instances, so we drop explicitly).
+  const d1 = await mf.getD1Database('DB');
+  await d1.prepare('DROP TABLE IF EXISTS feeds').run();
+  await d1.prepare('DROP TABLE IF EXISTS flags').run();
+
   const db = await getDb();
   for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
     if (db.objectStoreNames.contains(store)) {
