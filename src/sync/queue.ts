@@ -6,7 +6,7 @@ const DIRTY_KEY = 'sync_dirty';
 export type DirtyEntry =
   | { kind: 'feed-upsert'; feedId: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; feedUrl: { value: string | null; at: number } | null; tags: string[] | null; tagsAt: number; deleted: 0 | 1; deletedAt: number }
   | { kind: 'feed-delete'; feedId: string; at: number }
-  | { kind: 'flag-update'; itemId: string; feedId: string; read: 0 | 1 | null; readAt: number; starred: 0 | 1 | null; starredAt: number };
+  | { kind: 'flag-update'; itemId: string; feedId: string; read: 0 | 1; readAt: number; starred: 0 | 1; starredAt: number };
 
 let inMemory: DirtyEntry[] = [];
 let loaded = false;
@@ -104,11 +104,28 @@ export function enqueueFeedDelete(feedId: string, at: number): void {
 export function enqueueFlag(flag: {
   itemId: string;
   feedId: string;
-  read: 0 | 1 | null;
+  read: 0 | 1;
   readAt: number;
-  starred: 0 | 1 | null;
+  starred: 0 | 1;
   starredAt: number;
 }): void {
+  const existing = inMemory.find(
+    (e): e is Extract<DirtyEntry, { kind: 'flag-update' }> =>
+      e.kind === 'flag-update' && e.itemId === flag.itemId,
+  );
+  if (existing) {
+    if (existing.read === flag.read && existing.starred === flag.starred) {
+      existing.readAt = flag.readAt;
+      existing.starredAt = flag.starredAt;
+    } else {
+      existing.read = flag.read;
+      existing.readAt = flag.readAt;
+      existing.starred = flag.starred;
+      existing.starredAt = flag.starredAt;
+    }
+    schedulePersist();
+    return;
+  }
   appendEntry({
     kind: 'flag-update',
     itemId: flag.itemId,

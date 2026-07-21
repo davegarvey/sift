@@ -40,9 +40,7 @@ function chunkToBody(chunk: DirtyEntry[]): { feeds?: unknown[]; flags?: unknown[
       const feedId = e.feedId;
       const guid = lastSep >= 0 ? e.itemId.slice(lastSep + 2) : e.itemId;
       const itemId = encodeItemId(feedId, guid);
-      const flagPayload: Record<string, unknown> = { itemId, feedId };
-      if (e.read !== null) flagPayload.read = { value: e.read, at: e.readAt };
-      if (e.starred !== null) flagPayload.starred = { value: e.starred, at: e.starredAt };
+      const flagPayload: Record<string, unknown> = { itemId, feedId, read: { value: e.read, at: e.readAt }, starred: { value: e.starred, at: e.starredAt } };
       flags.push(flagPayload);
     }
   }

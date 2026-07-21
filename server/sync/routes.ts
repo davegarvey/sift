@@ -433,58 +433,25 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       if (typeof g.feedId !== 'string' || g.feedId !== derived) {
         return jsonError('flag.feedId does not match itemId', 'feedId');
       }
-      if (g.read !== undefined) {
-        if (typeof g.read.at !== 'number' || g.read.at < 0) {
-          return jsonError('flag.read.at must be a non-negative integer', 'read.at');
-        }
-        if (g.read.value !== null && g.read.value !== 0 && g.read.value !== 1) {
-          return jsonError('flag.read.value must be 0, 1, or null', 'read.value');
-        }
+      if (typeof g.read?.value !== 'number' || (g.read.value !== 0 && g.read.value !== 1)) {
+        return jsonError('flag.read.value must be 0 or 1', 'read.value');
       }
-      if (g.starred !== undefined) {
-        if (typeof g.starred.at !== 'number' || g.starred.at < 0) {
-          return jsonError('flag.starred.at must be a non-negative integer', 'starred.at');
-        }
-        if (g.starred.value !== null && g.starred.value !== 0 && g.starred.value !== 1) {
-          return jsonError('flag.starred.value must be 0, 1, or null', 'starred.value');
-        }
+      if (typeof g.read?.at !== 'number' || g.read.at < 0) {
+        return jsonError('flag.read.at must be a non-negative integer', 'read.at');
+      }
+      if (typeof g.starred?.value !== 'number' || (g.starred.value !== 0 && g.starred.value !== 1)) {
+        return jsonError('flag.starred.value must be 0 or 1', 'starred.value');
+      }
+      if (typeof g.starred?.at !== 'number' || g.starred.at < 0) {
+        return jsonError('flag.starred.at must be a non-negative integer', 'starred.at');
       }
 
+      const flagMaxAt = Math.max(g.read.at, g.starred.at);
+      maxAt = Math.max(maxAt, flagMaxAt);
       stmts.push(
         db
-          .prepare('INSERT OR IGNORE INTO flags (sync_key, item_id, feed_id, row_at) VALUES (?, ?, ?, 0)')
-          .bind(syncKey, g.itemId, derived),
-      );
-
-      const fieldSets: string[] = [];
-      const fieldBinds: unknown[] = [];
-      if (g.read !== undefined) {
-        fieldSets.push(
-          "read = CASE WHEN read_at IS NULL OR ? > read_at THEN ? ELSE read END",
-          "read_at = CASE WHEN read_at IS NULL OR ? > read_at THEN ? ELSE read_at END",
-        );
-        fieldBinds.push(g.read.at, g.read.value);
-        fieldBinds.push(g.read.at, g.read.at);
-        maxAt = Math.max(maxAt, g.read.at);
-      }
-      if (g.starred !== undefined) {
-        fieldSets.push(
-          "starred = CASE WHEN starred_at IS NULL OR ? > starred_at THEN ? ELSE starred END",
-          "starred_at = CASE WHEN starred_at IS NULL OR ? > starred_at THEN ? ELSE starred_at END",
-        );
-        fieldBinds.push(g.starred.at, g.starred.value);
-        fieldBinds.push(g.starred.at, g.starred.at);
-        maxAt = Math.max(maxAt, g.starred.at);
-      }
-      stmts.push(
-        db
-          .prepare(`UPDATE flags SET ${fieldSets.join(', ')} WHERE sync_key = ? AND item_id = ?`)
-          .bind(...fieldBinds, syncKey, g.itemId),
-      );
-      stmts.push(
-        db
-          .prepare('UPDATE flags SET row_at = ? WHERE sync_key = ? AND item_id = ? AND ? > COALESCE(row_at, 0)')
-          .bind(maxAt, syncKey, g.itemId, maxAt),
+          .prepare('INSERT OR REPLACE INTO flags (sync_key, item_id, feed_id, read, read_at, starred, starred_at, row_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(syncKey, g.itemId, derived, g.read.value, g.read.at, g.starred.value, g.starred.at, flagMaxAt),
       );
       assertNoUrlLog(g.feedId);
     }
