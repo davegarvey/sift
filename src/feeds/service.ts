@@ -1,4 +1,4 @@
-import { upsertFeed, updateFeed, getFeedByUrl, unsubscribeFeed as dbUnsubscribeFeed } from '../db/feeds';
+import { upsertFeed, updateFeed, getFeed, getFeedByUrl, unsubscribeFeed as dbUnsubscribeFeed } from '../db/feeds';
 import { enqueueFeed, enqueueFeedDelete } from '../sync/queue';
 import { scheduleFlush } from '../sync/push';
 import { DEFAULT_LEARNED_INTERVAL_MS } from '../db/types';
@@ -18,9 +18,11 @@ export async function subscribeFeed(input: SubscribeInput): Promise<void> {
   await upsertFeed({
     id,
     url: input.url,
+    urlAt: now,
     title: input.title,
     titleAt: now,
     htmlUrl: input.htmlUrl,
+    htmlUrlAt: input.htmlUrl ? now : null,
     folder: input.folder,
     tags: input.tags,
     tagsAt: now,
@@ -34,7 +36,8 @@ export async function subscribeFeed(input: SubscribeInput): Promise<void> {
     folderAt: now,
     title: input.title,
     titleAt: now,
-    feedUrl: null,
+    feedUrl: { value: input.url, at: now },
+    htmlUrl: input.htmlUrl ? { value: input.htmlUrl, at: now } : null,
     tags: input.tags ?? null,
     tagsAt: now,
     deleted: 0,
@@ -48,6 +51,7 @@ export async function updateFeedMeta(
   meta: { title?: string; tags?: string[] }
 ): Promise<void> {
   const now = Date.now();
+  const feed = await getFeed(feedId);
   const patch: Partial<Feed> = {};
   if (meta.title !== undefined) {
     patch.title = meta.title;
@@ -64,7 +68,8 @@ export async function updateFeedMeta(
     folderAt: now,
     title: meta.title ?? null,
     titleAt: now,
-    feedUrl: null,
+    feedUrl: feed ? { value: feed.url, at: now } : null,
+    htmlUrl: feed?.htmlUrl ? { value: feed.htmlUrl, at: now } : null,
     tags: meta.tags ?? null,
     tagsAt: now,
     deleted: 0,
@@ -83,6 +88,7 @@ export async function changeFeedUrl(feedId: string, newUrl: string): Promise<voi
     throw new Error('Already subscribed to this URL');
   }
 
+  const feed = await getFeed(feedId);
   const now = Date.now();
   await updateFeed(feedId, {
     url: trimmed,
@@ -97,6 +103,7 @@ export async function changeFeedUrl(feedId: string, newUrl: string): Promise<voi
     title: null,
     titleAt: now,
     feedUrl: { value: trimmed, at: now },
+    htmlUrl: feed?.htmlUrl ? { value: feed.htmlUrl, at: now } : null,
     tags: null,
     tagsAt: now,
     deleted: 0,

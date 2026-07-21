@@ -64,7 +64,7 @@ export function AddFeedModal() {
   const subscribe = async () => {
     const d = discovered();
     if (!d) return;
-    await ctx.subscribeFeed({ url: d.url, title: d.title, tags: tags() });
+    await ctx.subscribeFeed({ url: d.url, title: d.title, htmlUrl: d.parsed.htmlUrl, tags: tags() });
     const feed = ctx.feeds().find((f) => f.url === d.url);
     if (!feed) return;
     const items = parsedToItems(d.parsed, feed.id);

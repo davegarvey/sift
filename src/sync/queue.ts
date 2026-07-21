@@ -4,7 +4,7 @@ import { MAX_DIRTY_PER_PUSH } from './client';
 const DIRTY_KEY = 'sync_dirty';
 
 export type DirtyEntry =
-  | { kind: 'feed-upsert'; feedId: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; feedUrl: { value: string | null; at: number } | null; tags: string[] | null; tagsAt: number; deleted: 0 | 1; deletedAt: number }
+  | { kind: 'feed-upsert'; feedId: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; feedUrl: { value: string | null; at: number } | null; htmlUrl: { value: string | null; at: number } | null; tags: string[] | null; tagsAt: number; deleted: 0 | 1; deletedAt: number }
   | { kind: 'feed-delete'; feedId: string; at: number }
   | { kind: 'flag-update'; itemId: string; feedId: string; read: 0 | 1 | null; readAt: number; starred: 0 | 1 | null; starredAt: number };
 
@@ -55,7 +55,7 @@ export async function persistDirty(): Promise<void> {
 function entryAt(e: DirtyEntry): number {
   switch (e.kind) {
     case 'feed-upsert':
-      return Math.max(e.folderAt, e.titleAt, e.tagsAt, e.feedUrl?.at ?? 0, e.deletedAt);
+      return Math.max(e.folderAt, e.titleAt, e.tagsAt, e.feedUrl?.at ?? 0, e.htmlUrl?.at ?? 0, e.deletedAt);
     case 'feed-delete':
       return e.at;
     case 'flag-update':
@@ -78,6 +78,7 @@ export function enqueueFeed(feed: {
   title: string | null;
   titleAt: number;
   feedUrl: { value: string | null; at: number } | null;
+  htmlUrl: { value: string | null; at: number } | null;
   tags: string[] | null;
   tagsAt: number;
   deleted: 0 | 1;
@@ -91,6 +92,7 @@ export function enqueueFeed(feed: {
     title: feed.title,
     titleAt: feed.titleAt,
     feedUrl: feed.feedUrl,
+    htmlUrl: feed.htmlUrl,
     tags: feed.tags,
     tagsAt: feed.tagsAt,
     deleted: feed.deleted,

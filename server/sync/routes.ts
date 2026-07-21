@@ -24,6 +24,7 @@ const MAX_USERS = 100_000;
 interface FeedPayload {
   feedId: string;
   feedUrl?: { value: string; at: number };
+  htmlUrl?: { value: string | null; at: number };
   folder?: { value: string[] | null; at: number };
   title?: { value: string; at: number };
   tags?: { value: string[] | null; at: number };
@@ -300,6 +301,14 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           return jsonError('feed.feedUrl.value must be a string', 'feedUrl.value');
         }
       }
+      if (f.htmlUrl !== undefined) {
+        if (typeof f.htmlUrl.at !== 'number' || f.htmlUrl.at < 0) {
+          return jsonError('feed.htmlUrl.at must be a non-negative integer', 'htmlUrl.at');
+        }
+        if (f.htmlUrl.value !== null && typeof f.htmlUrl.value !== 'string') {
+          return jsonError('feed.htmlUrl.value must be a string or null', 'htmlUrl.value');
+        }
+      }
       if (f.folder !== undefined) {
         const v = f.folder;
         if (typeof v.at !== 'number' || v.at < 0) {
@@ -380,6 +389,15 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         fieldBinds.push(f.title.at, f.title.at);
         maxAt = Math.max(maxAt, f.title.at);
       }
+      if (f.htmlUrl !== undefined) {
+        fieldSets.push(
+          "html_url = CASE WHEN html_url_at IS NULL OR ? > html_url_at THEN ? ELSE html_url END",
+          "html_url_at = CASE WHEN html_url_at IS NULL OR ? > html_url_at THEN ? ELSE html_url_at END",
+        );
+        fieldBinds.push(f.htmlUrl.at, f.htmlUrl.value);
+        fieldBinds.push(f.htmlUrl.at, f.htmlUrl.at);
+        maxAt = Math.max(maxAt, f.htmlUrl.at);
+      }
       if (f.tags !== undefined) {
         fieldSets.push(
           "tags = CASE WHEN tags_at IS NULL OR ? > tags_at THEN ? ELSE tags END",
@@ -411,6 +429,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           .bind(maxAt, syncKey, f.feedId, maxAt),
       );
       assertNoUrlLog(f.feedUrl?.value ?? '');
+      assertNoUrlLog(f.htmlUrl?.value ?? '');
     }
 
     for (const g of flags) {

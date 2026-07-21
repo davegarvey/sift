@@ -8,6 +8,8 @@ export interface RemoteFeed {
   feed_id: string;
   feed_url?: string | null;
   feed_url_at?: number | null;
+  html_url?: string | null;
+  html_url_at?: number | null;
   folder?: string | null;
   folder_at?: number | null;
   title?: string | null;
@@ -76,7 +78,8 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
       id: rf.feed_id,
       url: newer(rf.feed_url ?? null, local?.url ?? null, rf.feed_url_at ?? null, local?.urlAt ?? local?.lastFetched ?? null) ?? local?.url ?? '',
       title: newer(rf.title ?? null, local?.title ?? null, rf.title_at ?? null, local?.titleAt ?? local?.lastFetched ?? null) ?? '',
-      htmlUrl: local?.htmlUrl,
+      htmlUrl: newer(rf.html_url ?? null, local?.htmlUrl ?? null, rf.html_url_at ?? null, local?.htmlUrlAt ?? null) ?? undefined,
+      htmlUrlAt: Math.max(rf.html_url_at ?? 0, local?.htmlUrlAt ?? 0) || null,
       folder: newer(remoteFolder ?? null, local?.folder ?? null, rf.folder_at ?? null, local?.lastFetched ?? null) ?? undefined,
       tags: newer(remoteTags ?? null, local?.tags ?? null, rf.tags_at ?? null, local?.tagsAt ?? null) ?? undefined,
       tagsAt: Math.max(rf.tags_at ?? 0, local?.tagsAt ?? 0) || null,

@@ -22,6 +22,8 @@ export interface Feed {
   tags?: string[];
   /** Epoch ms of last tag edit, used for sync conflict resolution. */
   tagsAt?: number | null;
+  /** Epoch ms of last htmlUrl update, used for sync conflict resolution. */
+  htmlUrlAt?: number | null;
   /** Last successful fetch (epoch ms). */
   lastFetched: number | null;
   /** ETag received from the upstream, forwarded on next conditional request. */
