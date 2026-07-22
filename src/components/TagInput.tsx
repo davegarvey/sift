@@ -1,4 +1,4 @@
-import { createSignal, For, Show, onMount } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { normalizeTag } from '../util/tags';
 
 interface TagInputProps {
@@ -12,10 +12,6 @@ export function TagInput(props: TagInputProps) {
   const [input, setInput] = createSignal('');
   const [focused, setFocused] = createSignal(false);
   let inputRef: HTMLInputElement | undefined;
-
-  onMount(() => {
-    requestAnimationFrame(() => inputRef?.focus());
-  });
 
   const suggestions = () => {
     const q = normalizeTag(input());

@@ -1,6 +1,6 @@
 import { createSignal, Show, onCleanup } from 'solid-js';
 import { useApp } from '../state';
-import { updateFeedMeta, changeFeedUrl, updateFeedTags } from '../feeds/service';
+import { updateFeedMeta, changeFeedUrl } from '../feeds/service';
 import { TagInput } from './TagInput';
 
 export function FeedEditorModal() {
@@ -13,12 +13,14 @@ export function FeedEditorModal() {
 
   const [localTitle, setLocalTitle] = createSignal(feed()?.title ?? '');
   const [localUrl, setLocalUrl] = createSignal(feed()?.url ?? '');
+  const [localTags, setLocalTags] = createSignal<string[]>(feed()?.tags ?? []);
   const initialUrl = feed()?.url ?? '';
   const [urlError, setUrlError] = createSignal<string | null>(null);
 
   const allTags = () => ctx.allTags();
 
   let titleTimer: ReturnType<typeof setTimeout> | null = null;
+  let tagsTimer: ReturnType<typeof setTimeout> | null = null;
 
   const scheduleTitleSave = (title: string) => {
     if (titleTimer) clearTimeout(titleTimer);
@@ -30,8 +32,17 @@ export function FeedEditorModal() {
     }, 500);
   };
 
+  const scheduleTagsSave = (tags: string[]) => {
+    if (tagsTimer) clearTimeout(tagsTimer);
+    tagsTimer = setTimeout(async () => {
+      await ctx.updateFeedTags(feedId, tags);
+      await ctx.reloadFeeds();
+    }, 500);
+  };
+
   onCleanup(() => {
     if (titleTimer) clearTimeout(titleTimer);
+    if (tagsTimer) clearTimeout(tagsTimer);
   });
 
   const handleTitleInput = (e: Event) => {
@@ -75,8 +86,6 @@ export function FeedEditorModal() {
     ctx.openModal({ kind: 'confirm-unsubscribe', feedId });
   };
 
-  const feedTitle = () => feed()?.title ?? '';
-
   return (
     <div class="modal feed-editor modal-center">
       <div class="modal-header">Edit Feed</div>
@@ -108,7 +117,7 @@ export function FeedEditorModal() {
         <label style={{ display: 'block', 'font-size': '12px', 'margin-bottom': '6px', color: 'var(--subtext)' }}>
           Tags
         </label>
-        <TagInput allTags={allTags()} value={feed()?.tags ?? []} onChange={(tags) => { void ctx.updateFeedTags(feedId, tags); }} placeholder="Add tag…" />
+        <TagInput allTags={allTags()} value={localTags()} onChange={(tags) => { setLocalTags(tags); scheduleTagsSave(tags); }} placeholder="Add tag…" />
       </div>
       <div class="modal-footer" style={{ 'justify-content': 'space-between' }}>
         <button class="btn danger" onClick={() => void handleUnsubscribe()}>
