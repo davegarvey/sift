@@ -69,9 +69,25 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
   // 1) Feeds.
   const localFeeds = await listFeeds();
   const localById = new Map<string, Feed>(localFeeds.map((f) => [f.id, f]));
+  const localByUrl = new Map<string, Feed>();
+  for (const f of localFeeds) {
+    if (f.url) localByUrl.set(f.url, f);
+  }
   const tombstonedForUnsubscribe: string[] = [];
-  for (const rf of payload.feeds) {
-    const local = localById.get(rf.feed_id);
+  for (let rf of payload.feeds) {
+    let local = localById.get(rf.feed_id);
+
+    // Deduplicate by URL: if the remote feed matches a local feed by URL
+    // but has a different ID (e.g. two devices subscribed to the same feed
+    // before pairing), merge into the local feed instead of creating a
+    // duplicate.
+    if (!local && rf.feed_url) {
+      const dup = localByUrl.get(rf.feed_url);
+      if (dup && dup.id !== rf.feed_id) {
+        rf = { ...rf, feed_id: dup.id };
+        local = dup;
+      }
+    }
     const remoteFolder = parseFolder(rf.folder);
     const remoteTags = parseTags(rf.tags);
     const mergedUrl = rf.feed_url != null

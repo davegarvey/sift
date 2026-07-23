@@ -273,4 +273,74 @@ describe('sync pairing first-time setup', () => {
     const ids = pull.feeds.map((f) => f.feed_id).sort();
     expect(ids).toEqual([deskFeedId, mobileFeedId].sort());
   });
+
+  it('deduplicates feeds with same URL when pairing', async () => {
+    // --- "Desktop" device: has a feed, enables sync ---
+    const deskKey = makeSyncKey('dedup-desk');
+    const sharedUrl = 'https://ex.com/shared';
+    const deskFeedId = crypto.randomUUID();
+    await setStoredSyncKey(deskKey);
+    await setStoredLastSyncAt(null);
+    await upsertFeed({
+      id: deskFeedId,
+      url: sharedUrl,
+      title: 'Shared Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+
+    await withMfFetch(() => triggerFirstTime());
+
+    const pullRes = await mf.dispatchFetch(
+      'http://localhost/sync/pull?since=0',
+      { headers: { 'X-Sync-Key': deskKey } },
+    );
+    expect(pullRes.status).toBe(200);
+    const pull = (await pullRes.json()) as { feeds: Array<Record<string, unknown>> };
+    expect(pull.feeds.length).toBe(1);
+
+    // Desktop generates pairing code
+    const otpRes = await mf.dispatchFetch('http://localhost/sync/otp', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': deskKey },
+    });
+    const { code } = (await otpRes.json()) as { code: string };
+
+    // Mobile redeems code
+    const redeemRes = await mf.dispatchFetch('http://localhost/sync/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const { syncKey: mobileKey } = (await redeemRes.json()) as { syncKey: string };
+
+    // --- "Mobile" device: fresh local state with the SAME feed URL but different UUID ---
+    const db = await getDb();
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+      if (db.objectStoreNames.contains(store)) {
+        await db.clear(store);
+      }
+    }
+
+    const mobileFeedId = crypto.randomUUID();
+    await upsertFeed({
+      id: mobileFeedId,
+      url: sharedUrl,
+      title: 'Shared Feed (mobile copy)',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+
+    // Mobile pairs with the redeemed key
+    await setStoredSyncKey(mobileKey);
+    await setStoredLastSyncAt(null);
+
+    await withMfFetch(() => triggerFirstTime());
+
+    // After merge, mobile should have only 1 feed for sharedUrl (not 2)
+    const { listFeeds } = await import('../src/db/feeds');
+    const localFeeds = await listFeeds();
+    const matchingFeeds = localFeeds.filter((f) => f.url === sharedUrl);
+    expect(matchingFeeds.length).toBe(1);
+  });
 });
