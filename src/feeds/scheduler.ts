@@ -89,7 +89,15 @@ export async function refreshFeed(feed: Feed): Promise<void> {
     });
     if (result.kind === 'error') {
       setFeedErrors((prev) => ({ ...prev, [feed.id]: result.message }));
-      await updateFeed(feed.id, { lastError: result.message });
+      const nextInterval = Math.min(
+        MAX_LEARNED_INTERVAL_MS,
+        Math.max(feed.learnedIntervalMs * 2, MIN_LEARNED_INTERVAL_MS),
+      );
+      await updateFeed(feed.id, {
+        lastFetched: Date.now(),
+        learnedIntervalMs: nextInterval,
+        lastError: result.message,
+      });
       return;
     }
     if (result.kind === 'not-modified') {
