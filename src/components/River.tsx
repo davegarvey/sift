@@ -4,7 +4,7 @@ import { markRead } from '../db/items';
 import type { Item } from '../db/types';
 import { relativeTime } from '../util/time';
 import { normalizeTag } from '../util/tags';
-import { Star } from 'lucide-solid';
+import { Star, CircleCheck } from 'lucide-solid';
 import { CircleIcon, CircleCheckIcon } from './Icons';
 
 export function River() {
@@ -12,7 +12,7 @@ export function River() {
   let containerRef: HTMLDivElement | undefined;
 
   const visibleItems = createMemo(() => {
-    const items = ctx.items();
+    let items = ctx.items();
     const tags = ctx.state.activeTags;
     if (tags.length > 0) {
       const tagSet = new Set(tags);
@@ -22,11 +22,12 @@ export function River() {
           return normalized !== null && tagSet.has(normalized);
         })).map((f) => f.id)
       );
-      if (matchingFeeds.size === 0) return items;
-      return items.filter((i) => matchingFeeds.has(i.feedId));
+      if (matchingFeeds.size > 0) items = items.filter((i) => matchingFeeds.has(i.feedId));
+    } else if (ctx.state.riverScope != null) {
+      items = items.filter((i) => i.feedId === ctx.state.riverScope);
     }
-    if (ctx.state.riverScope == null) return items;
-    return items.filter((i) => i.feedId === ctx.state.riverScope);
+    if (ctx.state.starredOnly) items = items.filter((i) => i.starred);
+    return items;
   });
 
   // Auto-scroll to the focused item when focusedIndex changes.
@@ -90,31 +91,36 @@ export function River() {
     onCleanup(() => el.removeEventListener('wheel', onWheel));
   });
 
-  // Render items swipe handler.
+  // Render items swipe handler (touch-only, gmail-style reveal).
+  const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(any-pointer: coarse)').matches;
+  let swiped = false;
   const onStart = (e: PointerEvent, item: Item) => {
+    if (!isTouchDevice) return;
     const startX = e.clientX, startY = e.clientY;
     const el = e.currentTarget as HTMLElement;
+    const container = el.closest('.swipe-container') as HTMLElement | null;
     el.setPointerCapture(e.pointerId);
     let moved = false;
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       if (Math.abs(dy) > 24) {
-        // vertical: it's a scroll, not a swipe
         cleanup();
         return;
       }
       if (Math.abs(dx) > 6) moved = true;
-      el.style.transform = `translateX(${Math.max(-120, Math.min(120, dx))}px)`;
+      const clamped = Math.max(-80, Math.min(80, dx));
+      el.style.transform = `translateX(${clamped}px)`;
+      if (container) container.classList.toggle('swiping', Math.abs(clamped) > 0);
     };
     const onEnd = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
       el.style.transform = '';
+      if (container) container.classList.remove('swiping');
+      swiped = moved;
       if (dx > 60) {
-        // swipe right → mark read
-        if (!item.read) void ctx.markReadAndSync(item, true);
+        void ctx.markReadAndSync(item, !item.read);
       } else if (dx < -60) {
-        // swipe left → toggle star
         void ctx.toggleStar(item);
       }
       cleanup();
@@ -142,67 +148,71 @@ export function River() {
       <div class="river-inner">
         <For each={visibleItems()} fallback={shouldShowSkeleton() ? <SkeletonState /> : <EmptyState />}>
           {(item, idx) => (
-            <article
-              class={`river-item ${item.read ? 'read' : 'unread'}`}
-              data-item-id={item.id}
-              data-item-idx={idx()}
-              classList={{ focused: idx() === ctx.state.focusedIndex }}
-              onPointerDown={(e) => onStart(e, item)}
-              onClick={(e) => {
-                if ((e.currentTarget as HTMLElement).style.transform) return;
-                void ctx.openItem(item);
-              }}
-              onMouseEnter={() => {
-                // Ignore enter events when content shifts under a
-                // stationary cursor (refresh, mark-read removal, etc.).
-                if (performance.now() - lastMouseMoveTime > 200) return;
-                // Ignore enter events triggered by scrolling items under a
-                // stationary cursor during keyboard navigation.
-                if (performance.now() - lastKeyboardNav < 500 && !mouseMoved) return;
-                mouseNav = true;
-                ctx.setState({ focusedIndex: idx() });
-              }}
-            >
-              <div class="body">
-                <div class="meta">
-                  <span class="source">{ctx.feedMap().get(item.feedId)?.title ?? ''}</span>
-                  <span class="time">{relativeTime(item.publishedAt)}</span>
-                </div>
-                <h3 class="title">
-                  {item.title}
-                  <Show when={item.starred}>
-                    <Star size={14} fill="currentColor" class="star-inline" />
+            <div class="swipe-container">
+              <div class="swipe-reveal left">
+                <CircleCheck size={22} />
+              </div>
+              <div class="swipe-reveal right">
+                <Star size={22} />
+              </div>
+              <article
+                class={`river-item ${item.read ? 'read' : 'unread'}`}
+                data-item-id={item.id}
+                data-item-idx={idx()}
+                classList={{ focused: idx() === ctx.state.focusedIndex }}
+                onPointerDown={(e) => onStart(e, item)}
+                onClick={() => {
+                  if (swiped) { swiped = false; return; }
+                  void ctx.openItem(item);
+                }}
+                onMouseEnter={() => {
+                  if (performance.now() - lastMouseMoveTime > 200) return;
+                  if (performance.now() - lastKeyboardNav < 500 && !mouseMoved) return;
+                  mouseNav = true;
+                  ctx.setState({ focusedIndex: idx() });
+                }}
+              >
+                <div class="body">
+                  <div class="meta">
+                    <span class="source">{ctx.feedMap().get(item.feedId)?.title ?? ''}</span>
+                    <span class="time">{relativeTime(item.publishedAt)}</span>
+                  </div>
+                  <h3 class="title">
+                    {item.title}
+                  </h3>
+                  <Show when={item.excerpt}>
+                    <div class="excerpt">{item.excerpt}</div>
                   </Show>
-                </h3>
-                <Show when={item.excerpt}>
-                  <div class="excerpt">{item.excerpt}</div>
-                </Show>
-              </div>
-              <div class="actions">
-                <button
-                  class="action-btn read-toggle"
-                  title={item.read ? 'Mark unread' : 'Mark read'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void ctx.markReadAndSync(item, !item.read);
-                  }}
-                  aria-label={item.read ? 'Mark unread' : 'Mark read'}
-                >
-                  {item.read ? <CircleCheckIcon /> : <CircleIcon />}
-                </button>
-                <button
-                  class="action-btn star-toggle"
-                  title={item.starred ? 'Unstar' : 'Star'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void ctx.toggleStar(item);
-                  }}
-                  aria-label={item.starred ? 'Unstar' : 'Star'}
-                >
-                  <Star size={14} fill={item.starred ? 'currentColor' : 'none'} />
-                </button>
-              </div>
-            </article>
+                </div>
+                <div class="actions">
+                  <button
+                    class="action-btn read-toggle"
+                    title={item.read ? 'Mark unread' : 'Mark read'}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void ctx.markReadAndSync(item, !item.read);
+                    }}
+                    aria-label={item.read ? 'Mark unread' : 'Mark read'}
+                  >
+                    {item.read ? <CircleCheckIcon /> : <CircleIcon />}
+                  </button>
+                  <button
+                    class="action-btn star-toggle"
+                    classList={{ starred: item.starred }}
+                    title={item.starred ? 'Unstar' : 'Star'}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void ctx.toggleStar(item);
+                    }}
+                    aria-label={item.starred ? 'Unstar' : 'Star'}
+                  >
+                    <Star size={14} fill={item.starred ? 'currentColor' : 'none'} />
+                  </button>
+                </div>
+              </article>
+            </div>
           )}
         </For>
       </div>
@@ -236,6 +246,15 @@ function EmptyState() {
       <div class="empty-state">
         <div class="headline">Welcome to Sift</div>
         <a class="link" onClick={() => ctx.openModal({ kind: 'add-feed' })}>Add your first feed</a>
+      </div>
+    );
+  }
+
+  if (ctx.state.starredOnly) {
+    return (
+      <div class="empty-state">
+        <div class="headline">No starred items</div>
+        <a class="link" onClick={() => ctx.toggleStarFilter()}>Disable star filter</a>
       </div>
     );
   }

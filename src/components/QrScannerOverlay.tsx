@@ -1,4 +1,5 @@
 import { Show, createSignal, onMount, onCleanup } from 'solid-js';
+import { X } from 'lucide-solid';
 import { useApp } from '../state';
 import { redeemCode } from '../sync/client';
 
@@ -126,7 +127,7 @@ export function QrScannerOverlay(props: { onClose: (paired?: boolean) => void })
         onClick={() => props.onClose(false)}
         aria-label="Close scanner"
       >
-        ✕
+        <X size={24} />
       </button>
       <div class="scanner-viewfinder">
         <video ref={videoRef} class="scanner-video" autoplay playsinline muted aria-label="Camera view for QR code scanning" />

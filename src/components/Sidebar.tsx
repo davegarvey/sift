@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
-import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-solid';
+import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, MoreHorizontal } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
 import type { Feed } from '../db/types';
 import { normalizeTag } from '../util/tags';
@@ -43,7 +43,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
     <nav class="sidebar" aria-label="Feeds" data-collapsed={String(collapsed())}>
       <Show when={!collapsed()}>
         <div class="sidebar-header">
-          <div class="sidebar-wordmark">sift</div>
+          <button class="sidebar-wordmark" type="button" title="About Sift" onClick={() => ctx.openModal({ kind: 'about' })}>sift</button>
           <button
             class="sidebar-collapse desktop-only"
             title="Close sidebar"
@@ -55,7 +55,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
 
         <div class="sidebar-add-feed">
           <button class="sidebar-action" onClick={() => ctx.openModal({ kind: 'add-feed' })}>
-            + Add feed
+            <Plus size={14} /> Add feed
           </button>
         </div>
 
@@ -79,6 +79,15 @@ export function Sidebar(props: { onNavigate?: () => void }) {
               type="button"
             >
               all
+            </button>
+            <button
+              class={`tag-chip ${ctx.state.starredOnly ? 'active' : ''}`}
+              onClick={() => ctx.toggleStarFilter()}
+              type="button"
+              title="Toggle starred filter"
+              aria-label="Toggle starred filter"
+            >
+              <Star size={14} />
             </button>
             <For each={ctx.allTags()}>
               {(tag) => (
@@ -162,6 +171,15 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             </button>
           </div>
           <div class="collapsed-actions-bottom" onClick={(e) => e.stopPropagation()}>
+            <button
+              class="collapsed-action"
+              classList={{ active: ctx.state.starredOnly }}
+              title="Toggle starred filter"
+              aria-label="Toggle starred filter"
+              onClick={() => ctx.toggleStarFilter()}
+            >
+              <Star size={14} />
+            </button>
             <button class="collapsed-action" title="Search / Command palette" onClick={() => ctx.openModal({ kind: 'palette' })}>
               <Search size={14} />
             </button>
@@ -200,7 +218,7 @@ function FeedRow(props: FeedRowProps) {
         <span class="error-mark" data-error={error()} title="Last refresh failed"><TriangleAlert size={12} /></span>
       </Show>
       <button class="edit-btn" title={`Edit ${props.feed.title}`} onClick={(e) => { e.stopPropagation(); props.onEdit(); }}>
-        <span class="edit-dots">…</span>
+        <MoreHorizontal size={14} />
       </button>
     </div>
   );

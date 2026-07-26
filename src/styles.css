@@ -230,6 +230,10 @@ a:hover { text-decoration: underline; }
     cursor: default;
   }
 
+  .collapsed-action.active {
+    color: var(--accent);
+  }
+
   .collapsed-action .refresh-icon-spinning {
     color: var(--accent);
   }
@@ -309,6 +313,14 @@ a:hover { text-decoration: underline; }
     display: flex;
     align-items: center;
     height: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .topbar .wordmark:hover {
+    opacity: 0.8;
   }
 
   .sidebar-wordmark {
@@ -393,6 +405,15 @@ a:hover { text-decoration: underline; }
   color: var(--accent);
   user-select: none;
   flex: 1;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-wordmark:hover {
+  opacity: 0.8;
 }
 
 .sidebar-collapse {
@@ -532,6 +553,8 @@ a:hover { text-decoration: underline; }
   font-family: inherit;
   line-height: 1.5;
   transition: background 0.1s, color 0.1s;
+  display: inline-flex;
+  align-items: center;
 }
 .sidebar .tag-chip:hover {
   background: var(--overlay);
@@ -566,10 +589,6 @@ a:hover { text-decoration: underline; }
   opacity: 1;
   font-size: 14px;
   line-height: 1;
-}
-.sidebar .feed .edit-dots {
-  font-weight: 700;
-  letter-spacing: 1px;
 }
 @media (hover: hover) {
   .sidebar .feed .edit-btn {
@@ -625,7 +644,6 @@ a:hover { text-decoration: underline; }
   border: none;
   cursor: pointer;
   color: var(--subtext);
-  font-size: 12px;
   padding: 0 2px;
   line-height: 1;
   border-radius: 2px;
@@ -689,6 +707,43 @@ a:hover { text-decoration: underline; }
   width: 100%;
 }
 
+/* Swipe reveal container (touch-only via pointer events in JS). */
+.swipe-container {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+  background: var(--base);
+}
+
+.swipe-container .swipe-reveal {
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  width: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 0;
+  transition: opacity 0.15s ease;
+  opacity: 0;
+}
+
+.swipe-container.swiping .swipe-reveal {
+  opacity: 1;
+}
+
+.swipe-container .swipe-reveal.left {
+  left: 0;
+  background: var(--green);
+  color: var(--base);
+}
+
+.swipe-container .swipe-reveal.right {
+  right: 0;
+  background: var(--accent);
+  color: var(--base);
+}
+
 .river-item {
   padding: 16px 20px;
   border-bottom: 1px solid var(--hairline);
@@ -696,6 +751,8 @@ a:hover { text-decoration: underline; }
   gap: 10px;
   cursor: pointer;
   position: relative;
+  z-index: 1;
+  background: var(--base);
   transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -738,8 +795,8 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
 }
 
-.river-item.read {
-  opacity: 0.8;
+.river-item.read .body {
+  opacity: 0.75;
 }
 
 /* High contrast (pushed Catppuccin) — light default */
@@ -796,7 +853,7 @@ a:hover { text-decoration: underline; }
   }
 }
 
-:root[data-a11y] .river-item.read {
+:root[data-a11y] .river-item.read .body {
   opacity: 1;
 }
 
@@ -805,9 +862,8 @@ a:hover { text-decoration: underline; }
   font-weight: 400;
 }
 
-.river-item .star-inline {
+.river-item .star-toggle.starred {
   color: var(--accent);
-  margin-left: 6px;
 }
 
 .river-item .excerpt {
@@ -1599,7 +1655,6 @@ a:hover { text-decoration: underline; }
   background: none;
   border: none;
   color: #fff;
-  font-size: 24px;
   cursor: pointer;
   width: 40px;
   height: 40px;

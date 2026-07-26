@@ -2,7 +2,7 @@ import { createSignal, createMemo, createContext, useContext } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { listFeeds } from './db/feeds';
-import { listItems, listItemsByFeed, markRead, toggleStar as dbToggleStar } from './db/items';
+import { listItems, listItemsByFeed, listStarred, markRead, toggleStar as dbToggleStar } from './db/items';
 import type { Feed, Item } from './db/types';
 import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
 import { getMeta, setMeta } from './db/meta';
@@ -41,6 +41,7 @@ type ModalKind =
   | { kind: 'pair-result'; success: boolean; message: string }
   | { kind: 'sync-join' }
   | { kind: 'sync-share' }
+  | { kind: 'about' }
   ;
 
 export interface AppState {
@@ -54,6 +55,8 @@ export interface AppState {
   sidebarOpen: boolean;
   sidebarHiddenDesktop: boolean;
   focusedIndex: number;
+  /** When true, only starred items are shown. Orthogonal to riverScope/activeTags. */
+  starredOnly: boolean;
   modal: ModalKind;
   /** Item ID to restore focus to when returning to the river. */
   returnToItemId: string | null;
@@ -76,6 +79,7 @@ interface AppContext {
   setRiverScope: (feedId: string | null) => void;
   toggleTag: (tag: string) => void;
   clearTags: () => void;
+  toggleStarFilter: () => void;
   openItem: (item: Item, replace?: boolean) => Promise<void>;
   closeReading: () => Promise<void>;
   toggleSidebar: () => void;
@@ -120,6 +124,7 @@ export const AppProvider: ParentComponent = (props) => {
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
     focusedIndex: 0,
+    starredOnly: false,
     modal: { kind: 'none' },
     returnToItemId: null,
   });
@@ -223,6 +228,7 @@ export const AppProvider: ParentComponent = (props) => {
 
   const markReadAndSync = async (item: Item, read: boolean) => {
     await markRead(item.id, read);
+    setItems(items().map((i) => i.id === item.id ? { ...i, read } : i));
     const now = Date.now();
     enqueueFlag({
       itemId: item.id,
@@ -237,13 +243,15 @@ export const AppProvider: ParentComponent = (props) => {
 
   const toggleStarAndSync = async (item: Item) => {
     await dbToggleStar(item.id);
+    const starred = !item.starred;
+    setItems(items().map((i) => i.id === item.id ? { ...i, starred } : i));
     const now = Date.now();
     enqueueFlag({
       itemId: item.id,
       feedId: item.feedId,
       read: item.read ? 1 : 0,
       readAt: now,
-      starred: !item.starred ? 1 : 0,
+      starred: starred ? 1 : 0,
       starredAt: now,
     });
     scheduleFlush();
@@ -256,7 +264,9 @@ export const AppProvider: ParentComponent = (props) => {
     if (reloadingItems) return;
     reloadingItems = true;
     try {
-      if (state.riverScope != null) {
+      if (state.starredOnly && state.riverScope == null && state.activeTags.length === 0) {
+        setItems(await listStarred(500));
+      } else if (state.riverScope != null) {
         setItems(await listItemsByFeed(state.riverScope, 500));
       } else {
         setItems(await listItems(500));
@@ -281,6 +291,11 @@ export const AppProvider: ParentComponent = (props) => {
       setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: 0 });
       void reloadItems();
     }
+  };
+
+  const toggleStarFilter = () => {
+    setState({ starredOnly: !state.starredOnly, focusedIndex: 0 });
+    void reloadItems();
   };
 
   const clearTags = () => {
@@ -472,6 +487,7 @@ export const AppProvider: ParentComponent = (props) => {
     setRiverScope,
     toggleTag,
     clearTags,
+    toggleStarFilter,
     openItem,
     closeReading,
     toggleSidebar,

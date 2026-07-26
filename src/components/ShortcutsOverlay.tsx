@@ -1,8 +1,8 @@
 import { For } from 'solid-js';
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
-  { keys: ['j'], label: 'Next item' },
-  { keys: ['k'], label: 'Previous item' },
+  { keys: ['j', '↓'], label: 'Next item' },
+  { keys: ['k', '↑'], label: 'Previous item' },
   { keys: ['Enter'], label: 'Open focused item' },
   { keys: ['Esc'], label: 'Back to river' },
   { keys: ['o'], label: 'Open original' },
