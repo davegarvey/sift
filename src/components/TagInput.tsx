@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from 'solid-js';
+import { X } from 'lucide-solid';
 import { normalizeTag } from '../util/tags';
 
 interface TagInputProps {
@@ -51,7 +52,7 @@ export function TagInput(props: TagInputProps) {
                 aria-label={`Remove tag ${tag}`}
                 type="button"
               >
-                ✕
+                <X size={12} />
               </button>
             </span>
           )}
