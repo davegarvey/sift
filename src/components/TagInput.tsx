@@ -21,7 +21,7 @@ export function TagInput(props: TagInputProps) {
     return props.allTags
       .filter((t) => {
         const normalized = normalizeTag(t);
-        return normalized !== null && normalized !== q && normalized.startsWith(q);
+        return normalized !== null && normalized.startsWith(q);
       })
       .slice(0, 10);
   };
