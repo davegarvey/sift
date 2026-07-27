@@ -20,7 +20,13 @@ export async function getFeedByUrl(url: string): Promise<Feed | undefined> {
 
 export async function listFeeds(): Promise<Feed[]> {
   const db = await getDb();
-  return db.getAll('feeds');
+  const feeds = await db.getAll('feeds');
+  return feeds.sort((a, b) => {
+    if (!a.title && !b.title) return 0;
+    if (!a.title) return 1;
+    if (!b.title) return -1;
+    return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+  });
 }
 
 export async function deleteFeed(id: string): Promise<void> {
