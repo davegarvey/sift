@@ -139,7 +139,7 @@ export function ReadingView() {
               href={currentItem()?.link ?? '#'}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open original"
+              title="Open"
             >
               <ExternalLink size={14} />
             </a>

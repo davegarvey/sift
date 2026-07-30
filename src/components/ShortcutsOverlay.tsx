@@ -5,7 +5,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['k', '↑'], label: 'Previous item' },
   { keys: ['Enter'], label: 'Open focused item' },
   { keys: ['Esc'], label: 'Back to river' },
-  { keys: ['o'], label: 'Open original' },
+  { keys: ['o'], label: 'Open' },
   { keys: ['s'], label: 'Toggle star' },
   { keys: ['r'], label: 'Refresh all' },
   { keys: ['/'], label: 'Search' },
