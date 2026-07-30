@@ -45,7 +45,7 @@ function processLinks(html: string, baseUrl?: string): string {
  *     feed itself), use that HTML directly. Mark firstOpenedAt.
  *  3. Otherwise (summary-only feed), call `extractArticle` and cache the
  *     result. On extraction failure, return null — the reading view will
- *     render the excerpt and an "Open original ↗" link.
+ *     render the excerpt and an "Open ↗" link.
  *
  * Sets `firstOpenedAt = now` on first open so eviction can use it.
  */
