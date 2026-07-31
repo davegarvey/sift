@@ -1,17 +1,36 @@
 import { For } from 'solid-js';
 
-const SHORTCUTS: { keys: string[]; label: string }[] = [
-  { keys: ['j', '↓'], label: 'Next item' },
-  { keys: ['k', '↑'], label: 'Previous item' },
-  { keys: ['Enter'], label: 'Open focused item' },
-  { keys: ['Esc'], label: 'Back to river' },
-  { keys: ['o'], label: 'Open' },
-  { keys: ['s'], label: 'Toggle star' },
-  { keys: ['r'], label: 'Refresh all' },
-  { keys: ['/'], label: 'Search' },
-  { keys: ['⌘K'], label: 'Command palette' },
-  { keys: ['?'], label: 'This overlay' },
-  { keys: ['⌘\\'], label: 'Toggle sidebar' },
+const SECTIONS: { title: string; shortcuts: { keys: string[]; label: string }[] }[] = [
+  {
+    title: 'List',
+    shortcuts: [
+      { keys: ['j', '↓'], label: 'Next item' },
+      { keys: ['k', '↑'], label: 'Previous item' },
+      { keys: ['Enter'], label: 'Open focused item' },
+      { keys: ['/'], label: 'Search' },
+      { keys: ['r'], label: 'Refresh all' },
+      { keys: ['⌘K'], label: 'Command palette' },
+      { keys: ['⌘\\'], label: 'Toggle sidebar' },
+    ],
+  },
+  {
+    title: 'Reading',
+    shortcuts: [
+      { keys: ['j'], label: 'Next item' },
+      { keys: ['k'], label: 'Previous item' },
+      { keys: ['↑', '↓'], label: 'Scroll article' },
+      { keys: ['s'], label: 'Toggle star' },
+      { keys: ['o'], label: 'Open original' },
+      { keys: ['r'], label: 'Refresh all' },
+      { keys: ['Esc'], label: 'Back to list' },
+    ],
+  },
+  {
+    title: 'General',
+    shortcuts: [
+      { keys: ['?'], label: 'This overlay' },
+    ],
+  },
 ];
 
 export function ShortcutsOverlay() {
@@ -19,14 +38,21 @@ export function ShortcutsOverlay() {
     <div class="modal shortcuts-list">
       <div class="modal-header">Keyboard shortcuts</div>
       <div class="modal-body" style={{ padding: '8px 0' }}>
-        <For each={SHORTCUTS}>
-          {(row) => (
-            <div class="row">
-              <span>{row.label}</span>
-              <span class="keys">
-                <For each={row.keys}>{(k) => <kbd>{k}</kbd>}</For>
-              </span>
-            </div>
+        <For each={SECTIONS}>
+          {(section) => (
+            <>
+              <div class="section-header">{section.title}</div>
+              <For each={section.shortcuts}>
+                {(row) => (
+                  <div class="row">
+                    <span>{row.label}</span>
+                    <span class="keys">
+                      <For each={row.keys}>{(k) => <kbd>{k}</kbd>}</For>
+                    </span>
+                  </div>
+                )}
+              </For>
+            </>
           )}
         </For>
       </div>
