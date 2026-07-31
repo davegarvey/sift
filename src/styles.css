@@ -1741,6 +1741,19 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
 }
 
+.shortcuts-list .section-header {
+  padding: 12px 16px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtext);
+}
+
+.shortcuts-list .section-header:first-child {
+  padding-top: 4px;
+}
+
 .shortcuts-list .row .keys {
   display: flex;
   gap: 4px;

@@ -43,13 +43,13 @@ function Shell() {
       } else if (e.key === 'r') {
         e.preventDefault();
         void ctx.refreshAll();
-      } else if (e.key === 'j' || e.key === 'ArrowDown') {
+      } else if (e.key === 'j') {
         e.preventDefault();
         ctx.jumpTo(1);
         const items = ctx.items();
         const item = items[ctx.state.focusedIndex];
         if (item) void ctx.openItem(item, true);
-      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+      } else if (e.key === 'k') {
         e.preventDefault();
         ctx.jumpTo(-1);
         const items = ctx.items();
