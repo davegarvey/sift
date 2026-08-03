@@ -20,8 +20,8 @@ async function saveSettings(settings: AppSettings): Promise<void> {
   await setMeta(SETTINGS_KEY, settings);
 }
 import { refreshStaleFeeds, fetchingState, startScheduler, setOnRefresh } from './feeds/scheduler';
-import { enqueueFlag } from './sync/queue';
-import { scheduleFlush } from './sync/push';
+import { enqueueFlag, clearAllDirty } from './sync/queue';
+import { scheduleFlush, flushNow } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { setOnSync } from './sync/merge';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
@@ -422,7 +422,8 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const disableSync = async () => {
-    await updateSettingsWith({ syncKey: null });
+    await updateSettingsWith({ syncKey: null, lastSyncAt: null });
+    clearAllDirty();
   };
 
   const pairSyncWithKey = async (key: string) => {
@@ -447,7 +448,7 @@ export const AppProvider: ParentComponent = (props) => {
 
   const syncNow = async () => {
     await pullNow();
-    await scheduleFlush();
+    await flushNow();
   };
 
   const syncKey = (): string | null => {

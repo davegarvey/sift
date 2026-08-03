@@ -1,12 +1,15 @@
 import { Check, Copy } from 'lucide-solid';
 import { version } from '../../package.json';
-import { Show, createSignal, createMemo } from 'solid-js';
+import { Show, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { useApp } from '../state';
 import type { ThemePreference } from '../db/types';
 import { serializeOpml } from '../opml/serialize';
 import { parseOpml } from '../opml/parse';
 import { buildMergePreview, applyMerge } from '../opml/merge';
 import { isSyncAvailable } from '../sync/capabilities';
+import { fingerprintSyncKey } from '../sync/key';
+import { lastPullAt, lastPushAt, pendingCount, lastError, lastErrorAt } from '../sync/status';
+import { humanRelativeTime } from '../util/time';
 
 export function SettingsDrawer() {
   const ctx = useApp();
@@ -136,7 +139,19 @@ export function SettingsDrawer() {
 function SyncSection() {
   const ctx = useApp();
   const [syncError, setSyncError] = createSignal<string | null>(null);
+  const [fingerprint, setFingerprint] = createSignal<string | null>(null);
+  const [copied, setCopied] = createSignal(false);
+  const [syncing, setSyncing] = createSignal(false);
   const enabled = () => Boolean(ctx.syncKey());
+
+  createEffect(() => {
+    const key = ctx.syncKey();
+    if (!key) {
+      setFingerprint(null);
+      return;
+    }
+    void fingerprintSyncKey(key).then(setFingerprint).catch(() => setFingerprint(null));
+  });
 
   const toggleOn = async () => {
     setSyncError(null);
@@ -151,6 +166,50 @@ function SyncSection() {
   const toggleOff = () => {
     void ctx.disableSync();
     setSyncError(null);
+  };
+
+  const copyFingerprint = async () => {
+    const fp = fingerprint();
+    if (!fp) return;
+    await navigator.clipboard.writeText(fp);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      await ctx.syncNow();
+    } catch {
+      // The status store records the failure; nothing else to surface here.
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Recompute relative times while the drawer is open.
+  const [nowTick, setNowTick] = createSignal(Date.now());
+  onMount(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30_000);
+    onCleanup(() => clearInterval(t));
+  });
+
+  const lastActivity = () => Math.max(lastPullAt() ?? 0, lastPushAt() ?? 0);
+
+  const statusLine = () => {
+    void nowTick(); // recompute relative time when the 30s tick fires
+    const err = lastError();
+    const errAt = lastErrorAt();
+    if (err && errAt) {
+      return { text: `Sync failed ${humanRelativeTime(new Date(errAt))} — ${err}`, error: true };
+    }
+    const pending = pendingCount();
+    if (pending > 0) {
+      return { text: `${pending} change${pending === 1 ? '' : 's'} waiting to sync`, error: false };
+    }
+    const last = lastActivity();
+    if (last === 0) return { text: 'Never synced', error: false };
+    return { text: `Synced ${humanRelativeTime(new Date(last))}`, error: false };
   };
 
   return (
@@ -173,12 +232,34 @@ function SyncSection() {
       </div>
       <Show when={enabled()}>
         <div class="row">
+          <label>
+            <Show when={fingerprint()} fallback="Group">
+              Group: {fingerprint()}
+            </Show>
+          </label>
+          <Show when={fingerprint()}>
+            <button class="sync-grid__copy" onClick={() => void copyFingerprint()} aria-label="Copy group fingerprint">
+              {copied() ? <Check size={14} /> : <Copy size={14} />}
+            </button>
+          </Show>
+        </div>
+        <div class="row" style="border-top: 0">
+          <label classList={{ error: statusLine().error }}>{statusLine().text}</label>
+          <button class="btn" disabled={syncing()} onClick={() => void syncNow()}>
+            {syncing() ? 'Syncing…' : 'Sync now'}
+          </button>
+        </div>
+        <div class="row">
           <label>Pair this device with an existing sync</label>
           <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-join' })}>Join</button>
         </div>
         <div class="row" style="border-top: 0">
-          <label>Add another device to this sync</label>
-          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-share' })}>Generate</button>
+          <label>
+            <Show when={fingerprint()} fallback="Add another device to this sync">
+              Add another device to group {fingerprint()}
+            </Show>
+          </label>
+          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-share' })}>Invite</button>
         </div>
       </Show>
     </div>

@@ -1,0 +1,73 @@
+import 'fake-indexeddb/auto';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { getDb } from '../src/db/open';
+import {
+  loadStatus,
+  markError,
+  markPullSuccess,
+  markPushSuccess,
+  lastError,
+  lastErrorKind,
+  lastErrorAt,
+  lastPullAt,
+  lastPushAt,
+} from '../src/sync/status';
+import { setStoredLastSyncAt } from '../src/sync/key';
+
+const flushPersist = () => new Promise((r) => setTimeout(r, 250));
+
+beforeEach(async () => {
+  const db = await getDb();
+  await db.clear('meta');
+  await loadStatus();
+});
+
+describe('sync status store', () => {
+  it('persists an error across reloads', async () => {
+    markError('push', new Error('boom'));
+    await flushPersist();
+
+    await loadStatus();
+    expect(lastError()).toBe('boom');
+    expect(lastErrorKind()).toBe('push');
+    expect(lastErrorAt()).toBeTypeOf('number');
+  });
+
+  it('persists the last push time across reloads', async () => {
+    markPushSuccess(1234);
+    await flushPersist();
+
+    await loadStatus();
+    expect(lastPushAt()).toBe(1234);
+  });
+
+  it('does not clear a push error on pull success', async () => {
+    markError('push', new Error('push down'));
+    markPullSuccess(999);
+
+    expect(lastError()).toBe('push down');
+    expect(lastErrorKind()).toBe('push');
+
+    markPushSuccess(1000);
+    expect(lastError()).toBeNull();
+    expect(lastErrorKind()).toBeNull();
+    expect(lastErrorAt()).toBeNull();
+  });
+
+  it('does not clear a pull error on push success', async () => {
+    markError('pull', new Error('pull down'));
+    markPushSuccess(111);
+
+    expect(lastError()).toBe('pull down');
+
+    markPullSuccess(222);
+    expect(lastError()).toBeNull();
+    expect(lastErrorKind()).toBeNull();
+  });
+
+  it('loads lastPullAt from the stored lastSyncAt cursor', async () => {
+    await setStoredLastSyncAt(777);
+    await loadStatus();
+    expect(lastPullAt()).toBe(777);
+  });
+});

@@ -10,8 +10,29 @@
 
 const KEY_FORMAT_RE = /^[A-Za-z0-9_-]{22}$/;
 
+/** Crockford base32 alphabet (0-9 and A-Z minus I, L, O, U). */
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
 export function isValidSyncKey(s: string | null | undefined): s is string {
   return typeof s === 'string' && KEY_FORMAT_RE.test(s);
+}
+
+/**
+ * Display-only group fingerprint: the first 20 bits of the SHA-256 digest of
+ * the sync key, rendered as 4 Crockford base32 characters (e.g. "XK7B").
+ * One-way over a 132-bit random key, so it leaks nothing recoverable.
+ * Rejects if the Web Crypto API is unavailable (insecure context).
+ */
+export async function fingerprintSyncKey(key: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+  const bytes = new Uint8Array(digest);
+  const value = ((bytes[0] << 16) | (bytes[1] << 8) | bytes[2]) & 0xFFFFF;
+  return (
+    CROCKFORD[(value >> 15) & 31] +
+    CROCKFORD[(value >> 10) & 31] +
+    CROCKFORD[(value >> 5) & 31] +
+    CROCKFORD[value & 31]
+  );
 }
 
 export function generateSyncKey(): string {
