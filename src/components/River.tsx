@@ -92,40 +92,59 @@ export function River() {
   });
 
   // Render items swipe handler (touch-only, gmail-style reveal).
+  const SWIPE_DEAD_ZONE = 8;
+  const SWIPE_AXIS_LOCK = 10;
+  const SWIPE_CLAMP = 80;
+  const SWIPE_TRIGGER = 60;
   const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(any-pointer: coarse)').matches;
   let swiped = false;
   const onStart = (e: PointerEvent, item: Item) => {
     if (!isTouchDevice) return;
+    if (e.pointerType !== 'touch') return;
     const startX = e.clientX, startY = e.clientY;
     const el = e.currentTarget as HTMLElement;
     const container = el.closest('.swipe-container') as HTMLElement | null;
+    el.style.transform = '';
+    if (container) container.classList.remove('swiping');
     el.setPointerCapture(e.pointerId);
-    let moved = false;
+    let active = false;
+    const setSwiping = (on: boolean) => {
+      if (container) container.classList.toggle('swiping', on);
+    };
+    const reset = () => {
+      el.style.transform = '';
+      setSwiping(false);
+    };
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
-      if (Math.abs(dy) > 24) {
-        cleanup();
-        return;
+      if (!active) {
+        if (Math.abs(dy) >= SWIPE_AXIS_LOCK && Math.abs(dy) > Math.abs(dx)) {
+          cleanup();
+          return;
+        }
+        if (Math.abs(dx) <= SWIPE_DEAD_ZONE) return;
+        active = true;
+        setSwiping(true);
       }
-      if (Math.abs(dx) > 6) moved = true;
-      const clamped = Math.max(-80, Math.min(80, dx));
+      const clamped = Math.max(-SWIPE_CLAMP, Math.min(SWIPE_CLAMP, dx));
       el.style.transform = `translateX(${clamped}px)`;
-      if (container) container.classList.toggle('swiping', Math.abs(clamped) > 0);
     };
     const onEnd = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
-      el.style.transform = '';
-      if (container) container.classList.remove('swiping');
-      swiped = moved;
-      if (dx > 60) {
-        void ctx.markReadAndSync(item, !item.read);
-      } else if (dx < -60) {
-        void ctx.toggleStar(item);
+      reset();
+      swiped = active;
+      if (active) {
+        if (dx > SWIPE_TRIGGER) {
+          void ctx.markReadAndSync(item, !item.read);
+        } else if (dx < -SWIPE_TRIGGER) {
+          void ctx.toggleStar(item);
+        }
       }
       cleanup();
     };
     const cleanup = () => {
+      reset();
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onEnd);
       el.removeEventListener('pointercancel', cleanup);
