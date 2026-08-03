@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
 import { listFeeds } from '../src/db/feeds';
 import { getDirty } from '../src/sync/queue';
-import { subscribeFeed, unsubscribeFeed } from '../src/feeds/service';
+import { subscribeFeed, unsubscribeFeed, updateFeedMeta } from '../src/feeds/service';
 
 beforeEach(async () => {
   const db = await getDb();
@@ -60,6 +60,28 @@ describe('subscribeFeed', () => {
         }),
       );
   });
+
+  it('sets modifiedAt on the local feed record', async () => {
+    await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
+    const feeds = await listFeeds();
+    expect(feeds[0].modifiedAt).toBeTypeOf('number');
+  });
+});
+
+describe('updateFeedMeta', () => {
+  it('bumps modifiedAt and omits the deleted stamp from the enqueue', async () => {
+    await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
+    const feeds = await listFeeds();
+    const before = feeds[0].modifiedAt;
+    const { clearAllDirty } = await import('../src/sync/queue');
+    clearAllDirty();
+    await updateFeedMeta(feeds[0].id, { tags: ['rust'] });
+    const dirty = getDirty();
+    const entry = dirty.find((e) => e.kind === 'feed-upsert')!;
+    expect(entry.kind === 'feed-upsert' && entry.deleted).toBeNull();
+    const after = (await listFeeds())[0].modifiedAt;
+    expect(after).toBeGreaterThanOrEqual(before!);
+  });
 });
 
 describe('unsubscribeFeed', () => {
@@ -71,7 +93,7 @@ describe('unsubscribeFeed', () => {
     expect(feedsAfter.length).toBe(0);
   });
 
-  it('enqueues a feed-delete entry in the sync dirty queue', async () => {
+  it('enqueues a feed-delete entry carrying the feed URL', async () => {
     await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
     const feeds = await listFeeds();
     const feedId = feeds[0].id;
@@ -83,7 +105,19 @@ describe('unsubscribeFeed', () => {
         expect.objectContaining({
           kind: 'feed-delete',
           feedId,
+          feedUrl: { value: 'https://example.com/feed', at: expect.any(Number) },
         }),
       );
+  });
+
+  it('drops pending feed-upserts for the same feed when deleting', async () => {
+    await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
+    const feeds = await listFeeds();
+    await updateFeedMeta(feeds[0].id, { tags: ['rust'] });
+    await unsubscribeFeed(feeds[0].id);
+    const dirty = getDirty();
+    const upserts = dirty.filter((e) => e.kind === 'feed-upsert' && e.feedId === feeds[0].id);
+    expect(upserts.length).toBe(0);
+    expect(dirty).toContainEqual(expect.objectContaining({ kind: 'feed-delete', feedId: feeds[0].id }));
   });
 });

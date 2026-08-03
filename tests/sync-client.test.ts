@@ -88,7 +88,7 @@ describe('applyRemoteState', () => {
     expect(feeds.length).toBe(0);
   });
 
-  it('preserves local feed when tombstone is older', async () => {
+  it('applies a tombstone despite a newer lastFetched (fetch is not user authority)', async () => {
     const feedId = crypto.randomUUID();
     await upsertFeed({
       id: feedId,
@@ -96,6 +96,89 @@ describe('applyRemoteState', () => {
       title: 'Example',
       learnedIntervalMs: 3_600_000,
       lastFetched: 1000,
+    });
+    await applyRemoteState({
+      serverTime: 2000,
+      feeds: [
+        {
+          feed_id: feedId,
+          feed_url: 'https://example.com/feed.xml',
+          row_at: 500,
+          deleted: 1,
+          deleted_at: 500,
+        },
+      ],
+      flags: [],
+    });
+    const feeds = await listFeeds();
+    expect(feeds.length).toBe(0);
+  });
+
+  it('keeps the local feed when the user touched it after the tombstone', async () => {
+    const feedId = crypto.randomUUID();
+    await upsertFeed({
+      id: feedId,
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      modifiedAt: 1000,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 900,
+    });
+    await applyRemoteState({
+      serverTime: 2000,
+      feeds: [
+        {
+          feed_id: feedId,
+          feed_url: 'https://example.com/feed.xml',
+          row_at: 500,
+          deleted: 1,
+          deleted_at: 500,
+        },
+      ],
+      flags: [],
+    });
+    const feeds = await listFeeds();
+    expect(feeds.length).toBe(1);
+  });
+
+  it('uses per-field timestamps as the legacy fallback when modifiedAt is absent', async () => {
+    const feedId = crypto.randomUUID();
+    await upsertFeed({
+      id: feedId,
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      urlAt: 800,
+      titleAt: 800,
+      tagsAt: 800,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 900,
+    });
+    await applyRemoteState({
+      serverTime: 2000,
+      feeds: [
+        {
+          feed_id: feedId,
+          feed_url: 'https://example.com/feed.xml',
+          row_at: 500,
+          deleted: 1,
+          deleted_at: 500,
+        },
+      ],
+      flags: [],
+    });
+    const feeds = await listFeeds();
+    expect(feeds.length).toBe(1);
+  });
+
+  it('keeps the local feed at equal timestamps (ties favor the local copy)', async () => {
+    const feedId = crypto.randomUUID();
+    await upsertFeed({
+      id: feedId,
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      modifiedAt: 500,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 900,
     });
     await applyRemoteState({
       serverTime: 2000,

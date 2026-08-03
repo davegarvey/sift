@@ -35,26 +35,21 @@ function chunkToBody(chunk: DirtyEntry[]): { feeds?: unknown[]; flags?: unknown[
   const feeds: unknown[] = [];
   const flags: unknown[] = [];
   for (const e of deduped) {
-    if (e.kind === 'feed-upsert' || e.kind === 'feed-delete') {
-      const folder = e.kind === 'feed-upsert' ? e.folder : null;
-      const title = e.kind === 'feed-upsert' ? e.title : null;
-      const tags = e.kind === 'feed-upsert' ? e.tags : null;
-      const feedUrl = e.kind === 'feed-upsert' ? e.feedUrl : null;
-      const htmlUrl = e.kind === 'feed-upsert' ? e.htmlUrl : null;
-      const deleted = e.kind === 'feed-upsert' ? e.deleted : 1;
-      const folderAt = e.kind === 'feed-upsert' ? e.folderAt : entryAt(e);
-      const titleAt = e.kind === 'feed-upsert' ? e.titleAt : entryAt(e);
-      const tagsAt = e.kind === 'feed-upsert' ? e.tagsAt : entryAt(e);
-      const feedUrlAt = e.kind === 'feed-upsert' ? (e.feedUrl?.at ?? entryAt(e)) : entryAt(e);
-      const htmlUrlAt = e.kind === 'feed-upsert' ? (e.htmlUrl?.at ?? entryAt(e)) : entryAt(e);
-      const deletedAt = e.kind === 'feed-upsert' ? e.deletedAt : entryAt(e);
+    if (e.kind === 'feed-upsert') {
       const feedPayload: Record<string, unknown> = { feedId: e.feedId };
-      if (folder !== null) feedPayload.folder = { value: folder, at: folderAt };
-      if (title !== null) feedPayload.title = { value: title, at: titleAt };
-      if (feedUrl !== null) feedPayload.feedUrl = { value: feedUrl.value, at: feedUrlAt };
-      if (htmlUrl !== null) feedPayload.htmlUrl = { value: htmlUrl.value, at: htmlUrlAt };
-      if (tags !== null) feedPayload.tags = { value: tags, at: tagsAt };
-      feedPayload.deleted = { value: deleted, at: deletedAt };
+      if (e.folder !== null) feedPayload.folder = { value: e.folder, at: e.folderAt };
+      if (e.title !== null) feedPayload.title = { value: e.title, at: e.titleAt };
+      if (e.feedUrl !== null) feedPayload.feedUrl = { value: e.feedUrl.value, at: e.feedUrl.at };
+      if (e.htmlUrl !== null) feedPayload.htmlUrl = { value: e.htmlUrl.value, at: e.htmlUrl.at };
+      if (e.tags !== null) feedPayload.tags = { value: e.tags, at: e.tagsAt };
+      if (e.deleted !== null && e.deletedAt !== null) {
+        feedPayload.deleted = { value: e.deleted, at: e.deletedAt };
+      }
+      feeds.push(feedPayload);
+    } else if (e.kind === 'feed-delete') {
+      const feedPayload: Record<string, unknown> = { feedId: e.feedId };
+      feedPayload.feedUrl = { value: e.feedUrl.value, at: e.feedUrl.at };
+      feedPayload.deleted = { value: 1, at: e.at };
       feeds.push(feedPayload);
     } else {
       const lastSep = e.itemId.lastIndexOf('::');

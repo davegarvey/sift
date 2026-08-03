@@ -437,3 +437,269 @@ describe('sync D1 integration', () => {
     }
   });
 });
+
+describe('sync D1 tombstone semantics', () => {
+  async function setupKey(mf: Miniflare, label: string): Promise<string> {
+    const key = makeSyncKey(label);
+    await mf.dispatchFetch('http://localhost/sync/register', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key },
+    });
+    return key;
+  }
+
+  async function push(mf: Miniflare, key: string, body: unknown): Promise<number> {
+    const res = await mf.dispatchFetch('http://localhost/sync/push', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return res.status;
+  }
+
+  async function pullFeeds(mf: Miniflare, key: string): Promise<Array<Record<string, unknown>>> {
+    const res = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
+      headers: { 'X-Sync-Key': key },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { feeds: Array<Record<string, unknown>> };
+    return body.feeds;
+  }
+
+  function feedPayload(feedId: string, url: string, at: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      feedId,
+      feedUrl: { value: url, at },
+      title: { value: `Feed ${feedId.slice(0, 6)}`, at },
+      deleted: { value: 0, at },
+      ...extra,
+    };
+  }
+
+  it('a metadata-only push does not clear a tombstone', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'meta-noclear');
+      const now = Date.now();
+      const id = 'https://example.com/meta';
+      await push(mf, key, { feeds: [feedPayload(id, id, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: id, deleted: { value: 1, at: now + 100 } }],
+      });
+      await push(mf, key, {
+        feeds: [{ feedId: id, feedUrl: { value: id, at: now + 200 }, title: { value: 'Renamed', at: now + 200 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const row = feeds.find((f) => f.feed_id === id);
+      expect(row?.deleted).toBe(1);
+      expect(row?.title).toBe('Renamed');
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a deleted:1 push does not regress a newer tombstone timestamp', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'no-regress-');
+      const now = Date.now();
+      const id = 'https://example.com/regress';
+      await push(mf, key, { feeds: [feedPayload(id, id, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: id, deleted: { value: 1, at: now + 500 } }],
+      });
+      await push(mf, key, {
+        feeds: [{ feedId: id, feedUrl: { value: id, at: now + 400 }, deleted: { value: 1, at: now + 400 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const row = feeds.find((f) => f.feed_id === id);
+      expect(row?.deleted).toBe(1);
+      expect(row?.deleted_at).toBe(now + 500);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a delete tombstones every row sharing the URL', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'delete-url');
+      const now = Date.now();
+      const url = 'https://example.com/shared';
+      const a = 'device-a-feed';
+      const b = 'device-b-feed';
+      await push(mf, key, { feeds: [feedPayload(a, url, now), feedPayload(b, url, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: a, feedUrl: { value: url, at: now }, deleted: { value: 1, at: now + 100 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const ra = feeds.find((f) => f.feed_id === a);
+      const rb = feeds.find((f) => f.feed_id === b);
+      expect(ra?.deleted).toBe(1);
+      expect(rb?.deleted).toBe(1);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a legacy URL-less delete resolves the URL from the stored row', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'legacy-del');
+      const now = Date.now();
+      const url = 'https://example.com/legacy';
+      const a = 'legacy-a';
+      const b = 'legacy-b';
+      await push(mf, key, { feeds: [feedPayload(a, url, now), feedPayload(b, url, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: a, deleted: { value: 1, at: now + 100 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      expect(feeds.find((f) => f.feed_id === a)?.deleted).toBe(1);
+      expect(feeds.find((f) => f.feed_id === b)?.deleted).toBe(1);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a subscribe revives the oldest tombstoned row by URL instead of inserting', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'revive-url');
+      const now = Date.now();
+      const url = 'https://example.com/revive';
+      const original = 'original-id';
+      const fresh = 'fresh-uuid';
+      await push(mf, key, { feeds: [feedPayload(original, url, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: original, deleted: { value: 1, at: now + 100 } }],
+      });
+      await push(mf, key, { feeds: [feedPayload(fresh, url, now + 200)] });
+      const feeds = await pullFeeds(mf, key);
+      const rows = feeds.filter((f) => f.feed_url === url);
+      expect(rows.length).toBe(1);
+      expect(rows[0].feed_id).toBe(original);
+      expect(rows[0].deleted).toBe(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a same-batch delete-then-subscribe revives the in-batch tombstone', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'batch-del-sub');
+      const now = Date.now();
+      const url = 'https://example.com/batch1';
+      const original = 'batch-orig';
+      const fresh = 'batch-fresh';
+      await push(mf, key, { feeds: [feedPayload(original, url, now)] });
+      await push(mf, key, {
+        feeds: [
+          { feedId: original, feedUrl: { value: url, at: now + 100 }, deleted: { value: 1, at: now + 100 } },
+          feedPayload(fresh, url, now + 200),
+        ],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const rows = feeds.filter((f) => f.feed_url === url);
+      expect(rows.length).toBe(1);
+      expect(rows[0].feed_id).toBe(original);
+      expect(rows[0].deleted).toBe(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a same-batch subscribe-then-delete leaves no live row', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'batch-sub-del');
+      const now = Date.now();
+      const url = 'https://example.com/batch2';
+      const keeper = 'batch-keeper';
+      await push(mf, key, { feeds: [feedPayload(keeper, url, now)] });
+      await push(mf, key, {
+        feeds: [
+          feedPayload('batch-new', url, now + 100),
+          { feedId: keeper, feedUrl: { value: url, at: now + 100 }, deleted: { value: 1, at: now + 200 } },
+        ],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const live = feeds.filter((f) => f.feed_url === url && f.deleted === 0);
+      expect(live.length).toBe(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a delete of a server-unknown feed_id still tombstones URL siblings', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'ghost-del-');
+      const now = Date.now();
+      const url = 'https://example.com/ghost';
+      const b = 'ghost-sibling';
+      await push(mf, key, { feeds: [feedPayload(b, url, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: 'never-pushed', feedUrl: { value: url, at: now + 100 }, deleted: { value: 1, at: now + 100 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const ghost = feeds.find((f) => f.feed_id === 'never-pushed');
+      expect(ghost?.deleted).toBe(1);
+      expect(feeds.find((f) => f.feed_id === b)?.deleted).toBe(1);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a delete after a remote rename tombstones rows under the winning URL', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'rename-del');
+      const now = Date.now();
+      const oldUrl = 'https://example.com/old';
+      const newUrl = 'https://example.com/new';
+      const target = 'rename-target';
+      const sibling = 'rename-sibling';
+      await push(mf, key, { feeds: [feedPayload(target, oldUrl, now)] });
+      await push(mf, key, { feeds: [feedPayload(sibling, newUrl, now + 50)] });
+      await push(mf, key, {
+        feeds: [{ feedId: target, feedUrl: { value: newUrl, at: now + 100 } }],
+      });
+      await push(mf, key, {
+        feeds: [{ feedId: target, feedUrl: { value: oldUrl, at: now + 80 }, deleted: { value: 1, at: now + 80 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const rt = feeds.find((f) => f.feed_id === target);
+      expect(rt?.deleted).toBe(1);
+      expect(rt?.feed_url).toBe(newUrl);
+      const rs = feeds.find((f) => f.feed_id === sibling);
+      expect(rs?.deleted).toBe(1);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a subscribe during the tombstone window revives without creating a duplicate', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'tomb-window');
+      const now = Date.now();
+      const url = 'https://example.com/window';
+      const original = 'window-orig';
+      await push(mf, key, { feeds: [feedPayload(original, url, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: original, deleted: { value: 1, at: now + 100 } }],
+      });
+      await push(mf, key, {
+        feeds: [{ feedId: original, feedUrl: { value: url, at: now + 200 }, deleted: { value: 0, at: now + 200 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const rows = feeds.filter((f) => f.feed_url === url);
+      expect(rows.length).toBe(1);
+      expect(rows[0].deleted).toBe(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+});

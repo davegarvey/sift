@@ -781,4 +781,161 @@ describe('sync pairing first-time setup', () => {
     const row = pull.feeds.find((f) => f.feed_id === feedId)!;
     expect(row.tags).toBe(JSON.stringify(['fresh']));
   });
+
+  it('removes the feed on B when A deletes it and devices hold different feed ids for the same URL', async () => {
+    const key = makeSyncKey('dup-del-1-');
+    const url = 'https://ex.com/dup';
+    const idA = crypto.randomUUID();
+    const idB = crypto.randomUUID();
+
+    // Server: two live rows for one URL (different feed ids — pre-pairing
+    // double-subscribe). Created via raw pushes, since the first-time diff
+    // skips URL matches.
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await mf.dispatchFetch('http://localhost/sync/register', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key },
+    });
+    const now = Date.now();
+    for (const id of [idA, idB]) {
+      const res = await mf.dispatchFetch('http://localhost/sync/push', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feeds: [{
+            feedId: id,
+            feedUrl: { value: url, at: now },
+            title: { value: 'Dup Feed', at: now },
+            deleted: { value: 0, at: now },
+          }],
+        }),
+      });
+      expect(res.status).toBe(204);
+    }
+
+    // --- Device A: subscribes (pulls both rows, dedupes to idA locally) ---
+    const db = await getDb();
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+      if (db.objectStoreNames.contains(store)) {
+        await db.clear(store);
+      }
+    }
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await upsertFeed({
+      id: idA,
+      url,
+      title: 'Dup Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await withMfFetch(() => triggerFirstTime());
+
+    // --- A deletes the feed (wire delete carries the URL) ---
+    const delRes = await mf.dispatchFetch('http://localhost/sync/push', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        feeds: [{ feedId: idA, feedUrl: { value: url, at: Date.now() }, deleted: { value: 1, at: Date.now() } }],
+      }),
+    });
+    expect(delRes.status).toBe(204);
+
+    // --- Device B: still has the feed (idB) ---
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+      if (db.objectStoreNames.contains(store)) {
+        await db.clear(store);
+      }
+    }
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await upsertFeed({
+      id: idB,
+      url,
+      title: 'Dup Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await withMfFetch(() => triggerFirstTime());
+
+    // Both rows are tombstoned server-side; B has no feed left.
+    const pullRes = await mf.dispatchFetch(
+      'http://localhost/sync/pull?since=0',
+      { headers: { 'X-Sync-Key': key } },
+    );
+    const pull = (await pullRes.json()) as { feeds: Array<Record<string, unknown>> };
+    for (const id of [idA, idB]) {
+      expect(pull.feeds.find((f) => f.feed_id === id)?.deleted).toBe(1);
+    }
+    const localFeeds = await listFeeds();
+    expect(localFeeds.length).toBe(0);
+  });
+
+  it('keeps identity and read state when B re-subscribes a feed A deleted', async () => {
+    const key = makeSyncKey('resub-111-');
+    const url = 'https://ex.com/resub';
+    const original = crypto.randomUUID();
+
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await upsertFeed({
+      id: original,
+      url,
+      title: 'Resub Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await withMfFetch(() => triggerFirstTime());
+
+    // --- A deletes ---
+    const delRes = await mf.dispatchFetch('http://localhost/sync/push', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        feeds: [{ feedId: original, deleted: { value: 1, at: Date.now() } }],
+      }),
+    });
+    expect(delRes.status).toBe(204);
+
+    // --- B re-subscribes (new client UUID) ---
+    const fresh = crypto.randomUUID();
+    const subRes = await mf.dispatchFetch('http://localhost/sync/push', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        feeds: [{
+          feedId: fresh,
+          feedUrl: { value: url, at: Date.now() },
+          title: { value: 'Resub Feed', at: Date.now() },
+          deleted: { value: 0, at: Date.now() },
+        }],
+      }),
+    });
+    expect(subRes.status).toBe(204);
+
+    // The server revived the ORIGINAL row — no second row, no tombstone.
+    const pullRes = await mf.dispatchFetch(
+      'http://localhost/sync/pull?since=0',
+      { headers: { 'X-Sync-Key': key } },
+    );
+    const pull = (await pullRes.json()) as { feeds: Array<Record<string, unknown>> };
+    const rows = pull.feeds.filter((f) => f.feed_url === url);
+    expect(rows.length).toBe(1);
+    expect(rows[0].feed_id).toBe(original);
+    expect(rows[0].deleted).toBe(0);
+
+    // --- Device A pulls: the feed returns as a fresh subscription ---
+    const db = await getDb();
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+      if (db.objectStoreNames.contains(store)) {
+        await db.clear(store);
+      }
+    }
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await withMfFetch(() => triggerFirstTime());
+    const localFeeds = await listFeeds();
+    expect(localFeeds.some((f) => f.url === url)).toBe(true);
+  });
 });
