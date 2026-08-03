@@ -74,6 +74,7 @@ interface AppContext {
   fetching: () => number;
   feedErrors: () => Record<string, string>;
   fetchingFeeds: () => Set<string>;
+  hydrated: () => boolean;
   reloadFeeds: () => Promise<Feed[]>;
   reloadItems: () => Promise<void>;
   setRiverScope: (feedId: string | null) => void;
@@ -142,6 +143,8 @@ export const AppProvider: ParentComponent = (props) => {
   });
   const activeTagSet = createMemo(() => new Set(state.activeTags));
   const [items, setItems] = createSignal<Item[]>([]);
+  /** True once the boot sequence has finished reading feeds/items from IndexedDB. */
+  const [hydrated, setHydrated] = createSignal(false);
   const [settings, setSettings] = createSignal<AppSettings>({
     theme: 'system',
     highContrast: false,
@@ -483,6 +486,7 @@ export const AppProvider: ParentComponent = (props) => {
     fetching: fetchingState.inFlight,
     feedErrors: fetchingState.feedErrors,
     fetchingFeeds: fetchingState.fetchingFeeds,
+    hydrated,
     reloadFeeds,
     reloadItems,
     setRiverScope,
@@ -517,6 +521,8 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   // Boot: load settings + initial feeds/items, then kick the scheduler.
+  // The `finally` guarantees the loading state is released even if any
+  // boot step rejects (e.g. a blocked IndexedDB open).
   void (async () => {
     const s = await getSettings();
     setSettings(s);
@@ -596,7 +602,7 @@ export const AppProvider: ParentComponent = (props) => {
       history.replaceState(null, '', window.location.pathname);
       openModal({ kind: 'pair-result', success, message });
     }
-  })();
+  })().finally(() => setHydrated(true));
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
 };
