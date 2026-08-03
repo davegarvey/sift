@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createEffect, onCleanup } from 'solid-js';
+import { For, Show, createSignal, createMemo, createEffect, onCleanup } from 'solid-js';
 import { useApp } from '../state';
 import { markRead } from '../db/items';
 import type { Item } from '../db/types';
@@ -154,9 +154,10 @@ export function River() {
     el.addEventListener('pointercancel', cleanup);
   };
 
-  const shouldShowSkeleton = () => {
+  const showLoading = () => !ctx.hydrated() || shouldShowLoading();
+
+  const shouldShowLoading = () => {
     if (visibleItems().length > 0) return false;
-    if (!ctx.hydrated()) return true;
     if (ctx.feeds().length === 0) return false;
     const fetching = ctx.fetchingFeeds();
     if (ctx.state.riverScope == null) return fetching.size > 0;
@@ -166,7 +167,7 @@ export function River() {
   return (
     <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
       <div class="river-inner">
-        <For each={visibleItems()} fallback={shouldShowSkeleton() ? <SkeletonState /> : <EmptyState />}>
+        <For each={visibleItems()} fallback={showLoading() ? <LoadingMessage /> : <EmptyState />}>
           {(item, idx) => (
             <div class="swipe-container">
               <div class="swipe-reveal left">
@@ -240,20 +241,16 @@ export function River() {
   );
 }
 
-function SkeletonState() {
+function LoadingMessage() {
+  const [show, setShow] = createSignal(false);
+  createEffect(() => {
+    const t = setTimeout(() => setShow(true), 500);
+    onCleanup(() => clearTimeout(t));
+  });
   return (
-    <For each={Array.from({ length: 6 })}>
-      {() => (
-        <div class="skeleton-card">
-          <div class="skeleton-circle" />
-          <div class="skeleton-body">
-            <div class="skeleton-line meta" />
-            <div class="skeleton-line title" />
-            <div class="skeleton-line excerpt" />
-          </div>
-        </div>
-      )}
-    </For>
+    <div class="loading-message" classList={{ visible: show() }}>
+      Loading…
+    </div>
   );
 }
 
