@@ -10,8 +10,8 @@
 import { createSignal } from 'solid-js';
 import { getMeta, setMeta } from '../db/meta';
 import { getDirty } from './queue';
-import { getStoredLastSyncAt } from './key';
 
+const LAST_PULL_KEY = 'sync_last_pull_at';
 const LAST_PUSH_KEY = 'sync_last_push_at';
 const ERROR_KEY = 'sync_last_error';
 const ERROR_KIND_KEY = 'sync_last_error_kind';
@@ -39,6 +39,7 @@ function schedulePersist(): void {
 }
 
 async function persist(): Promise<void> {
+  await setMeta(LAST_PULL_KEY, lastPullAt());
   await setMeta(LAST_PUSH_KEY, lastPushAt());
   await setMeta(ERROR_KEY, lastError());
   await setMeta(ERROR_KIND_KEY, lastErrorKind());
@@ -52,18 +53,17 @@ function clearError(): void {
 }
 
 export async function loadStatus(): Promise<void> {
-  const [push, err, kind, errAt, lastSync] = await Promise.all([
+  const [pull, push, err, kind, errAt] = await Promise.all([
+    getMeta<number | null>(LAST_PULL_KEY, null),
     getMeta<number | null>(LAST_PUSH_KEY, null),
     getMeta<string | null>(ERROR_KEY, null),
     getMeta<SyncErrorKind | null>(ERROR_KIND_KEY, null),
     getMeta<number | null>(ERROR_AT_KEY, null),
-    getStoredLastSyncAt(),
   ]);
-  setLastPushAt(push);
+  setLastPullAt(pull);
   setLastError(err);
   setLastErrorKind(kind);
   setLastErrorAt(errAt);
-  setLastPullAt(lastSync);
   refreshPending();
 }
 
@@ -71,8 +71,8 @@ export function refreshPending(): void {
   setPendingCount(getDirty().length);
 }
 
-export function markPullSuccess(t: number): void {
-  setLastPullAt(t);
+export function markPullSuccess(): void {
+  setLastPullAt(Date.now());
   if (lastErrorKind() !== 'push') clearError();
   schedulePersist();
   refreshPending();

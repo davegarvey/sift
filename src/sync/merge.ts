@@ -127,7 +127,7 @@ export async function runFirstTimeSetup(): Promise<number> {
     throw e;
   }
   const cursor = (await getStoredLastSyncAt()) ?? 0;
-  markPullSuccess(cursor);
+  markPullSuccess();
   return cursor;
 }
 
@@ -138,13 +138,13 @@ export async function runPull(): Promise<number | null> {
     const payload = toRemotePayload(pull);
     if (payload.feeds.length === 0 && payload.flags.length === 0) {
       await setStoredLastSyncAt(Math.max(since, pull.serverTime));
-      markPullSuccess(pull.serverTime);
+      markPullSuccess();
       return pull.serverTime;
     }
     await applyRemoteState(payload);
     const newTime = Math.max(since, pull.serverTime);
     await setStoredLastSyncAt(newTime);
-    markPullSuccess(newTime);
+    markPullSuccess();
     scheduleFlush();
     onSync?.();
     return newTime;

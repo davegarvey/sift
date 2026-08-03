@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
+import { setMeta } from '../src/db/meta';
 import {
   loadStatus,
   markError,
@@ -12,7 +13,6 @@ import {
   lastPullAt,
   lastPushAt,
 } from '../src/sync/status';
-import { setStoredLastSyncAt } from '../src/sync/key';
 
 const flushPersist = () => new Promise((r) => setTimeout(r, 250));
 
@@ -43,7 +43,7 @@ describe('sync status store', () => {
 
   it('does not clear a push error on pull success', async () => {
     markError('push', new Error('push down'));
-    markPullSuccess(999);
+    markPullSuccess();
 
     expect(lastError()).toBe('push down');
     expect(lastErrorKind()).toBe('push');
@@ -60,13 +60,13 @@ describe('sync status store', () => {
 
     expect(lastError()).toBe('pull down');
 
-    markPullSuccess(222);
+    markPullSuccess();
     expect(lastError()).toBeNull();
     expect(lastErrorKind()).toBeNull();
   });
 
-  it('loads lastPullAt from the stored lastSyncAt cursor', async () => {
-    await setStoredLastSyncAt(777);
+  it('loads lastPullAt from the stored pull time', async () => {
+    await setMeta('sync_last_pull_at', 777);
     await loadStatus();
     expect(lastPullAt()).toBe(777);
   });
