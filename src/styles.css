@@ -756,13 +756,15 @@ a:hover { text-decoration: underline; }
   transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.river-item:hover {
-  background: var(--mantle);
-}
+@media (hover: hover) {
+  .river-item:hover {
+    background: var(--mantle);
+  }
 
-.river-item.focused {
-  background: var(--mantle);
-  box-shadow: inset 3px 0 0 var(--accent);
+  .river-item.focused {
+    background: var(--mantle);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
 }
 
 .river-item .body {
@@ -886,9 +888,11 @@ a:hover { text-decoration: underline; }
   transition: opacity 0.1s ease;
 }
 
-.river-item:hover .actions,
-.river-item.focused .actions {
-  opacity: 1;
+@media (hover: hover) {
+  .river-item:hover .actions,
+  .river-item.focused .actions {
+    opacity: 1;
+  }
 }
 
 .river-item .action-btn {
@@ -1879,14 +1883,9 @@ a:hover { text-decoration: underline; }
     justify-content: center;
   }
 
-  /* Increase river action button targets and make them always visible */
-  .river-item .action-btn {
-    width: 36px;
-    height: 36px;
-  }
-
+  /* River actions are swipe-only on touch; the reading view provides the button fallback. */
   .river-item .actions {
-    opacity: 1;
+    pointer-events: none;
   }
 
   /* Increase button targets */
