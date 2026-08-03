@@ -2,19 +2,20 @@
 
 ### Requirement: Empty state is shown without hiding the app
 
-When no items match the current view, the river SHALL display a contextual empty state OR a loading state. The loading state takes priority when a feed fetch is in progress. The app SHALL NOT hide navigation or chrome in any empty or loading state.
+When no items match the current view, the river SHALL display a contextual empty state OR a loading state. The loading state takes priority when a feed fetch is in progress or while the app is hydrating feeds/items from IndexedDB on startup. The app SHALL NOT hide navigation or chrome in any empty or loading state.
 
-#### Scenario: Feed being fetched — loading state shown
+#### Scenario: Feed being fetched — loading message shown
 
 - **GIVEN** a feed that has been subscribed to but not yet fetched (no items in IndexedDB for that feed)
 - **WHEN** the feed fetch is in progress
-- **THEN** the river SHALL display 5–6 shimmer skeleton placeholder cards matching the river-item layout instead of an empty state
+- **THEN** the river SHALL display a "Loading…" message instead of an empty state
+- **AND** the message SHALL only become visible once the loading has lasted at least ~500ms, fading in gradually
 
-#### Scenario: Fetch completes — items replace skeleton
+#### Scenario: Fetch completes — items replace loading message
 
-- **GIVEN** the skeleton loading state is displayed
+- **GIVEN** the loading message is displayed
 - **WHEN** the feed fetch completes and items are stored
-- **THEN** the skeleton SHALL be replaced by the fetched items within the same rendering frame that items are loaded into the reactive state
+- **THEN** the message SHALL be replaced by the fetched items within the same rendering frame that items are loaded into the reactive state
 
 #### Scenario: No unread items in Unread mode (no fetch in progress)
 

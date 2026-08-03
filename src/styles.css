@@ -1191,41 +1191,24 @@ a:hover { text-decoration: underline; }
   }
 }
 
-/* Skeleton loading cards (replaces empty state during feed fetch). */
-.skeleton-card {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--hairline);
-  display: grid;
-  grid-template-columns: 14px 1fr auto;
-  gap: 10px;
-}
-.skeleton-card .skeleton-circle {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--surface);
-  align-self: center;
-  margin-top: 4px;
-}
-.skeleton-card .skeleton-body {
+/* Loading message (fades in only for loads over ~500ms). */
+.loading-message {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--subtext);
+  opacity: 0;
+  transition: opacity 0.25s ease-in;
 }
-.skeleton-card .skeleton-line {
-  height: 12px;
-  border-radius: 4px;
-  background: linear-gradient(90deg, var(--surface) 25%, var(--overlay) 50%, var(--surface) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s linear infinite;
+.loading-message.visible {
+  opacity: 1;
 }
-.skeleton-card .skeleton-line.meta { width: 35%; height: 10px; }
-.skeleton-card .skeleton-line.title { width: 70%; height: 14px; }
-.skeleton-card .skeleton-line.excerpt { width: 90%; }
 
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+@media (prefers-reduced-motion: reduce) {
+  .loading-message {
+    transition: none;
+  }
 }
 
 /* Refresh icon spinning animation. */

@@ -7,7 +7,7 @@ The scheduler already tracks a global `inFlight` counter (used by the TopBar ref
 ## Goals / Non-Goals
 
 **Goals:**
-- When a feed is being fetched and has no items in the river, show shimmer skeleton placeholders instead of the "No items yet" empty state
+- When a feed is being fetched and has no items in the river, show a delayed, fading "Loading…" message instead of the "No items yet" empty state
 - Show a per-feed fetching indicator in the sidebar while that feed's fetch is in flight
 - After subscribing, items appear in the river as soon as the fetch completes, without waiting for the periodic poll
 - Keep the implementation self-contained — no new dependencies, no major architectural changes
@@ -16,7 +16,7 @@ The scheduler already tracks a global `inFlight` counter (used by the TopBar ref
 - Changing the existing poll-based refresh cycle for background stale-feed refreshes (the 30s poll is fine there; only the subscribe-triggered path gets immediate reload)
 - Granular progress reporting ("3 of 47 items loaded")
 - Pull-to-refresh or gesture-based loading states
-- Skeleton states for the reading view or other panels
+- Skeleton cards or loading states for the reading view or other panels
 
 ## Decisions
 
@@ -57,25 +57,22 @@ void refreshFeed({...}).then(() => ctx.reloadItems());
 
 **Rationale:** Simplest change that achieves the goal. Fire-and-forget is preserved (errors don't propagate), and the modal has already closed. Adding `.then(() => ctx.reloadItems())` ties the item reload to fetch completion without modifying the scheduler's contract.
 
-### D3: Skeleton placeholder cards in the river
+### D3: Delayed "Loading…" message in the river
 
-Show 5–6 shimmer placeholder cards when both conditions hold:
+Show a simple centered message when both conditions hold:
 1. `visibleItems().length === 0` (the river would show an empty state)
-2. The current scope (or any feed for "All" view) is in `fetchingFeeds`
+2. The current scope (or any feed for "All" view) is in `fetchingFeeds`, OR the app has not finished boot hydration
 
-The skeleton cards are styled to match river-item layout:
-- A small circle block for the read/unread indicator
-- A narrow bar for the meta line (source + timestamp)
-- A slightly wider bar for the title
-- A longer, thinner bar for the excerpt
+The message is a single text node (`Loading…`) styled with `--subtext`. It mounts immediately but its `visible` class is set by a 500ms `setTimeout` inside the component (cleared via `onCleanup` on unmount), so loads under ~500ms never show it. A 0.25s ease-in opacity transition fades it in; `prefers-reduced-motion` disables the transition.
 
 **Visibility rules:**
-- Specific feed scope: skeleton shown when `fetchingFeeds().has(feedUrl) && items.length === 0`
-- "All" scope: skeleton shown when `fetchingFeeds().size > 0 && items.length === 0`
-- "Unread" scope: same as "All" (treated identically for skeleton purposes)
-- If items are already in the river (even if a fetch is also in progress), no skeleton
+- Specific feed scope: message shown when `fetchingFeeds().has(feedUrl) && items.length === 0`
+- "All" scope: message shown when `fetchingFeeds().size > 0 && items.length === 0`
+- "Unread" scope: same as "All"
+- Boot hydration: message shown whenever `!hydrated() && items.length === 0`
+- If items are already in the river (even if a fetch is also in progress), no message
 
-**Rationale:** Skeletons provide visual continuity — the layout is already established, and items appear to fill in naturally. This is the standard pattern for content-loading states (Medium, GitHub, Slack, etc.).
+**Rationale:** Hydration is typically sub-second, and a placeholder that flashes for <500ms is noise. The delay means fast loads show content directly with zero placeholder; only genuinely slow loads (first-feed fetch, cold boot) get a calm message. A static skeleton was rejected: `background-position` shimmer repaints each frame and reads as jittery, and mock cards on a fast load are worse than nothing.
 
 ### D4: Sidebar spinner indicator
 
@@ -88,24 +85,25 @@ When a feed's URL is in `fetchingFeeds`, show a small inline spinner next to the
 
 **Rationale:** The sidebar is where the user sees the feed listed immediately after subscribing. The spinner confirms "this feed is being fetched" without requiring the user to navigate to that feed's view.
 
-### D5: CSS shimmer animation
+### D5: Loading message CSS
 
 ```css
-@keyframes shimmer {
-  0% { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
+.loading-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--subtext);
+  opacity: 0;
+  transition: opacity 0.25s ease-in;
 }
+.loading-message.visible { opacity: 1; }
 ```
 
-Skeleton blocks use a `background` with a linear gradient and the shimmer animation:
-- Base color: Catppuccin `--surface0` (matches the item background)
-- Shimmer sweep: `--overlay0` (slightly lighter/darker sweep moving left-to-right)
-- `border-radius`: matches existing river-item corners
-
-**Duration:** 1.5s, `linear`, `infinite`.
+The element starts invisible (`opacity: 0`) and fades in when the 500ms timer adds `visible`. The fade uses opacity only (GPU-composited, no repaint jitter). A `prefers-reduced-motion` media query drops the transition.
 
 ## Risks / Trade-offs
 
-- **Flash of skeleton → immediate items**: If the fetch completes very quickly (sub-second), the skeleton might flash briefly before items appear. This is an inherent trade-off of any loading state. Mitigation: the skeleton is visually subtle (a gentle shimmer, not a jarring element), and a brief flash is preferable to a confusing empty state.
-- **Skeleton shown but no fetch in progress for that feed**: Race condition if the user navigates to a feed just as its fetch finishes. Mitigation: the check `items.length === 0` ensures the skeleton only appears when there's truly nothing to show; if items are already stored, the existing river renders immediately.
+- **Message appears then items arrive instantly**: If the fetch completes just after the 500ms timer fires, the message is visible for only a few frames. Acceptable — it reads as the app catching up, and the fade-out is instant.
+- **Message shown but no fetch in progress for that feed**: Race condition if the user navigates to a feed just as its fetch finishes. Mitigation: the check `items.length === 0` ensures the message only appears when there's truly nothing to show; if items are already stored, the existing river renders immediately.
 - **Sidebar spinner flickering on rapid refreshes**: Possible if multiple sequential fetches overlap. Mitigation: the spinner is tied to `fetchingFeeds`, which tracks per-fetch lifetime; rapid start/stop is naturally smoothed by the fetch retry/error handling in the scheduler.

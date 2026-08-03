@@ -54,7 +54,7 @@ async function seedData(page: Page): Promise<void> {
 }
 
 test.describe('Boot empty-state flash', () => {
-  test('returning users see skeletons, never an empty state, while hydrating', async ({ page }) => {
+  test('returning users see a delayed loading message, never an empty state, while hydrating', async ({ page }) => {
     await disableSw(page);
 
     // First load creates the IndexedDB schema; then seed data.
@@ -71,13 +71,13 @@ test.describe('Boot empty-state flash', () => {
 
     await page.reload();
 
-    // During hydration: skeleton visible, no empty-state headline appears.
-    await expect(page.locator('.skeleton-card').first()).toBeVisible();
+    // During hydration: loading message fades in after ~500ms; no empty-state headline appears.
+    await expect(page.locator('.loading-message.visible')).toBeVisible();
     await expect(page.locator('.empty-state')).toHaveCount(0);
 
-    // After hydration: stored items render, skeleton and empty state gone.
+    // After hydration: stored items render, loading message and empty state gone.
     await expect(page.locator('.river-item').first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('.skeleton-card')).toHaveCount(0);
+    await expect(page.locator('.loading-message')).toHaveCount(0);
     await expect(page.locator('.empty-state')).toHaveCount(0);
     await expect(page.locator('.river-item .title').filter({ hasText: 'Seeded article A' })).toBeVisible();
   });
