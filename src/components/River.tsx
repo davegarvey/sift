@@ -156,6 +156,7 @@ export function River() {
 
   const shouldShowSkeleton = () => {
     if (visibleItems().length > 0) return false;
+    if (!ctx.hydrated()) return true;
     if (ctx.feeds().length === 0) return false;
     const fetching = ctx.fetchingFeeds();
     if (ctx.state.riverScope == null) return fetching.size > 0;
