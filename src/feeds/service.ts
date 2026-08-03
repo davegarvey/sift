@@ -26,6 +26,7 @@ export async function subscribeFeed(input: SubscribeInput): Promise<void> {
     folder: input.folder,
     tags: input.tags,
     tagsAt: now,
+    modifiedAt: now,
     learnedIntervalMs: DEFAULT_LEARNED_INTERVAL_MS,
     lastFetched: null,
     lastItemPublishedAt: null,
@@ -52,7 +53,7 @@ export async function updateFeedMeta(
 ): Promise<void> {
   const now = Date.now();
   const feed = await getFeed(feedId);
-  const patch: Partial<Feed> = {};
+  const patch: Partial<Feed> = { modifiedAt: now };
   if (meta.title !== undefined) {
     patch.title = meta.title;
     patch.titleAt = now;
@@ -72,8 +73,8 @@ export async function updateFeedMeta(
     htmlUrl: feed?.htmlUrl ? { value: feed.htmlUrl, at: now } : null,
     tags: meta.tags ?? null,
     tagsAt: now,
-    deleted: 0,
-    deletedAt: now,
+    deleted: null,
+    deletedAt: null,
   });
   scheduleFlush();
 }
@@ -93,6 +94,7 @@ export async function changeFeedUrl(feedId: string, newUrl: string): Promise<voi
   await updateFeed(feedId, {
     url: trimmed,
     urlAt: now,
+    modifiedAt: now,
     etag: null,
     lastModified: null,
   });
@@ -106,8 +108,8 @@ export async function changeFeedUrl(feedId: string, newUrl: string): Promise<voi
     htmlUrl: feed?.htmlUrl ? { value: feed.htmlUrl, at: now } : null,
     tags: null,
     tagsAt: now,
-    deleted: 0,
-    deletedAt: now,
+    deleted: null,
+    deletedAt: null,
   });
   scheduleFlush();
 }
@@ -117,7 +119,9 @@ export async function updateFeedTags(feedId: string, tags: string[]): Promise<vo
 }
 
 export async function unsubscribeFeed(feedId: string): Promise<void> {
+  const feed = await getFeed(feedId);
   await dbUnsubscribeFeed(feedId);
-  enqueueFeedDelete(feedId, Date.now());
+  const now = Date.now();
+  enqueueFeedDelete(feedId, { value: feed?.url ?? '', at: now }, now);
   scheduleFlush();
 }

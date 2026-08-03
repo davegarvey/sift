@@ -43,6 +43,13 @@ function newer<T>(remote: T | null | undefined, local: T | null | undefined, at:
   return at > localAt ? remote ?? null : local ?? null;
 }
 
+/** Local authority time for a feed: the last user-initiated mutation on this device. */
+function userMutationTime(f: Feed | undefined): number {
+  if (!f) return 0;
+  if (f.modifiedAt != null) return f.modifiedAt;
+  return Math.max(f.urlAt ?? 0, f.titleAt ?? 0, f.tagsAt ?? 0);
+}
+
 function parseFolder(s: string | null | undefined): string[] | undefined {
   if (s == null) return undefined;
   try {
@@ -91,10 +98,10 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
     const remoteFolder = parseFolder(rf.folder);
     const remoteTags = parseTags(rf.tags);
     const mergedUrl = rf.feed_url != null
-      ? newer(rf.feed_url, local?.url ?? null, rf.feed_url_at ?? null, local?.urlAt ?? local?.lastFetched ?? null) ?? rf.feed_url
+      ? newer(rf.feed_url, local?.url ?? null, rf.feed_url_at ?? null, local?.urlAt ?? userMutationTime(local)) ?? rf.feed_url
       : (local?.url ?? '');
     if (!mergedUrl) {
-      if (local && rf.deleted === 1 && rf.deleted_at != null && (local.lastFetched ?? 0) < rf.deleted_at) {
+      if (local && rf.deleted === 1 && rf.deleted_at != null && userMutationTime(local) < rf.deleted_at) {
         tombstonedForUnsubscribe.push(rf.feed_id);
       }
       continue;
@@ -102,14 +109,15 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
     const merged: Feed = {
       id: rf.feed_id,
       url: mergedUrl,
-      title: newer(rf.title ?? null, local?.title ?? null, rf.title_at ?? null, local?.titleAt ?? local?.lastFetched ?? null) ?? '',
+      title: newer(rf.title ?? null, local?.title ?? null, rf.title_at ?? null, local?.titleAt ?? userMutationTime(local)) ?? '',
       htmlUrl: newer(rf.html_url ?? null, local?.htmlUrl ?? null, rf.html_url_at ?? null, local?.htmlUrlAt ?? null) ?? undefined,
       htmlUrlAt: Math.max(rf.html_url_at ?? 0, local?.htmlUrlAt ?? 0) || null,
-      folder: newer(remoteFolder ?? null, local?.folder ?? null, rf.folder_at ?? null, local?.lastFetched ?? null) ?? undefined,
+      folder: newer(remoteFolder ?? null, local?.folder ?? null, rf.folder_at ?? null, userMutationTime(local)) ?? undefined,
       tags: newer(remoteTags ?? null, local?.tags ?? null, rf.tags_at ?? null, local?.tagsAt ?? null) ?? undefined,
       tagsAt: Math.max(rf.tags_at ?? 0, local?.tagsAt ?? 0) || null,
       titleAt: Math.max(rf.title_at ?? 0, local?.titleAt ?? 0) || null,
       urlAt: Math.max(rf.feed_url_at ?? 0, local?.urlAt ?? 0) || null,
+      modifiedAt: local?.modifiedAt ?? null,
       lastFetched: Math.max(local?.lastFetched ?? 0, rf.row_at),
       etag: local?.etag,
       lastModified: local?.lastModified,
@@ -120,7 +128,7 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
     };
     await upsertFeed(merged);
     if (rf.deleted === 1 && rf.deleted_at != null) {
-      const isNewer = !local || (local.lastFetched ?? 0) < rf.deleted_at;
+      const isNewer = !local || userMutationTime(local) < rf.deleted_at;
       if (isNewer) tombstonedForUnsubscribe.push(rf.feed_id);
     }
   }

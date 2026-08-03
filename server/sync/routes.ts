@@ -43,6 +43,92 @@ interface PushBody {
   flags?: FlagPayload[];
 }
 
+function validateFeedPayload(f: FeedPayload): { message: string; field: string } | null {
+  if (typeof f.feedId !== 'string' || !f.feedId) {
+    return { message: 'feed.feedId must be a non-empty string', field: 'feedId' };
+  }
+  if (f.feedUrl !== undefined) {
+    if (typeof f.feedUrl.at !== 'number' || f.feedUrl.at < 0) {
+      return { message: 'feed.feedUrl.at must be a non-negative integer', field: 'feedUrl.at' };
+    }
+    if (typeof f.feedUrl.value !== 'string') {
+      return { message: 'feed.feedUrl.value must be a string', field: 'feedUrl.value' };
+    }
+  }
+  if (f.htmlUrl !== undefined) {
+    if (typeof f.htmlUrl.at !== 'number' || f.htmlUrl.at < 0) {
+      return { message: 'feed.htmlUrl.at must be a non-negative integer', field: 'htmlUrl.at' };
+    }
+    if (f.htmlUrl.value !== null && typeof f.htmlUrl.value !== 'string') {
+      return { message: 'feed.htmlUrl.value must be a string or null', field: 'htmlUrl.value' };
+    }
+  }
+  if (f.folder !== undefined) {
+    const v = f.folder;
+    if (typeof v.at !== 'number' || v.at < 0) {
+      return { message: 'feed.folder.at must be a non-negative integer', field: 'folder.at' };
+    }
+    if (v.value !== null && !Array.isArray(v.value)) {
+      return { message: 'feed.folder.value must be an array or null', field: 'folder.value' };
+    }
+  }
+  if (f.title !== undefined) {
+    if (typeof f.title.at !== 'number' || f.title.at < 0) {
+      return { message: 'feed.title.at must be a non-negative integer', field: 'title.at' };
+    }
+    if (typeof f.title.value !== 'string') {
+      return { message: 'feed.title.value must be a string', field: 'title.value' };
+    }
+  }
+  if (f.tags !== undefined) {
+    if (typeof f.tags.at !== 'number' || f.tags.at < 0) {
+      return { message: 'feed.tags.at must be a non-negative integer', field: 'tags.at' };
+    }
+    if (f.tags.value !== null && !Array.isArray(f.tags.value)) {
+      return { message: 'feed.tags.value must be an array or null', field: 'tags.value' };
+    }
+  }
+  if (f.deleted !== undefined) {
+    if (typeof f.deleted.at !== 'number' || f.deleted.at < 0) {
+      return { message: 'feed.deleted.at must be a non-negative integer', field: 'deleted.at' };
+    }
+    if (f.deleted.value !== 0 && f.deleted.value !== 1) {
+      return { message: 'feed.deleted.value must be 0 or 1', field: 'deleted.value' };
+    }
+  }
+  return null;
+}
+
+function validateFlagPayload(g: FlagPayload): { message: string; field: string } | null {
+  if (typeof g.itemId !== 'string' || !g.itemId) {
+    return { message: 'flag.itemId must be a non-empty string', field: 'itemId' };
+  }
+  const parsed = decodeItemId(g.itemId);
+  if (!parsed) {
+    return { message: 'flag.itemId must contain "::"', field: 'itemId' };
+  }
+  if (typeof g.feedId !== 'string' || g.feedId !== parsed.feedId) {
+    return { message: 'flag.feedId does not match itemId', field: 'feedId' };
+  }
+  if (g.read !== undefined) {
+    if (typeof g.read.at !== 'number' || g.read.at < 0) {
+      return { message: 'flag.read.at must be a non-negative integer', field: 'read.at' };
+    }
+    if (g.read.value !== null && g.read.value !== 0 && g.read.value !== 1) {
+      return { message: 'flag.read.value must be 0, 1, or null', field: 'read.value' };
+    }
+  }
+  if (g.starred !== undefined) {
+    if (typeof g.starred.at !== 'number' || g.starred.at < 0) {
+      return { message: 'flag.starred.at must be a non-negative integer', field: 'starred.at' };
+    }
+    if (g.starred.value !== null && g.starred.value !== 0 && g.starred.value !== 1) {
+      return { message: 'flag.starred.value must be 0, 1, or null', field: 'starred.value' };
+    }
+  }
+  return null;
+}
+
 function clientIp(c: Context): string {
   return c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? '0.0.0.0';
 }
@@ -274,90 +360,112 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       return c.body(null, 204);
     }
 
-    // Per-user row cap check.
+    // Validate payloads up front (all-or-nothing before any reads or writes).
+    for (const f of feeds) {
+      const err = validateFeedPayload(f);
+      if (err) return jsonError(err.message, err.field);
+    }
+    for (const g of flags) {
+      const err = validateFlagPayload(g);
+      if (err) return jsonError(err.message, err.field);
+    }
+
+    // D5/D6 pre-pass: resolve the URL for each deleted feed — payload URL wins
+    // over the stored row's URL by per-field LWW (a delete racing a remote
+    // rename must tombstone the rows under the URL the PATCH leaves), with the
+    // DB as fallback for legacy URL-less deletes. The results build both the
+    // sibling-tombstone set (D5) and the in-batch tombstone map (D6).
+    const deleteIds = feeds.filter((f) => f.deleted?.value === 1).map((f) => f.feedId);
+    const rowUrlInfo = new Map<string, { url: string | null; urlAt: number | null }>();
+    if (deleteIds.length > 0) {
+      const placeholders = deleteIds.map(() => '?').join(', ');
+      const res = await db
+        .prepare(`SELECT feed_id, feed_url, feed_url_at FROM feeds WHERE sync_key = ? AND feed_id IN (${placeholders})`)
+        .bind(syncKey, ...deleteIds)
+        .all();
+      for (const r of res.results as Array<{ feed_id: string; feed_url: string | null; feed_url_at: number | null }>) {
+        rowUrlInfo.set(r.feed_id, { url: r.feed_url ?? null, urlAt: r.feed_url_at ?? null });
+      }
+    }
+    const siblingUrlByDelete = new Map<string, string>();
+    const deleteStampByDelete = new Map<string, number>();
+    for (const f of feeds) {
+      if (f.deleted?.value !== 1) continue;
+      const row = rowUrlInfo.get(f.feedId);
+      let url: string | null = null;
+      if (f.feedUrl !== undefined && (!row || row.urlAt == null || f.feedUrl.at > row.urlAt)) {
+        url = f.feedUrl.value;
+      } else if (row?.url) {
+        url = row.url;
+      }
+      if (url) siblingUrlByDelete.set(f.feedId, url);
+      deleteStampByDelete.set(f.feedId, f.deleted.at);
+    }
+    const inBatchTombstones = new Map<string, string>();
+    for (const f of feeds) {
+      if (f.deleted?.value !== 1) continue;
+      const url = siblingUrlByDelete.get(f.feedId);
+      if (url && !inBatchTombstones.has(url)) inBatchTombstones.set(url, f.feedId);
+    }
+
+    // D6 routing: a subscribe (deleted: 0 + feedUrl) revives the oldest
+    // tombstoned row for the URL under its existing feed_id — the in-batch
+    // map first (a tombstone created earlier in this batch is invisible to
+    // the DB), then the DB's oldest tombstone.
+    const effectiveFeedId = new Map<number, string>();
+    let d6Routed = 0;
+    for (let i = 0; i < feeds.length; i++) {
+      const f = feeds[i];
+      if (f.deleted?.value !== 0 || f.feedUrl === undefined) continue;
+      const revived = inBatchTombstones.get(f.feedUrl.value)
+        ?? (await db
+          .prepare('SELECT feed_id FROM feeds WHERE sync_key = ? AND feed_url = ? AND deleted = 1 ORDER BY row_at ASC LIMIT 1')
+          .bind(syncKey, f.feedUrl.value)
+          .first<{ feed_id: string }>())?.feed_id;
+      if (revived && revived !== f.feedId) {
+        effectiveFeedId.set(i, revived);
+        d6Routed++;
+      }
+    }
+
+    // Per-user row cap check (D6-routed subscribes insert no rows).
     const [feedCount, flagCount] = await Promise.all([
       db.prepare('SELECT COUNT(*) AS n FROM feeds WHERE sync_key = ?').bind(syncKey).first<{ n: number }>(),
       db.prepare('SELECT COUNT(*) AS n FROM flags WHERE sync_key = ?').bind(syncKey).first<{ n: number }>(),
     ]);
-    const projectedFeeds = (feedCount?.n ?? 0) + feeds.length;
+    const projectedFeeds = (feedCount?.n ?? 0) + feeds.length - d6Routed;
     const projectedFlags = (flagCount?.n ?? 0) + flags.length;
     if (projectedFeeds > 10_000 || projectedFlags > 1_000_000) {
       return new Response('Per-user row cap exceeded', { status: 413 });
     }
 
-    // Validate payloads and build batch.
+    // Build batch.
     const stmts: D1PreparedStatement[] = [];
     let maxAt = 0;
 
-    for (const f of feeds) {
-      if (typeof f.feedId !== 'string' || !f.feedId) {
-        return jsonError('feed.feedId must be a non-empty string', 'feedId');
-      }
-      if (f.feedUrl !== undefined) {
-        if (typeof f.feedUrl.at !== 'number' || f.feedUrl.at < 0) {
-          return jsonError('feed.feedUrl.at must be a non-negative integer', 'feedUrl.at');
-        }
-        if (typeof f.feedUrl.value !== 'string') {
-          return jsonError('feed.feedUrl.value must be a string', 'feedUrl.value');
-        }
-      }
-      if (f.htmlUrl !== undefined) {
-        if (typeof f.htmlUrl.at !== 'number' || f.htmlUrl.at < 0) {
-          return jsonError('feed.htmlUrl.at must be a non-negative integer', 'htmlUrl.at');
-        }
-        if (f.htmlUrl.value !== null && typeof f.htmlUrl.value !== 'string') {
-          return jsonError('feed.htmlUrl.value must be a string or null', 'htmlUrl.value');
-        }
-      }
-      if (f.folder !== undefined) {
-        const v = f.folder;
-        if (typeof v.at !== 'number' || v.at < 0) {
-          return jsonError('feed.folder.at must be a non-negative integer', 'folder.at');
-        }
-        if (v.value !== null && !Array.isArray(v.value)) {
-          return jsonError('feed.folder.value must be an array or null', 'folder.value');
-        }
-      }
-      if (f.title !== undefined) {
-        if (typeof f.title.at !== 'number' || f.title.at < 0) {
-          return jsonError('feed.title.at must be a non-negative integer', 'title.at');
-        }
-        if (typeof f.title.value !== 'string') {
-          return jsonError('feed.title.value must be a string', 'title.value');
-        }
-      }
-      if (f.tags !== undefined) {
-        if (typeof f.tags.at !== 'number' || f.tags.at < 0) {
-          return jsonError('feed.tags.at must be a non-negative integer', 'tags.at');
-        }
-        if (f.tags.value !== null && !Array.isArray(f.tags.value)) {
-          return jsonError('feed.tags.value must be an array or null', 'tags.value');
-        }
-      }
-      if (f.deleted !== undefined) {
-        if (typeof f.deleted.at !== 'number' || f.deleted.at < 0) {
-          return jsonError('feed.deleted.at must be a non-negative integer', 'deleted.at');
-        }
-        if (f.deleted.value !== 0 && f.deleted.value !== 1) {
-          return jsonError('feed.deleted.value must be 0 or 1', 'deleted.value');
-        }
-      }
+    for (let i = 0; i < feeds.length; i++) {
+      const f = feeds[i];
+      const fId = effectiveFeedId.get(i) ?? f.feedId;
 
-      // Step 1: insert new row.
+      // Step 1: insert new row (a no-op for existing rows, including D6-revived ids).
       stmts.push(
         db
           .prepare('INSERT OR IGNORE INTO feeds (sync_key, feed_id, row_at) VALUES (?, ?, 0)')
-          .bind(syncKey, f.feedId),
+          .bind(syncKey, fId),
       );
 
-      // Step 2: clear tombstone if present.
-      stmts.push(
-        db
-          .prepare(
-            'UPDATE feeds SET deleted = 0, deleted_at = NULL WHERE sync_key = ? AND feed_id = ? AND deleted = 1',
-          )
-          .bind(syncKey, f.feedId),
-      );
+      // Step 2: clear tombstone — only on an explicit subscribe signal
+      // (deleted: 0). A deleted: 1 push never clears (the PATCH below is
+      // LWW-correct and must not regress a newer tombstone's deleted_at).
+      if (f.deleted !== undefined && f.deleted.value === 0) {
+        stmts.push(
+          db
+            .prepare(
+              'UPDATE feeds SET deleted = 0, deleted_at = NULL WHERE sync_key = ? AND feed_id = ? AND deleted = 1',
+            )
+            .bind(syncKey, fId),
+        );
+      }
 
       // Step 3: per-field PATCH.
       const fieldSets: string[] = [];
@@ -421,45 +529,38 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           .prepare(
             `UPDATE feeds SET ${fieldSets.join(', ')} WHERE sync_key = ? AND feed_id = ?`,
           )
-          .bind(...fieldBinds, syncKey, f.feedId),
+          .bind(...fieldBinds, syncKey, fId),
       );
       stmts.push(
         db
           .prepare('UPDATE feeds SET row_at = ? WHERE sync_key = ? AND feed_id = ? AND ? > COALESCE(row_at, 0)')
-          .bind(maxAt, syncKey, f.feedId, maxAt),
+          .bind(maxAt, syncKey, fId, maxAt),
       );
       assertNoUrlLog(f.feedUrl?.value ?? '');
       assertNoUrlLog(f.htmlUrl?.value ?? '');
     }
 
-    for (const g of flags) {
-      if (typeof g.itemId !== 'string' || !g.itemId) {
-        return jsonError('flag.itemId must be a non-empty string', 'itemId');
-      }
-      const parsed = decodeItemId(g.itemId);
-      if (!parsed) {
-        return jsonError('flag.itemId must contain "::"', 'itemId');
-      }
-      if (typeof g.feedId !== 'string' || g.feedId !== parsed.feedId) {
-        return jsonError('flag.feedId does not match itemId', 'feedId');
-      }
-      if (g.read !== undefined) {
-        if (typeof g.read.at !== 'number' || g.read.at < 0) {
-          return jsonError('flag.read.at must be a non-negative integer', 'read.at');
-        }
-        if (g.read.value !== null && g.read.value !== 0 && g.read.value !== 1) {
-          return jsonError('flag.read.value must be 0, 1, or null', 'read.value');
-        }
-      }
-      if (g.starred !== undefined) {
-        if (typeof g.starred.at !== 'number' || g.starred.at < 0) {
-          return jsonError('flag.starred.at must be a non-negative integer', 'starred.at');
-        }
-        if (g.starred.value !== null && g.starred.value !== 0 && g.starred.value !== 1) {
-          return jsonError('flag.starred.value must be 0, 1, or null', 'starred.value');
-        }
-      }
+    // D5: tombstone every row sharing a deleted feed's URL (per-row LWW).
+    // One UPDATE per unique URL, using the max delete stamp across the batch.
+    // Column order deleted, deleted_at, row_at is load-bearing: the dev D1
+    // shim pairs CASE fields positionally.
+    const siblingByUrl = new Map<string, number>();
+    for (const [id, url] of siblingUrlByDelete) {
+      const stamp = deleteStampByDelete.get(id) ?? 0;
+      siblingByUrl.set(url, Math.max(siblingByUrl.get(url) ?? 0, stamp));
+    }
+    for (const [url, stamp] of siblingByUrl) {
+      assertNoUrlLog(url);
+      stmts.push(
+        db
+          .prepare(
+            'UPDATE feeds SET deleted = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted END, deleted_at = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted_at END, row_at = CASE WHEN ? > row_at THEN ? ELSE row_at END WHERE sync_key = ? AND feed_url = ? AND feed_id != ?',
+          )
+          .bind(stamp, 1, stamp, stamp, stamp, stamp, syncKey, url, inBatchTombstones.get(url) ?? ''),
+      );
+    }
 
+    for (const g of flags) {
       stmts.push(
         db
           .prepare('INSERT OR IGNORE INTO flags (sync_key, item_id, feed_id, row_at) VALUES (?, ?, ?, 0)')

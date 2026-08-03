@@ -26,6 +26,8 @@ export interface Feed {
   htmlUrlAt?: number | null;
   /** Last successful fetch (epoch ms). */
   lastFetched: number | null;
+  /** Epoch ms of the last user-initiated mutation on this device (subscribe, title/tags/URL edit). Never updated by background fetches. Local-only; used as the local-authority baseline in sync conflict resolution. */
+  modifiedAt?: number | null;
   /** ETag received from the upstream, forwarded on next conditional request. */
   etag?: string | null;
   /** Last-Modified header from upstream, forwarded next time. */

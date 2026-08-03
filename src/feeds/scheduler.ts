@@ -131,7 +131,6 @@ export async function refreshFeed(feed: Feed): Promise<void> {
       title: feed.title || parsed.title,
       htmlUrl: feed.htmlUrl ?? parsed.htmlUrl,
       htmlUrlAt: feed.htmlUrlAt ?? (feed.htmlUrl == null && parsed.htmlUrl ? Date.now() : undefined),
-      urlAt: feed.urlAt ?? Date.now(),
       lastFetched: Date.now(),
       etag: result.etag ?? null,
       lastModified: result.lastModified ?? null,

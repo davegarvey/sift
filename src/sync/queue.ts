@@ -4,8 +4,8 @@ import { MAX_DIRTY_PER_PUSH } from './client';
 const DIRTY_KEY = 'sync_dirty';
 
 export type DirtyEntry =
-  | { kind: 'feed-upsert'; feedId: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; feedUrl: { value: string | null; at: number } | null; htmlUrl: { value: string | null; at: number } | null; tags: string[] | null; tagsAt: number; deleted: 0 | 1; deletedAt: number }
-  | { kind: 'feed-delete'; feedId: string; at: number }
+  | { kind: 'feed-upsert'; feedId: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; feedUrl: { value: string | null; at: number } | null; htmlUrl: { value: string | null; at: number } | null; tags: string[] | null; tagsAt: number; deleted: 0 | 1 | null; deletedAt: number | null }
+  | { kind: 'feed-delete'; feedId: string; feedUrl: { value: string; at: number }; at: number }
   | { kind: 'flag-update'; itemId: string; feedId: string; read: 0 | 1 | null; readAt: number; starred: 0 | 1 | null; starredAt: number };
 
 let inMemory: DirtyEntry[] = [];
@@ -55,9 +55,9 @@ export async function persistDirty(): Promise<void> {
 function entryAt(e: DirtyEntry): number {
   switch (e.kind) {
     case 'feed-upsert':
-      return Math.max(e.folderAt, e.titleAt, e.tagsAt, e.feedUrl?.at ?? 0, e.htmlUrl?.at ?? 0, e.deletedAt);
+      return Math.max(e.folderAt, e.titleAt, e.tagsAt, e.feedUrl?.at ?? 0, e.htmlUrl?.at ?? 0, e.deletedAt ?? 0);
     case 'feed-delete':
-      return e.at;
+      return Math.max(e.feedUrl.at, e.at);
     case 'flag-update':
       return Math.max(e.readAt, e.starredAt);
   }
@@ -81,8 +81,8 @@ export function enqueueFeed(feed: {
   htmlUrl: { value: string | null; at: number } | null;
   tags: string[] | null;
   tagsAt: number;
-  deleted: 0 | 1;
-  deletedAt: number;
+  deleted: 0 | 1 | null;
+  deletedAt: number | null;
 }): void {
   appendEntry({
     kind: 'feed-upsert',
@@ -100,8 +100,9 @@ export function enqueueFeed(feed: {
   });
 }
 
-export function enqueueFeedDelete(feedId: string, at: number): void {
-  appendEntry({ kind: 'feed-delete', feedId, at });
+export function enqueueFeedDelete(feedId: string, feedUrl: { value: string; at: number }, at: number): void {
+  inMemory = inMemory.filter((e) => !(e.kind === 'feed-upsert' && e.feedId === feedId));
+  appendEntry({ kind: 'feed-delete', feedId, feedUrl, at });
 }
 
 export function enqueueFlag(flag: {
