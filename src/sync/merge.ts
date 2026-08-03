@@ -1,13 +1,14 @@
 import { listFeeds, upsertFeed, unsubscribeFeed } from '../db/feeds';
 import { listItems } from '../db/items';
-import { getItemFlags, bulkSetFlags } from '../db/flags';
-import { enqueueFeed, enqueueFlag } from './queue';
+import { getItemFlags, bulkSetFlags, type ItemFlag } from '../db/flags';
+import { enqueueFeed, enqueueFlag, clearAllDirty } from './queue';
 import { flushNow, scheduleFlush } from './push';
 import { pullSince, type PullPayload } from './client';
 import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
 import { getStoredLastSyncAt, setStoredLastSyncAt } from './key';
+import { decodeItemId } from './itemId';
+import { markPullSuccess, markError } from './status';
 import type { Feed, Item } from '../db/types';
-import type { ItemFlag } from '../db/flags';
 
 let onSync: (() => void) | null = null;
 
@@ -45,10 +46,31 @@ export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: Remot
   onSync?.();
 }
 
-async function pushLocalState(feeds: Feed[], flags: ItemFlag[]): Promise<void> {
+function toRawFlagId(itemId: string): string {
+  const parsed = decodeItemId(itemId);
+  return parsed ? `${parsed.feedId}::${parsed.guid}` : itemId;
+}
+
+/**
+ * Pushes only the local feeds/flags the server does not already have.
+ * Feeds are skipped when the server has a row with the same feed_id or URL;
+ * flags are skipped when the server has a row for the same raw item ID
+ * (server item_ids are URL-encoded, so they are normalized first). Rows the
+ * server already knows are left to applyRemoteState's LWW merge instead of
+ * being re-stamped with fresh timestamps.
+ */
+async function pushLocalDiff(feeds: Feed[], flags: ItemFlag[], serverFeeds: RemoteFeed[], serverFlags: RemoteFlag[]): Promise<void> {
+  const serverFeedIds = new Set(serverFeeds.map((f) => f.feed_id));
+  const serverFeedUrls = new Set<string>();
+  for (const f of serverFeeds) {
+    if (f.feed_url) serverFeedUrls.add(f.feed_url);
+  }
+  const serverFlagIds = new Set(serverFlags.map((f) => toRawFlagId(f.item_id)));
+
   const now = Date.now();
   for (const feed of feeds) {
     if (!feed.url) continue;
+    if (serverFeedIds.has(feed.id) || serverFeedUrls.has(feed.url)) continue;
     enqueueFeed({
       feedId: feed.id,
       folder: feed.folder ?? null,
@@ -65,6 +87,7 @@ async function pushLocalState(feeds: Feed[], flags: ItemFlag[]): Promise<void> {
   }
   for (const flag of flags) {
     if (flag.read === 0 && flag.starred === 0) continue;
+    if (serverFlagIds.has(flag.id)) continue;
     enqueueFlag({
       itemId: flag.id,
       feedId: flag.feedId,
@@ -88,43 +111,45 @@ async function mergePayload(payload: RemotePayload, serverTime: number): Promise
 export async function runFirstTimeSetup(): Promise<number> {
   const existingFeeds = await listFeeds();
   const existingFlags = await getItemFlags();
-  const lastSyncAt = await getStoredLastSyncAt();
 
-  if (lastSyncAt == null) {
-    await pushLocalState(existingFeeds, existingFlags);
+  // Start clean: any dirty entries from a previous partial setup, or from
+  // changes made while sync was disabled, are superseded by the diff below
+  // (the diff is computed from local DB state, not from the dirty queue).
+  await clearAllDirty();
+
+  try {
     const pull = await pullSince(0);
     const payload = toRemotePayload(pull);
+    await pushLocalDiff(existingFeeds, existingFlags, payload.feeds, payload.flags);
     await mergePayload(payload, pull.serverTime);
-    return (await getStoredLastSyncAt()) ?? 0;
+  } catch (e) {
+    markError('pull', e);
+    throw e;
   }
-
-  const pull = await pullSince(lastSyncAt);
-  const payload = toRemotePayload(pull);
-
-  if (payload.feeds.length === 0 && payload.flags.length === 0 && existingFeeds.length > 0) {
-    await pushLocalState(existingFeeds, existingFlags);
-    const pull2 = await pullSince(0);
-    const payload2 = toRemotePayload(pull2);
-    await mergePayload(payload2, pull2.serverTime);
-    return (await getStoredLastSyncAt()) ?? 0;
-  }
-
-  await mergePayload(payload, pull.serverTime);
-  return (await getStoredLastSyncAt()) ?? 0;
+  const cursor = (await getStoredLastSyncAt()) ?? 0;
+  markPullSuccess(cursor);
+  return cursor;
 }
 
 export async function runPull(): Promise<number | null> {
   const since = (await getStoredLastSyncAt()) ?? 0;
-  const pull = await pullSince(since);
-  const payload = toRemotePayload(pull);
-  if (payload.feeds.length === 0 && payload.flags.length === 0) {
-    await setStoredLastSyncAt(Math.max(since, pull.serverTime));
-    return pull.serverTime;
+  try {
+    const pull = await pullSince(since);
+    const payload = toRemotePayload(pull);
+    if (payload.feeds.length === 0 && payload.flags.length === 0) {
+      await setStoredLastSyncAt(Math.max(since, pull.serverTime));
+      markPullSuccess(pull.serverTime);
+      return pull.serverTime;
+    }
+    await applyRemoteState(payload);
+    const newTime = Math.max(since, pull.serverTime);
+    await setStoredLastSyncAt(newTime);
+    markPullSuccess(newTime);
+    scheduleFlush();
+    onSync?.();
+    return newTime;
+  } catch (e) {
+    markError('pull', e);
+    throw e;
   }
-  await applyRemoteState(payload);
-  const newTime = Math.max(since, pull.serverTime);
-  await setStoredLastSyncAt(newTime);
-  scheduleFlush();
-  onSync?.();
-  return newTime;
 }

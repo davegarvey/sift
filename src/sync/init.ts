@@ -13,13 +13,16 @@ import { runFirstTimeSetup, runPull } from './merge';
 import { loadDirty, persistDirty, setOnOverflow } from './queue';
 import { scheduleFlush } from './push';
 import { getStoredSyncKey, getStoredLastSyncAt } from './key';
+import { loadStatus, refreshPending } from './status';
 
 let lastPullAt = 0;
 
 export async function bootSync(): Promise<void> {
+  await loadStatus();
   const key = await getStoredSyncKey();
   if (!key) return;
   await loadDirty();
+  refreshPending();
   setOnOverflow(() => scheduleFlush());
 
   // Persist dirty on tab close / hide.
@@ -65,6 +68,7 @@ export async function triggerFirstTime(): Promise<void> {
   const key = await getStoredSyncKey();
   if (!key) return;
   await loadDirty();
+  refreshPending();
   setOnOverflow(() => scheduleFlush());
   await runFirstTimeSetup();
   lastPullAt = Date.now();

@@ -109,7 +109,7 @@ test.describe('QR pairing', () => {
     // Generate a pairing code via the SyncShareModal.
     await pageA.getByRole('button', { name: 'Settings' }).click({ force: true });
     await pageA.waitForSelector('.modal');
-    await pageA.getByRole('button', { name: 'Generate' }).click({ force: true });
+    await pageA.getByRole('button', { name: 'Invite' }).click({ force: true });
     await pageA.waitForSelector('.sync-grid__qr svg', { timeout: 5000 });
     const pairCode = await pageA.locator('.sync-grid__code').textContent();
     expect(pairCode).toBeTruthy();

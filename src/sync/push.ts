@@ -1,6 +1,7 @@
 import { pushChunk, SyncClientError, MAX_DIRTY_PER_PUSH } from './client';
 import { getDirty, clearEntries, entryAt, type DirtyEntry } from './queue';
 import { encodeItemId } from './itemId';
+import { markPushSuccess, markError, refreshPending } from './status';
 
 const DEBOUNCE_MS = 1000;
 
@@ -101,7 +102,10 @@ export async function flushNow(): Promise<void> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     const dirty = getDirty();
-    if (dirty.length === 0) return;
+    if (dirty.length === 0) {
+      refreshPending();
+      return;
+    }
     const chunks = splitChunk(dirty, MAX_DIRTY_PER_PUSH);
     let offset = 0;
     for (const chunk of chunks) {
@@ -109,11 +113,13 @@ export async function flushNow(): Promise<void> {
       const entries = indices.map((i) => dirty[i]);
       await pushChunkWithSplit(entries);
     }
+    markPushSuccess(Date.now());
   })();
   try {
     await inFlight;
   } catch (e) {
     console.error('Sync push failed:', e);
+    markError('push', e);
     throw e;
   } finally {
     inFlight = null;
