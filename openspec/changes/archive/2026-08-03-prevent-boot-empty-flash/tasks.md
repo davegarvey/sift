@@ -10,6 +10,6 @@
 ## 3. Verification
 
 - [x] 3.1 `npm run typecheck` and `npm run lint` pass
-- [ ] 3.2 Manual: throttle IndexedDB (or add a temporary delay) and confirm returning users see skeletons, never "Welcome to Sift" / "No items yet." during boot
-- [ ] 3.3 Manual: fresh profile (empty DB) still ends on "Welcome to Sift" after hydration; existing fetch-in-flight skeleton behavior on refresh is unchanged
+- [x] 3.2 Manual: throttle IndexedDB (or add a temporary delay) and confirm returning users see skeletons, never "Welcome to Sift" / "No items yet." during boot — superseded by automated smoke test 3.4, which slows /api/capabilities to widen the hydration window and asserts skeletons show with no empty state
+- [ ] 3.3 Manual: fresh profile (empty DB) still ends on "Welcome to Sift" after hydration; existing fetch-in-flight skeleton behavior on refresh is unchanged — **skipped: user declined manual verification** (paths unchanged; fresh-profile empty state only gains a hydration gate)
 - [x] 3.4 Add `tests/boot-empty-flash.smoke.ts` (Playwright) — load the app with seeded data, assert the skeleton is present before hydration settles and that no empty-state headline is ever visible pre-hydration
