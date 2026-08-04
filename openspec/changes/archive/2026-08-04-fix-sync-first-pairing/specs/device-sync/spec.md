@@ -16,11 +16,14 @@
 
 #### Scenario: Local feed already deleted on the server
 - **WHEN** the device has a local feed whose URL or `feed_id` exists on the server with `deleted=1`
+- **AND** the remote `deleted_at` is newer than the local user-mutation time (`modifiedAt`, or `max(urlAt, titleAt, tagsAt)` for legacy records)
 - **THEN** the client SHALL NOT push that feed
 - **AND** SHALL apply the tombstone locally, removing the feed and its items
+- **AND** if the local user-mutation time is newer than the remote `deleted_at`, the client SHALL keep the local feed (the user deliberately touched it after the remote delete) and SHALL NOT push it in a way that revives the server tombstone
 
 #### Scenario: Local feed whose URL changed on the server after deletion
 - **WHEN** the device has a local feed whose `feed_id` exists on the server as a tombstone carrying a different URL (e.g., the feed was renamed on the other device and then deleted)
+- **AND** the remote `deleted_at` is newer than the local user-mutation time (`modifiedAt`, or `max(urlAt, titleAt, tagsAt)` for legacy records)
 - **THEN** the client SHALL NOT push that feed
 - **AND** SHALL apply the tombstone locally, removing the feed and its items
 - **AND** the tombstone SHALL remain on the server
