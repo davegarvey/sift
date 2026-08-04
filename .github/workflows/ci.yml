@@ -4,11 +4,6 @@ on:
   workflow_call:
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - LICENSE
-      - openspec/**
-      - .opencode/**
 
 concurrency:
   group: ci-${{ github.ref }}
