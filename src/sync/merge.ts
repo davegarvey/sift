@@ -5,7 +5,7 @@ import { enqueueFeed, enqueueFlag, clearAllDirty } from './queue';
 import { flushNow, scheduleFlush } from './push';
 import { pullSince, type PullPayload } from './client';
 import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
-import { getStoredLastSyncAt, setStoredLastSyncAt } from './key';
+import { getStoredLastSyncAt, setStoredLastSyncAt, setStoredServerOffset } from './key';
 import { decodeItemId } from './itemId';
 import { markPullSuccess, markError } from './status';
 import type { Feed, Item } from '../db/types';
@@ -41,8 +41,8 @@ export async function snapshotLocal(): Promise<LocalSnapshot> {
   };
 }
 
-export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: RemotePayload): Promise<void> {
-  await applyRemoteState(payload);
+export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: RemotePayload, serverOffset = 0): Promise<void> {
+  await applyRemoteState(payload, serverOffset);
   onSync?.();
 }
 
@@ -101,8 +101,10 @@ async function pushLocalDiff(feeds: Feed[], flags: ItemFlag[], serverFeeds: Remo
 }
 
 async function mergePayload(payload: RemotePayload, serverTime: number): Promise<void> {
+  const offset = serverTime - Date.now();
+  await setStoredServerOffset(offset);
   const snap = await snapshotLocal();
-  await mergeForFirstTime(snap, payload);
+  await mergeForFirstTime(snap, payload, offset);
   await flushNow();
   const newTime = Math.max(await getStoredLastSyncAt() ?? 0, serverTime);
   await setStoredLastSyncAt(newTime);
@@ -135,13 +137,15 @@ export async function runPull(): Promise<number | null> {
   const since = (await getStoredLastSyncAt()) ?? 0;
   try {
     const pull = await pullSince(since);
+    const offset = pull.serverTime - Date.now();
+    await setStoredServerOffset(offset);
     const payload = toRemotePayload(pull);
     if (payload.feeds.length === 0 && payload.flags.length === 0) {
       await setStoredLastSyncAt(Math.max(since, pull.serverTime));
       markPullSuccess();
       return pull.serverTime;
     }
-    await applyRemoteState(payload);
+    await applyRemoteState(payload, offset);
     const newTime = Math.max(since, pull.serverTime);
     await setStoredLastSyncAt(newTime);
     markPullSuccess();

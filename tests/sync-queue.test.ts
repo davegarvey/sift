@@ -10,7 +10,8 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
 import { listFeeds } from '../src/db/feeds';
-import { getDirty } from '../src/sync/queue';
+import { getDirty, enqueueFlag } from '../src/sync/queue';
+import { setStoredServerOffset } from '../src/sync/key';
 import { subscribeFeed, unsubscribeFeed, updateFeedMeta } from '../src/feeds/service';
 
 beforeEach(async () => {
@@ -119,5 +120,58 @@ describe('unsubscribeFeed', () => {
     const upserts = dirty.filter((e) => e.kind === 'feed-upsert' && e.feedId === feeds[0].id);
     expect(upserts.length).toBe(0);
     expect(dirty).toContainEqual(expect.objectContaining({ kind: 'feed-delete', feedId: feeds[0].id }));
+  });
+});
+
+describe('server-clock offset on push', () => {
+  beforeEach(async () => {
+    const { setStoredSyncKey } = await import('../src/sync/key');
+    await setStoredSyncKey('a'.repeat(22));
+  });
+
+  it('converts outgoing stamps to the server frame', async () => {
+    const { flushNow } = await import('../src/sync/push');
+    await setStoredServerOffset(5000);
+    const itemId = 'feed-id::guid-1';
+    enqueueFlag({
+      itemId,
+      feedId: 'feed-id',
+      read: 1,
+      readAt: 1000,
+      starred: 0,
+      starredAt: 2000,
+    });
+    let captured: { flags?: Array<Record<string, unknown>> } = {};
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      captured = JSON.parse(String(init?.body));
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof globalThis.fetch;
+    await flushNow();
+    const flag = captured.flags?.[0];
+    expect((flag?.read as { at: number }).at).toBe(6000);
+    expect((flag?.starred as { at: number }).at).toBe(7000);
+    expect(getDirty().length).toBe(0);
+  });
+
+  it('uses the local stamp unchanged when no offset is stored', async () => {
+    const { flushNow } = await import('../src/sync/push');
+    await setStoredServerOffset(null);
+    const itemId = 'feed-id::guid-2';
+    enqueueFlag({
+      itemId,
+      feedId: 'feed-id',
+      read: 1,
+      readAt: 1000,
+      starred: 0,
+      starredAt: 1000,
+    });
+    let captured: { flags?: Array<Record<string, unknown>> } = {};
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      captured = JSON.parse(String(init?.body));
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof globalThis.fetch;
+    await flushNow();
+    const flag = captured.flags?.[0];
+    expect((flag?.read as { at: number }).at).toBe(1000);
   });
 });
