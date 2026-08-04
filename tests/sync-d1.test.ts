@@ -438,43 +438,44 @@ describe('sync D1 integration', () => {
   });
 });
 
+async function setupKey(mf: Miniflare, label: string): Promise<string> {
+  const key = makeSyncKey(label);
+  await mf.dispatchFetch('http://localhost/sync/register', {
+    method: 'POST',
+    headers: { 'X-Sync-Key': key },
+  });
+  return key;
+}
+
+async function push(mf: Miniflare, key: string, body: unknown): Promise<number> {
+  const res = await mf.dispatchFetch('http://localhost/sync/push', {
+    method: 'POST',
+    headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.status;
+}
+
+async function pullFeeds(mf: Miniflare, key: string): Promise<Array<Record<string, unknown>>> {
+  const res = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
+    headers: { 'X-Sync-Key': key },
+  });
+  expect(res.status).toBe(200);
+  const body = await res.json() as { feeds: Array<Record<string, unknown>> };
+  return body.feeds;
+}
+
+function feedPayload(feedId: string, url: string, at: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    feedId,
+    feedUrl: { value: url, at },
+    title: { value: `Feed ${feedId.slice(0, 6)}`, at },
+    deleted: { value: 0, at },
+    ...extra,
+  };
+}
+
 describe('sync D1 tombstone semantics', () => {
-  async function setupKey(mf: Miniflare, label: string): Promise<string> {
-    const key = makeSyncKey(label);
-    await mf.dispatchFetch('http://localhost/sync/register', {
-      method: 'POST',
-      headers: { 'X-Sync-Key': key },
-    });
-    return key;
-  }
-
-  async function push(mf: Miniflare, key: string, body: unknown): Promise<number> {
-    const res = await mf.dispatchFetch('http://localhost/sync/push', {
-      method: 'POST',
-      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return res.status;
-  }
-
-  async function pullFeeds(mf: Miniflare, key: string): Promise<Array<Record<string, unknown>>> {
-    const res = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
-      headers: { 'X-Sync-Key': key },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json() as { feeds: Array<Record<string, unknown>> };
-    return body.feeds;
-  }
-
-  function feedPayload(feedId: string, url: string, at: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      feedId,
-      feedUrl: { value: url, at },
-      title: { value: `Feed ${feedId.slice(0, 6)}`, at },
-      deleted: { value: 0, at },
-      ...extra,
-    };
-  }
 
   it('a metadata-only push does not clear a tombstone', async () => {
     const mf = await createMf();
@@ -698,6 +699,136 @@ describe('sync D1 tombstone semantics', () => {
       const rows = feeds.filter((f) => f.feed_url === url);
       expect(rows.length).toBe(1);
       expect(rows[0].deleted).toBe(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+});
+
+describe('sync D1 time consistency', () => {
+  it('server time is monotonic and epoch-anchored', async () => {
+    const mf = await createMf();
+    try {
+      await mf.dispatchFetch('http://localhost/sync/capabilities');
+      const d1 = await mf.getD1Database('DB');
+      const { nextMonotonicTime, currentMonotonicTime } = await import('../server/sync/monotonic');
+      const t1 = await nextMonotonicTime(d1);
+      const t2 = await nextMonotonicTime(d1);
+      const t3 = await nextMonotonicTime(d1);
+      expect(t1).toBeGreaterThan(1e12);
+      expect(t2).toBeGreaterThan(t1);
+      expect(t3).toBeGreaterThan(t2);
+      const cur = await currentMonotonicTime(d1);
+      expect(cur).toBeGreaterThanOrEqual(t3);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('rows in one batch share a single row_at, strictly increasing across batches', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'batch-rowat');
+      const now = Date.now();
+      await push(mf, key, {
+        feeds: [
+          feedPayload('rowat-a', 'https://ex.com/a', now),
+          feedPayload('rowat-b', 'https://ex.com/b', now),
+          feedPayload('rowat-c', 'https://ex.com/c', now),
+        ],
+      });
+      let feeds = await pullFeeds(mf, key);
+      const r1 = feeds.find((f) => f.feed_id === 'rowat-a')?.row_at as number;
+      expect(feeds.find((f) => f.feed_id === 'rowat-b')?.row_at).toBe(r1);
+      expect(feeds.find((f) => f.feed_id === 'rowat-c')?.row_at).toBe(r1);
+
+      await push(mf, key, {
+        feeds: [{ feedId: 'rowat-a', feedUrl: { value: 'https://ex.com/a', at: now }, title: { value: 'Renamed', at: now } }],
+      });
+      feeds = await pullFeeds(mf, key);
+      const r2 = feeds.find((f) => f.feed_id === 'rowat-a')?.row_at as number;
+      expect(r2).toBeGreaterThan(r1);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a sibling-tombstoned row shares the batch row_at', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'sib-rowat-');
+      const now = Date.now();
+      const url = 'https://ex.com/sib';
+      await push(mf, key, { feeds: [feedPayload('sib-a', url, now), feedPayload('sib-b', url, now)] });
+      await push(mf, key, {
+        feeds: [{ feedId: 'sib-a', feedUrl: { value: url, at: now }, deleted: { value: 1, at: now + 100 } }],
+      });
+      const feeds = await pullFeeds(mf, key);
+      const ra = feeds.find((f) => f.feed_id === 'sib-a')?.row_at as number;
+      const rb = feeds.find((f) => f.feed_id === 'sib-b')?.row_at as number;
+      expect(rb).toBe(ra);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('a pull with since = serverTime is incremental; the inclusive comparison heals same-ms rows', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'incr-pull-');
+      const now = Date.now();
+      await push(mf, key, { feeds: [feedPayload('incr-a', 'https://ex.com/incr', now)] });
+
+      const first = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
+        headers: { 'X-Sync-Key': key },
+      });
+      const firstBody = await first.json() as { feeds: Array<Record<string, unknown>>; serverTime: number };
+      expect(firstBody.feeds.length).toBe(1);
+      const rowAt = firstBody.feeds[0].row_at as number;
+
+      // Pull with since = that row's row_at: inclusive comparison returns it once.
+      const second = await mf.dispatchFetch(`http://localhost/sync/pull?since=${rowAt}`, {
+        headers: { 'X-Sync-Key': key },
+      });
+      const secondBody = await second.json() as { feeds: Array<Record<string, unknown>> };
+      expect(secondBody.feeds.length).toBe(1);
+
+      // Cursor past it: nothing.
+      const third = await mf.dispatchFetch(`http://localhost/sync/pull?since=${rowAt + 1}`, {
+        headers: { 'X-Sync-Key': key },
+      });
+      const thirdBody = await third.json() as { feeds: Array<Record<string, unknown>> };
+      expect(thirdBody.feeds.length).toBe(0);
+
+      // A pre-change cursor (old counter scale) still gets a full dump once.
+      const legacy = await mf.dispatchFetch('http://localhost/sync/pull?since=1', {
+        headers: { 'X-Sync-Key': key },
+      });
+      const legacyBody = await legacy.json() as { feeds: Array<Record<string, unknown>> };
+      expect(legacyBody.feeds.length).toBe(1);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('the feed row cap counts only live (non-tombstoned) rows', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'cap-live--');
+      const now = Date.now();
+      for (let i = 0; i < 5; i++) {
+        await push(mf, key, { feeds: [feedPayload(`cap-${i}`, `https://ex.com/cap-${i}`, now)] });
+      }
+      for (let i = 0; i < 3; i++) {
+        await push(mf, key, {
+          feeds: [{ feedId: `cap-${i}`, feedUrl: { value: `https://ex.com/cap-${i}`, at: now }, deleted: { value: 1, at: now + 100 } }],
+        });
+      }
+      const d1 = await mf.getD1Database('DB');
+      const total = await d1.prepare('SELECT COUNT(*) AS n FROM feeds WHERE sync_key = ?').bind(key).first<{ n: number }>();
+      const live = await d1.prepare('SELECT COUNT(*) AS n FROM feeds WHERE sync_key = ? AND deleted = 0').bind(key).first<{ n: number }>();
+      expect(total?.n).toBe(5);
+      expect(live?.n).toBe(2);
     } finally {
       await mf.dispose();
     }

@@ -72,7 +72,7 @@ function parseTags(s: string | null | undefined): string[] | undefined {
   return undefined;
 }
 
-export async function applyRemoteState(payload: RemotePayload): Promise<void> {
+export async function applyRemoteState(payload: RemotePayload, serverOffset = 0): Promise<void> {
   // 1) Feeds.
   const localFeeds = await listFeeds();
   const localById = new Map<string, Feed>(localFeeds.map((f) => [f.id, f]));
@@ -82,6 +82,20 @@ export async function applyRemoteState(payload: RemotePayload): Promise<void> {
   }
   const tombstonedForUnsubscribe: string[] = [];
   for (let rf of payload.feeds) {
+    // Convert remote stamps to the local clock frame so every comparison
+    // against local stamps (userMutationTime, newer()) is skew-correct.
+    if (serverOffset !== 0) {
+      rf = {
+        ...rf,
+        feed_url_at: rf.feed_url_at != null ? rf.feed_url_at - serverOffset : rf.feed_url_at,
+        folder_at: rf.folder_at != null ? rf.folder_at - serverOffset : rf.folder_at,
+        title_at: rf.title_at != null ? rf.title_at - serverOffset : rf.title_at,
+        html_url_at: rf.html_url_at != null ? rf.html_url_at - serverOffset : rf.html_url_at,
+        tags_at: rf.tags_at != null ? rf.tags_at - serverOffset : rf.tags_at,
+        deleted_at: rf.deleted_at != null ? rf.deleted_at - serverOffset : rf.deleted_at,
+        row_at: rf.row_at - serverOffset,
+      };
+    }
     let local = localById.get(rf.feed_id);
 
     // Deduplicate by URL: if the remote feed matches a local feed by URL

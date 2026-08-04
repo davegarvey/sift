@@ -197,6 +197,103 @@ describe('applyRemoteState', () => {
     expect(feeds.length).toBe(1);
   });
 
+  it('normalizes remote stamps to the local frame via the server offset (tombstone applies)', async () => {
+    // Device clock is 3s fast: offset = serverTime - Date.now() = -3000.
+    // Remote stamps are in the server frame; local stamps in the local frame.
+    const feedId = crypto.randomUUID();
+    await upsertFeed({
+      id: feedId,
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      modifiedAt: 1000,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 900,
+    });
+    await applyRemoteState(
+      {
+        serverTime: 2000,
+        feeds: [
+          {
+            feed_id: feedId,
+            feed_url: 'https://example.com/feed.xml',
+            row_at: 5000,
+            deleted: 1,
+            deleted_at: 5000,
+          },
+        ],
+        flags: [],
+      },
+      -3000,
+    );
+    // deleted_at in the local frame = 5000 - (-3000) = 8000 > modifiedAt 1000.
+    const feeds = await listFeeds();
+    expect(feeds.length).toBe(0);
+  });
+
+  it('normalizes remote stamps to the local frame via the server offset (touch wins)', async () => {
+    const feedId = crypto.randomUUID();
+    await upsertFeed({
+      id: feedId,
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      modifiedAt: 9000,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 900,
+    });
+    await applyRemoteState(
+      {
+        serverTime: 2000,
+        feeds: [
+          {
+            feed_id: feedId,
+            feed_url: 'https://example.com/feed.xml',
+            row_at: 5000,
+            deleted: 1,
+            deleted_at: 5000,
+          },
+        ],
+        flags: [],
+      },
+      -3000,
+    );
+    // deleted_at in the local frame = 8000 < modifiedAt 9000 → keep.
+    const feeds = await listFeeds();
+    expect(feeds.length).toBe(1);
+  });
+
+  it('stores merged per-field timestamps in the local frame', async () => {
+    const feedId = crypto.randomUUID();
+    await upsertFeed({
+      id: feedId,
+      url: 'https://example.com/feed.xml',
+      title: 'Example',
+      tags: ['old'],
+      tagsAt: 100,
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 900,
+    });
+    await applyRemoteState(
+      {
+        serverTime: 2000,
+        feeds: [
+          {
+            feed_id: feedId,
+            feed_url: 'https://example.com/feed.xml',
+            tags: JSON.stringify(['new']),
+            tags_at: 5000,
+            row_at: 5000,
+          },
+        ],
+        flags: [],
+      },
+      -3000,
+    );
+    const feed = await getFeedByUrl('https://example.com/feed.xml');
+    expect(feed?.tags).toEqual(['new']);
+    // tags_at stored in the local frame: 5000 - (-3000) = 8000.
+    expect(feed?.tagsAt).toBe(8000);
+  });
+
   it('applies a remote flag to an existing item', async () => {
     const feedId = crypto.randomUUID();
     await upsertFeed({

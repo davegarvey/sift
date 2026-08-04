@@ -101,6 +101,8 @@ export interface AppSettings {
   syncKey?: string | null;
   /** Monotonic server timestamp of the last successful pull. */
   lastSyncAt?: number | null;
+  /** Server-clock offset (serverTime - Date.now()) measured at the last successful pull. */
+  serverOffset?: number | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -111,4 +113,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mcpEnabled: false,
   syncKey: null,
   lastSyncAt: null,
+  serverOffset: null,
 };

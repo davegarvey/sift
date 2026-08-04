@@ -428,9 +428,9 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       }
     }
 
-    // Per-user row cap check (D6-routed subscribes insert no rows).
+    // Per-user row cap check (D6-routed subscribes insert no rows; tombstones are transient).
     const [feedCount, flagCount] = await Promise.all([
-      db.prepare('SELECT COUNT(*) AS n FROM feeds WHERE sync_key = ?').bind(syncKey).first<{ n: number }>(),
+      db.prepare('SELECT COUNT(*) AS n FROM feeds WHERE sync_key = ? AND deleted = 0').bind(syncKey).first<{ n: number }>(),
       db.prepare('SELECT COUNT(*) AS n FROM flags WHERE sync_key = ?').bind(syncKey).first<{ n: number }>(),
     ]);
     const projectedFeeds = (feedCount?.n ?? 0) + feeds.length - d6Routed;
@@ -439,9 +439,13 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       return new Response('Per-user row cap exceeded', { status: 413 });
     }
 
+    // Assign the server monotonic batch time BEFORE building statements:
+    // every row touched by this batch shares one row_at (delivery once per
+    // batch, arrival-ordered).
+    const batchT = await nextMonotonicTime(db);
+
     // Build batch.
     const stmts: D1PreparedStatement[] = [];
-    let maxAt = 0;
 
     for (let i = 0; i < feeds.length; i++) {
       const f = feeds[i];
@@ -477,7 +481,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(f.feedUrl.at, f.feedUrl.value);
         fieldBinds.push(f.feedUrl.at, f.feedUrl.at);
-        maxAt = Math.max(maxAt, f.feedUrl.at);
       }
       if (f.folder !== undefined) {
         fieldSets.push(
@@ -486,7 +489,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(f.folder.at, f.folder.value === null ? null : JSON.stringify(f.folder.value));
         fieldBinds.push(f.folder.at, f.folder.at);
-        maxAt = Math.max(maxAt, f.folder.at);
       }
       if (f.title !== undefined) {
         fieldSets.push(
@@ -495,7 +497,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(f.title.at, f.title.value);
         fieldBinds.push(f.title.at, f.title.at);
-        maxAt = Math.max(maxAt, f.title.at);
       }
       if (f.htmlUrl !== undefined) {
         fieldSets.push(
@@ -504,7 +505,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(f.htmlUrl.at, f.htmlUrl.value);
         fieldBinds.push(f.htmlUrl.at, f.htmlUrl.at);
-        maxAt = Math.max(maxAt, f.htmlUrl.at);
       }
       if (f.tags !== undefined) {
         fieldSets.push(
@@ -513,7 +513,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(f.tags.at, f.tags.value === null ? null : JSON.stringify(f.tags.value));
         fieldBinds.push(f.tags.at, f.tags.at);
-        maxAt = Math.max(maxAt, f.tags.at);
       }
       if (f.deleted !== undefined) {
         fieldSets.push(
@@ -522,7 +521,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(f.deleted.at, f.deleted.value);
         fieldBinds.push(f.deleted.at, f.deleted.at);
-        maxAt = Math.max(maxAt, f.deleted.at);
       }
       stmts.push(
         db
@@ -534,7 +532,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       stmts.push(
         db
           .prepare('UPDATE feeds SET row_at = ? WHERE sync_key = ? AND feed_id = ? AND ? > COALESCE(row_at, 0)')
-          .bind(maxAt, syncKey, fId, maxAt),
+          .bind(batchT, syncKey, fId, batchT),
       );
       assertNoUrlLog(f.feedUrl?.value ?? '');
       assertNoUrlLog(f.htmlUrl?.value ?? '');
@@ -556,7 +554,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           .prepare(
             'UPDATE feeds SET deleted = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted END, deleted_at = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted_at END, row_at = CASE WHEN ? > row_at THEN ? ELSE row_at END WHERE sync_key = ? AND feed_url = ? AND feed_id != ?',
           )
-          .bind(stamp, 1, stamp, stamp, stamp, stamp, syncKey, url, inBatchTombstones.get(url) ?? ''),
+          .bind(stamp, 1, stamp, stamp, batchT, batchT, syncKey, url, inBatchTombstones.get(url) ?? ''),
       );
     }
 
@@ -576,7 +574,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(g.read.at, g.read.value);
         fieldBinds.push(g.read.at, g.read.at);
-        maxAt = Math.max(maxAt, g.read.at);
       }
       if (g.starred !== undefined) {
         fieldSets.push(
@@ -585,7 +582,6 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
         fieldBinds.push(g.starred.at, g.starred.value);
         fieldBinds.push(g.starred.at, g.starred.at);
-        maxAt = Math.max(maxAt, g.starred.at);
       }
       stmts.push(
         db
@@ -595,17 +591,9 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       stmts.push(
         db
           .prepare('UPDATE flags SET row_at = ? WHERE sync_key = ? AND item_id = ? AND ? > COALESCE(row_at, 0)')
-          .bind(maxAt, syncKey, g.itemId, maxAt),
+          .bind(batchT, syncKey, g.itemId, batchT),
       );
       assertNoUrlLog(g.feedId);
-    }
-
-    // Assign a server monotonic timestamp for this batch (used as row_at for new rows).
-    if (stmts.length > 0) {
-      const batchT = await nextMonotonicTime(db);
-      maxAt = Math.max(maxAt, batchT);
-      // No-op consume of the timestamp so the counter still advances even on pure-overwrite pushes.
-      void maxAt;
     }
 
     await db.batch(stmts);
@@ -639,11 +627,11 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
 
     const [feedsRes, flagsRes, serverTime] = await Promise.all([
       db
-        .prepare('SELECT * FROM feeds WHERE sync_key = ? AND row_at > ? ORDER BY row_at ASC')
+        .prepare('SELECT * FROM feeds WHERE sync_key = ? AND row_at >= ? ORDER BY row_at ASC')
         .bind(syncKey, since)
         .all(),
       db
-        .prepare('SELECT * FROM flags WHERE sync_key = ? AND row_at > ? ORDER BY row_at ASC')
+        .prepare('SELECT * FROM flags WHERE sync_key = ? AND row_at >= ? ORDER BY row_at ASC')
         .bind(syncKey, since)
         .all(),
       currentMonotonicTime(db),

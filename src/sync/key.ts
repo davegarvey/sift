@@ -79,3 +79,14 @@ export async function setStoredLastSyncAt(value: number | null): Promise<void> {
   const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
   await setMeta(SETTINGS_KEY, { ...stored, lastSyncAt: value });
 }
+
+export async function getStoredServerOffset(): Promise<number> {
+  const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
+  const v = stored.serverOffset;
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+export async function setStoredServerOffset(value: number | null): Promise<void> {
+  const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
+  await setMeta(SETTINGS_KEY, { ...stored, serverOffset: value });
+}

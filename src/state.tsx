@@ -425,7 +425,7 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const disableSync = async () => {
-    await updateSettingsWith({ syncKey: null, lastSyncAt: null });
+    await updateSettingsWith({ syncKey: null, lastSyncAt: null, serverOffset: null });
     clearAllDirty();
   };
 

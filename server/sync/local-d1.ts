@@ -228,6 +228,30 @@ export class LocalD1Database {
 
     const updated: Record<string, unknown>[] = [];
 
+    // Special case: the monotonic counters table uses wall-anchored max
+    // forms (`value = CASE WHEN value + 1 > ? THEN value + 1 ELSE ? END`
+    // and `value = CASE WHEN ? > value THEN ? ELSE value END`) that the
+    // generic CASE path would mis-apply (it treats the params as an at
+    // pair and writes to a `value_at` column).
+    if (tableName === 'counters' && /^value\s*=\s*CASE WHEN/.test(assignments.trim())) {
+      for (const [, row] of table) {
+        if (!this._matchesWhere(row, whereClause, params, setParamCount)) continue;
+        const current = (row.value as number) ?? 0;
+        const param = params[0] as number | undefined;
+        if (param == null) continue;
+        if (/value \+ 1 > \?/.test(assignments)) {
+          row.value = Math.max(current + 1, param);
+        } else {
+          row.value = Math.max(current, param);
+        }
+        updated.push(row);
+      }
+      if (returningMatch) {
+        return updated.length > 0 ? [updated[updated.length - 1]] : [];
+      }
+      return updated;
+    }
+
     for (const [, row] of table) {
       if (!this._matchesWhere(row, whereClause, params, setParamCount)) continue;
 

@@ -1,15 +1,16 @@
 import 'fake-indexeddb/auto';
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { Miniflare } from 'miniflare';
 import * as esbuild from 'esbuild';
 import path from 'path';
 import { getDb } from '../src/db/open';
-import { upsertFeed, listFeeds } from '../src/db/feeds';
+import { upsertFeed, listFeeds, getFeedByUrl } from '../src/db/feeds';
 import { setFlag } from '../src/db/flags';
 import { setStoredSyncKey, setStoredLastSyncAt, clearStoredSyncKey } from '../src/sync/key';
 import { triggerFirstTime } from '../src/sync/init';
 import { clearAllDirty, enqueueFlag } from '../src/sync/queue';
 import { setMeta } from '../src/db/meta';
+import { updateFeedMeta, unsubscribeFeed } from '../src/feeds/service';
 
 let workerCode: string;
 
@@ -937,5 +938,100 @@ describe('sync pairing first-time setup', () => {
     await withMfFetch(() => triggerFirstTime());
     const localFeeds = await listFeeds();
     expect(localFeeds.some((f) => f.url === url)).toBe(true);
+  });
+
+  it('converges edits and deletions between devices with skewed clocks', async () => {
+    const key = makeSyncKey('skew-111--');
+    const url = 'https://ex.com/skew';
+    const feedId = crypto.randomUUID();
+
+    // Simulate a +5s-fast clock on device A and a -3s-slow clock on device B
+    // by advancing the client Date while the miniflare server keeps its real
+    // clock. The client's measured server offset (serverTime - Date.now())
+    // then corrects every stamp conversion.
+    // Fake only Date (client stamps), keeping real timers — miniflare and
+    // the client's retry sleeps need the real event loop.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const real = Date.now();
+      await mf.dispatchFetch('http://localhost/sync/register', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': key },
+      });
+
+      // --- Device A (clock +5s): empty first-time setup measures its offset
+      //     BEFORE any push, so outgoing stamps are corrected from the start ---
+      vi.setSystemTime(real + 5000);
+      await setStoredSyncKey(key);
+      await setStoredLastSyncAt(null);
+      await withMfFetch(() => triggerFirstTime());
+
+      // --- Device A: subscribes ---
+      await upsertFeed({
+        id: feedId,
+        url,
+        title: 'Skew Feed',
+        modifiedAt: Date.now(),
+        learnedIntervalMs: 3_600_000,
+        lastFetched: null,
+      });
+      await withMfFetch(() => triggerFirstTime());
+      // triggerFirstTime also pushes the local feed (wire stamp server-frame).
+
+      // --- Device A: renames the feed ---
+      vi.setSystemTime(real + 7000);
+      await updateFeedMeta(feedId, { title: 'Skew Feed Renamed' });
+      await withMfFetch(async () => {
+        const { flushNow } = await import('../src/sync/push');
+        await flushNow();
+      });
+
+      // --- Device B (clock -3s): pulls, sees the rename ---
+      const db = await getDb();
+      for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+        if (db.objectStoreNames.contains(store)) {
+          await db.clear(store);
+        }
+      }
+      vi.setSystemTime(real - 3000);
+      await setStoredSyncKey(key);
+      await setStoredLastSyncAt(null);
+      await withMfFetch(() => triggerFirstTime());
+      let local = await getFeedByUrl(url);
+      expect(local?.title).toBe('Skew Feed Renamed');
+
+      // --- Device B: edits tags (its clock is 3s slow) ---
+      vi.setSystemTime(real - 1000);
+      await updateFeedMeta(feedId, { tags: ['skewed'] });
+      await withMfFetch(async () => {
+        const { flushNow } = await import('../src/sync/push');
+        await flushNow();
+      });
+
+      // --- Device A: pulls and sees B's tags ---
+      await setStoredSyncKey(key);
+      await setStoredLastSyncAt(null);
+      await withMfFetch(() => triggerFirstTime());
+      local = await getFeedByUrl(url);
+      expect(local?.tags).toEqual(['skewed']);
+
+      // --- Device A: deletes the feed ---
+      vi.setSystemTime(real + 9000);
+      await unsubscribeFeed(feedId);
+      await withMfFetch(async () => {
+        const { flushNow } = await import('../src/sync/push');
+        await flushNow();
+      });
+
+      // --- Device B: pulls; the tombstone applies (B never touched it after
+      //     the delete) despite its 3s-slow clock ---
+      await setStoredSyncKey(key);
+      await setStoredLastSyncAt(null);
+      await withMfFetch(() => triggerFirstTime());
+      const localFeeds = await listFeeds();
+      expect(localFeeds.some((f) => f.url === url)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
