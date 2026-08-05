@@ -11,7 +11,16 @@ export interface ConditionalHeaders {
 export type FeedFetchResult =
   | { kind: 'not-modified' }
   | { kind: 'modified'; body: string; etag?: string | null; lastModified?: string | null }
-  | { kind: 'error'; status: number; message: string };
+  | { kind: 'error'; status: number; message: string; retryAfterMs?: number };
+
+function parseRetryAfter(header: string | null): number | undefined {
+  if (header == null) return undefined;
+  const secs = Number.parseInt(header, 10);
+  if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
+  const dateMs = Date.parse(header);
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  return undefined;
+}
 
 export async function fetchFeed(
   url: string,
@@ -33,7 +42,12 @@ export async function fetchFeed(
     return { kind: 'not-modified' };
   }
   if (res.status < 200 || res.status >= 300) {
-    return { kind: 'error', status: res.status, message: `HTTP ${res.status}` };
+    return {
+      kind: 'error',
+      status: res.status,
+      message: `HTTP ${res.status}`,
+      retryAfterMs: res.status === 429 ? parseRetryAfter(res.headers.get('Retry-After')) : undefined,
+    };
   }
 
   const body = await res.text();

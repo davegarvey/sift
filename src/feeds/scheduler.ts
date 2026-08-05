@@ -4,11 +4,13 @@ import { bulkUpsertItems } from '../db/items';
 import { runEviction } from '../articles/eviction';
 import { fetchFeed } from './fetch';
 import { parseFeed, parsedToItems } from './parse';
-import type { Feed } from '../db/types';
+import type { Feed, FeedRefreshError } from '../db/types';
 import {
   DEFAULT_LEARNED_INTERVAL_MS,
   MIN_LEARNED_INTERVAL_MS,
-  MAX_LEARNED_INTERVAL_MS,
+  ERROR_RETRY_FLOOR_MS,
+  ERROR_RETRY_MAX_MS,
+  RETRY_AFTER_CLAMP_MS,
 } from '../db/types';
 import { isIdle } from '../util/idle';
 
@@ -52,6 +54,7 @@ export async function refreshStaleFeeds(forceAll = false): Promise<void> {
   const stale = feeds.filter((f) => {
     if (!f.url) return false;
     if (forceAll) return true;
+    if (f.refreshError) return f.refreshError.retryAt <= now;
     if (f.lastFetched == null) return true;
     return f.lastFetched + f.learnedIntervalMs < now;
   });
@@ -79,6 +82,36 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
+function nextRetryAt(status: number, retryAfterMs: number | undefined, attempts: number): number {
+  const now = Date.now();
+  if (status === 429 && retryAfterMs !== undefined) {
+    const delay = Math.min(Math.max(0, retryAfterMs), RETRY_AFTER_CLAMP_MS);
+    return now + delay;
+  }
+  const backoff = Math.min(ERROR_RETRY_FLOOR_MS * 2 ** (attempts - 1), ERROR_RETRY_MAX_MS);
+  return now + backoff;
+}
+
+async function recordFeedError(feed: Feed, message: string, status: number, retryAfterMs?: number): Promise<void> {
+  setFeedErrors((prev) => ({ ...prev, [feed.id]: message }));
+  const attempts = (feed.refreshError?.attempts ?? 0) + 1;
+  const refreshError: FeedRefreshError = {
+    retryAt: nextRetryAt(status, retryAfterMs, attempts),
+    attempts,
+    lastStatus: status,
+    lastRetryAfter: retryAfterMs ?? null,
+  };
+  await updateFeed(feed.id, { refreshError, lastError: message });
+}
+
+function clearFeedError(feed: Feed): void {
+  setFeedErrors((prev) => {
+    const next = { ...prev };
+    delete next[feed.id];
+    return next;
+  });
+}
+
 export async function refreshFeed(feed: Feed): Promise<void> {
   setInFlight((n) => n + 1);
   setFetchingFeeds((prev) => new Set(prev).add(feed.id));
@@ -88,34 +121,21 @@ export async function refreshFeed(feed: Feed): Promise<void> {
       lastModified: feed.lastModified,
     });
     if (result.kind === 'error') {
-      setFeedErrors((prev) => ({ ...prev, [feed.id]: result.message }));
-      const nextInterval = Math.min(
-        MAX_LEARNED_INTERVAL_MS,
-        Math.max(feed.learnedIntervalMs * 2, MIN_LEARNED_INTERVAL_MS),
-      );
-      await updateFeed(feed.id, {
-        lastFetched: Date.now(),
-        learnedIntervalMs: nextInterval,
-        lastError: result.message,
-      });
+      await recordFeedError(feed, result.message, result.status, result.retryAfterMs);
       return;
     }
     if (result.kind === 'not-modified') {
       await updateFeed(feed.id, {
         lastFetched: Date.now(),
         lastError: null,
+        refreshError: null,
       });
-      setFeedErrors((prev) => {
-        const next = { ...prev };
-        delete next[feed.id];
-        return next;
-      });
+      clearFeedError(feed);
       return;
     }
     const parsed = parseFeed(result.body);
     if (!parsed) {
-      setFeedErrors((prev) => ({ ...prev, [feed.id]: 'Failed to parse feed' }));
-      await updateFeed(feed.id, { lastError: 'Failed to parse feed' });
+      await recordFeedError(feed, 'Failed to parse feed', 200);
       return;
     }
     const items = parsedToItems(parsed, feed.id);
@@ -125,7 +145,10 @@ export async function refreshFeed(feed: Feed): Promise<void> {
     const lastItemPublishedAt = items.length
       ? Math.max(...items.map((i) => i.publishedAt))
       : feed.lastItemPublishedAt ?? null;
-    const learnedIntervalMs = adaptInterval(feed, items, lastItemPublishedAt);
+    const learnedIntervalMs =
+      feed.learnedIntervalMs > DEFAULT_LEARNED_INTERVAL_MS
+        ? DEFAULT_LEARNED_INTERVAL_MS
+        : adaptInterval(feed, items, lastItemPublishedAt);
     await upsertFeed({
       ...feed,
       title: feed.title || parsed.title,
@@ -137,12 +160,9 @@ export async function refreshFeed(feed: Feed): Promise<void> {
       lastItemPublishedAt,
       learnedIntervalMs,
       lastError: null,
+      refreshError: null,
     });
-    setFeedErrors((prev) => {
-      const next = { ...prev };
-      delete next[feed.id];
-      return next;
-    });
+    clearFeedError(feed);
   } finally {
     setFetchingFeeds((prev) => {
       const next = new Set(prev);

@@ -97,6 +97,7 @@ export async function changeFeedUrl(feedId: string, newUrl: string): Promise<voi
     modifiedAt: now,
     etag: null,
     lastModified: null,
+    refreshError: null,
   });
   enqueueFeed({
     feedId,
