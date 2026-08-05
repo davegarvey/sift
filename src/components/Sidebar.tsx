@@ -208,6 +208,14 @@ interface FeedRowProps {
 function FeedRow(props: FeedRowProps) {
   const error = () => props.errors[props.feed.id];
   const isFetching = () => props.fetchingFeeds.has(props.feed.id);
+  const retryLabel = () => {
+    const err = props.feed.refreshError;
+    if (!err) return null;
+    const remaining = err.retryAt - Date.now();
+    if (remaining <= 0) return null;
+    const mins = Math.ceil(remaining / 60_000);
+    return mins >= 60 ? `Retrying in ${Math.round(mins / 60)}h` : `Retrying in ${mins}m`;
+  };
   return (
     <div class={`feed ${props.active ? 'active' : ''}`} onClick={props.onClick}>
       <span class="title">{props.feed.title}</span>
@@ -215,7 +223,7 @@ function FeedRow(props: FeedRowProps) {
         <span class="fetching-spinner" title="Fetching…" />
       </Show>
       <Show when={error()}>
-        <span class="error-mark" data-error={error()} title="Last refresh failed"><TriangleAlert size={12} /></span>
+        <span class="error-mark" data-error={error()} title={retryLabel() ?? 'Last refresh failed'}><TriangleAlert size={12} /></span>
       </Show>
       <button class="edit-btn" title={`Edit ${props.feed.title}`} onClick={(e) => { e.stopPropagation(); props.onEdit(); }}>
         <MoreHorizontal size={14} />

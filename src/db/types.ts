@@ -36,10 +36,23 @@ export interface Feed {
   learnedIntervalMs: number;
   /** Last error message from a refresh attempt, null if none. Surfaces in sidebar. */
   lastError?: string | null;
+  /** Local-only error-backoff state for refresh attempts. Never synced. Null when healthy. */
+  refreshError?: FeedRefreshError | null;
   /** ISO timestamp of the most recent item observed, for cadence learning. */
   lastItemPublishedAt?: number | null;
   /** Daily publish count observations used by the cadence-learning heuristic. */
   recentPublishCounts?: number[];
+}
+
+export interface FeedRefreshError {
+  /** Epoch ms before which the feed must not be refreshed again. */
+  retryAt: number;
+  /** Consecutive failure count. Increments on every failure; cleared on success. */
+  attempts: number;
+  /** HTTP status of the last failure (0 = network error, 200 = parse failure). */
+  lastStatus: number | null;
+  /** Upstream Retry-After delay in ms from the last 429, null if none. */
+  lastRetryAfter: number | null;
 }
 
 export interface Item {
@@ -83,6 +96,13 @@ export const DB_VERSION = 6;
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;
 export const MAX_LEARNED_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/** Error-backoff floor: first generic-error retry waits at least this long. */
+export const ERROR_RETRY_FLOOR_MS = 30 * 60 * 1000;
+/** Error-backoff ceiling for generic errors: guarantees ≥4 attempts/day while failing. */
+export const ERROR_RETRY_MAX_MS = 6 * 60 * 60 * 1000;
+/** Upper clamp for an honored upstream Retry-After (overrides the generic ceiling). */
+export const RETRY_AFTER_CLAMP_MS = 24 * 60 * 60 * 1000;
 
 export const STORAGE_SOFT_CAP_RATIO = 0.05;
 export const EVICTION_CHUNK_SIZE = 500;
