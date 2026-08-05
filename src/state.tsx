@@ -124,7 +124,7 @@ export const AppProvider: ParentComponent = (props) => {
     currentItem: null,
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
-    focusedIndex: 0,
+    focusedIndex: -1,
     starredOnly: false,
     modal: { kind: 'none' },
     returnToItemId: null,
@@ -280,7 +280,7 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const setRiverScope = (feedId: string | null) => {
-    setState({ riverScope: feedId, activeTags: [], focusedIndex: 0, view: 'river' });
+    setState({ riverScope: feedId, activeTags: [], focusedIndex: -1, view: 'river' });
   };
 
   const toggleTag = (tag: string) => {
@@ -288,22 +288,22 @@ export const AppProvider: ParentComponent = (props) => {
     const idx = current.indexOf(tag);
     if (idx >= 0) {
       const next = current.filter((t) => t !== tag);
-      setState({ activeTags: next, riverScope: null, focusedIndex: 0 });
+      setState({ activeTags: next, riverScope: null, focusedIndex: -1 });
       if (next.length > 0) void reloadItems();
     } else {
-      setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: 0 });
+      setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: -1 });
       void reloadItems();
     }
   };
 
   const toggleStarFilter = () => {
-    setState({ starredOnly: !state.starredOnly, focusedIndex: 0 });
+    setState({ starredOnly: !state.starredOnly, focusedIndex: -1 });
     void reloadItems();
   };
 
   const clearTags = () => {
     if (state.activeTags.length === 0) return;
-    setState({ activeTags: [], focusedIndex: 0 });
+    setState({ activeTags: [], focusedIndex: -1 });
     void reloadItems();
   };
 

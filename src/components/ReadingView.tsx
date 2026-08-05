@@ -26,7 +26,7 @@ export function ReadingView() {
 
   const hasNext = createMemo(() => {
     const list = ctx.items();
-    return ctx.state.focusedIndex < list.length - 1 && list.length > 1;
+    return ctx.state.focusedIndex >= 0 && ctx.state.focusedIndex < list.length - 1 && list.length > 1;
   });
 
   const navigate = (offset: number) => {
