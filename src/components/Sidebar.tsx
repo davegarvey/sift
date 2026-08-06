@@ -56,15 +56,15 @@ export function Sidebar(props: { onNavigate?: () => void }) {
         <div class="section">
           <div class="heading-row">
             <div class="heading">Feeds</div>
+            <button
+              class="heading-action"
+              title="Add feed"
+              aria-label="Add feed"
+              onClick={() => ctx.openModal({ kind: 'add-feed' })}
+            >
+              <Plus size={14} />
+            </button>
             <Show when={ctx.feeds().length > 0}>
-              <button
-                class="heading-action"
-                title="Add feed"
-                aria-label="Add feed"
-                onClick={() => ctx.openModal({ kind: 'add-feed' })}
-              >
-                <Plus size={14} />
-              </button>
               <button
                 class="heading-action"
                 title={refreshing() ? 'Refreshing…' : 'Refresh all feeds'}
@@ -123,11 +123,6 @@ export function Sidebar(props: { onNavigate?: () => void }) {
                 />
               )}
             </For>
-            <Show when={ctx.feeds().length === 0}>
-              <button class="empty-state-cta" onClick={() => ctx.openModal({ kind: 'add-feed' })}>
-                <Plus size={14} /> Add your first feed
-              </button>
-            </Show>
           </div>
         </div>
 

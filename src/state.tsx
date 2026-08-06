@@ -62,7 +62,7 @@ export interface AppState {
   returnToItemId: string | null;
 }
 
-interface AppContext {
+export interface AppContext {
   state: AppState;
   setState: (patch: Partial<AppState>) => void;
   feeds: () => Feed[];

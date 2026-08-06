@@ -154,21 +154,25 @@ export function River() {
     el.addEventListener('pointercancel', cleanup);
   };
 
-  const showLoading = () => !ctx.hydrated() || shouldShowLoading();
-
-  const shouldShowLoading = () => {
-    if (visibleItems().length > 0) return false;
-    if (ctx.feeds().length === 0) return false;
+  // Reactive loading/empty/items decision. A memo means the Loading→Empty
+  // transition fires when `hydrated` flips even if the (empty) list identity
+  // stays the same — an inline expression in <For fallback> only re-evaluates
+  // when the list changes and would stick on "Loading…" for an empty boot.
+  const listState = createMemo<'loading' | 'empty' | 'items'>(() => {
+    if (visibleItems().length > 0) return 'items';
+    if (!ctx.hydrated()) return 'loading';
+    if (ctx.feeds().length === 0) return 'empty';
     const fetching = ctx.fetchingFeeds();
-    if (ctx.state.riverScope == null) return fetching.size > 0;
-    return fetching.has(ctx.state.riverScope);
-  };
+    if (ctx.state.riverScope == null) return fetching.size > 0 ? 'loading' : 'empty';
+    return fetching.has(ctx.state.riverScope) ? 'loading' : 'empty';
+  });
 
   return (
     <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
       <div class="river-inner">
-        <For each={visibleItems()} fallback={showLoading() ? <LoadingMessage /> : <EmptyState />}>
-          {(item, idx) => (
+        <Show when={listState() === 'items'} fallback={listState() === 'loading' ? <LoadingMessage /> : <EmptyState />}>
+          <For each={visibleItems()}>
+            {(item, idx) => (
             <div class="swipe-container">
               <div class="swipe-reveal left">
                 <CircleCheck size={22} />
@@ -235,7 +239,8 @@ export function River() {
               </article>
             </div>
           )}
-        </For>
+          </For>
+        </Show>
       </div>
     </main>
   );
@@ -262,7 +267,9 @@ function EmptyState() {
     return (
       <div class="empty-state">
         <div class="headline">Welcome to Sift</div>
-        <a class="link" onClick={() => ctx.openModal({ kind: 'add-feed' })}>Add your first feed</a>
+        <a class="primary-cta" onClick={() => ctx.openModal({ kind: 'add-feed' })}>
+          Add your first feed
+        </a>
       </div>
     );
   }

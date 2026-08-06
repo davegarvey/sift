@@ -35,16 +35,20 @@ The sidebar SHALL keep the Feeds heading row and the tag chips fixed while the f
 - **THEN** only the feed list scrolls, and the header, tag chips, and bottom action group stay in place
 
 ### Requirement: Empty-state add feed
-When no feeds are subscribed, the sidebar SHALL hide the heading action icons and SHALL render a prominent add-feed button in the feed list area as the only add-feed affordance. This state SHALL apply only when there are zero subscribed feeds, not when a tag filter matches no feeds.
+When no feeds are subscribed, the sidebar SHALL keep the add-feed icon visible and SHALL hide the refresh icon. The sidebar SHALL NOT render an add-feed CTA in the feed list; the primary add-feed affordance on a fresh install is the river empty-state CTA. These rules SHALL apply only when there are zero subscribed feeds, not when a tag filter matches no feeds.
 
 #### Scenario: Fresh install
 - **WHEN** the user has no subscribed feeds and opens the sidebar
-- **THEN** the Feeds heading row shows no action icons, and a prominent "Add your first feed" button appears in the feed list area
+- **THEN** the Feeds heading row shows the add-feed icon and no refresh icon, and the river empty state shows an "Add your first feed" button
+
+#### Scenario: Adding a feed from the heading
+- **WHEN** the user activates the add-feed icon in the Feeds heading
+- **THEN** the add-feed modal opens
 
 #### Scenario: Adding the first feed
-- **WHEN** the user activates the "Add your first feed" button
+- **WHEN** the user activates the river's "Add your first feed" button
 - **THEN** the add-feed modal opens
 
 #### Scenario: Empty result from tag filter
 - **WHEN** feeds are subscribed but the active tag filter matches none of them
-- **THEN** the heading action icons remain visible and the "Add your first feed" empty-state button is not shown
+- **THEN** both heading action icons remain visible and no empty-state CTA is shown in the sidebar

@@ -14,7 +14,7 @@ Constraint: the sidebar is a single shared component for desktop (fixed column) 
 **Goals:**
 - Reclaim the two full-width CTA rows by moving Add feed and Refresh into the Feeds heading row as compact icon buttons.
 - Restrict scrolling to the feed list; keep the Feeds heading, CTA icons, and tag chips fixed.
-- Preserve first-run discoverability with a prominent "Add your first feed" empty-state CTA when zero feeds exist.
+- Preserve first-run discoverability via the river empty-state "Add your first feed" CTA (the sole add-feed affordance on a fresh install).
 - Keep existing behavior: refresh spinner + disabled state, aria-labels/tooltips, touch-friendly sizing.
 
 **Non-Goals:**
@@ -33,15 +33,15 @@ Two 28px icon buttons (Plus, RefreshIcon) in the heading row, styled like the ex
 *Alternatives:* Keep text labels (defeats the purpose). Show labels on wide screens only (sidebar width is fixed; adds conditional markup for little gain — rejected).
 
 **D3: Empty state = zero subscribed feeds.**
-`ctx.feeds().length === 0` (not `visibleFeeds()`), since tag filtering can empty the list while feeds exist. When empty: hide both heading icons and render a prominent "Add your first feed" button inside the feed-list area (only add-feed affordance, per user decision). When feeds exist but the active filter matches none, the empty-state CTA must NOT appear — the icons stay visible.
-*Alternatives:* Option A (always icon-only) hurt fresh-install discoverability. Option C (full-width labeled Add until first feed) is superseded by the empty-state CTA — same goal, one pattern instead of two — rejected.
+`ctx.feeds().length === 0` (not `visibleFeeds()`), since tag filtering can empty the list while feeds exist. When empty: the add-feed icon stays visible as a persistent affordance, and the refresh icon hides until at least one feed is subscribed (refresh of nothing is meaningless). No add-feed CTA is rendered in the sidebar feed list — the river empty state ("Welcome to Sift" / "Add your first feed") is the primary CTA on a fresh install. When feeds exist but the active filter matches none, both icons stay visible.
+*Alternatives:* Option A (always icon-only) hurt fresh-install discoverability. Option C (full-width labeled Add until first feed) superseded by the river empty-state CTA — same goal, one pattern instead of two — rejected. A sidebar empty-state CTA was implemented first, then removed as a duplicate of the river CTA (spec deviation). The heading refresh icon hiding until the first feed exists is a follow-up refinement (spec deviation).
 
 **D4: CTA styling follows the empty state, not the other way around.**
-The "Add your first feed" button is visually distinct — accent-tinted or bordered treatment using existing tokens (`--accent`, `--accent-dim`, `--surface`) — so a first-run user sees one clear call to action. The heading icons are quiet utility controls.
+The river's "Add your first feed" CTA reads as a quiet button — `--surface` background, muted accent border, accent text, hover to accent tint — visually distinct from plain links while fitting the app's quiet aesthetic. The heading icons are quiet utility controls.
 
 ## Risks / Trade-offs
 
-- [Icon-only CTAs are less discoverable for returning users] → Mitigated: tooltips, established collapsed-rail precedent, and the empty-state CTA covers the worst case (fresh install).
+- [Icon-only CTAs are less discoverable for returning users] → Mitigated: tooltips, established collapsed-rail precedent, and the river empty-state CTA covers the worst case (fresh install).
 - [Fixed tag-chip zone grows tall with many tags on narrow screens, shrinking the feed list] → Accepted trade-off, it is the requested behavior; chips are small and wrap.
 - [Nested scroll containers can double scrollbars] → `.feed-list` is the only inner scroller; the section no longer scrolls, so no nesting.
 - [Accessibility regression from label-less buttons] → `aria-label` + `title` on every heading CTA; keyboard focus styling carried over from collapse-button pattern.
