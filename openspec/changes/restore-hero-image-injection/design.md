@@ -11,7 +11,7 @@ The prior implementation handled this by injecting a hero `<img>` at the top of 
 **Goals:**
 - Restore the hero image injection for articles whose Readability output contains no images
 - Use the same `/img?url=` proxy pattern that the rest of the body uses — no `data:` URIs, no inline storage
-- Three-tier fallback: `og:image` → feed `thumbnail` → no hero
+- Hero source chain: `og:image` → feed `thumbnail` → high-signal in-page image → no hero
 - Keep the change small and self-contained: only `src/articles/extract.ts`
 
 **Non-Goals:**
@@ -31,14 +31,16 @@ The prior implementation handled this by injecting a hero `<img>` at the top of 
 - The query is a single `querySelector` against the already-parsed DOM — no additional fetch.
 
 **Single `injectHeroImageProxy` helper, scoped to `extract.ts`.**
-- Mirrors the original `injectHeroImage` function's responsibility: take HTML + a hero URL, return HTML with the hero prepended if no existing `<img>` exists.
-- Returns the input HTML unchanged when the body already contains images or the hero URL is falsy.
+- Mirrors the original `injectHeroImage` function's responsibility: take HTML + a hero URL, return HTML with the hero prepended when the rescue fires.
+- The guard is a three-step decision (updated by `fix-xkcd-comic-image`): (a) an existing image matches the hero URL (exact equality on `data-original-src`, else non-throwing decode of the `/img?url=` src) → unmodified; (b) any non-banner-proportioned image exists → unmodified — this containment gate guarantees healthy extractions are never touched; (c) otherwise (zero images or only banner-proportioned images, e.g. xkcd's 520×100 footer strips) → inject the hero as the first child of `<body>` and drop the banner images.
+- The hero URL chain is: `og:image` (absolutified; `http(s)` only) → feed `thumbnail` → first high-signal in-page image (ancestor `main`/`article`, a `2x` srcset descriptor token, or width/height both ≥ 200), scanned BEFORE `Readability.parse()` because this Readability version mutates the document in place.
 
 **No cache invalidation for previously-extracted articles.**
 - Articles extracted before this change have no hero in their cached `extractedHtml` (the prior change removed it). When those items are next opened, `openItemForReading` Path 2 (cached `extractedHtml`) takes priority and they continue to render without a hero. This is acceptable: the cache will refresh organically as items are evicted under the new global LRU policy, and a forced re-extraction pass would be a larger change than this fix warrants.
 
 ## Risks / Trade-offs
 
-- **`og:image` may not match the article's editorial intent** → Same risk as the original implementation; OG images are usually editorial and high-res, so this is a net improvement over a missing hero.
+- **`og:image` may not match the article's editorial intent** → Same risk as the original implementation; OG images are usually editorial and high-res, so this is a net improvement over a missing hero. The containment gate (step b above) means a hero is never injected over an extraction that already kept real content images.
 - **Proxy fetch failure for the hero image** → The browser will render a broken image icon. Acceptable: the previous implementation had the same risk (the data: URI would have been a 404), and the `/img?url=` proxy is now cached for 30 days so the first failure persists.
 - **Stale cached `extractedHtml` from the prior commit continues to show no hero** → Documented above; not worth a forced re-extraction for this fix.
+- **Banner cleanup false positive** (a legitimate thin image dropped) → Only fires when every remaining output image is banner-proportioned AND a hero was injected (the extraction already failed on images); ad proportions are a well-established signal. Spec'd in `fix-xkcd-comic-image`.

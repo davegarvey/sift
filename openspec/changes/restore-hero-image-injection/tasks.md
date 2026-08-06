@@ -16,3 +16,8 @@
 - [x] 3.2 Run `npm run lint` — zero new warnings
 - [x] 3.3 Run `npm test` — all 22 tests pass
 - [x] 3.4 Manual: open a BBC article in `npm run dev` and confirm a hero image appears at the top of the reading view
+
+## 4. Superseded by fix-xkcd-comic-image
+
+- [x] 4.1 Guard semantics updated by `fix-xkcd-comic-image` (URL-match + containment gate + banner cleanup); spec/design reflect the new behavior
+- [x] 4.2 `improve-article-images`'s `hero-image-injection` spec (old any-img rule, data: URI wording) is superseded by this change + `fix-xkcd-comic-image` — slated for archival; do NOT sync it to main specs

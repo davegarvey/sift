@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Inject hero image when extracted body has no images
 When `extractArticle` produces HTML whose images do not include the hero image URL AND whose images are all banner-proportioned or absent, the system SHALL inject a hero `<img>` element as the first child of `<body>`. When the HTML contains any non-banner-proportioned `<img>`, the system SHALL NOT modify the HTML.
@@ -73,14 +73,3 @@ A banner-proportioned image SHALL be an `<img>` whose `width` attribute parses t
 #### Scenario: No hero injected, no images removed
 - **WHEN** no hero `<img>` was injected AND the Readability output contains `<img src="..." width="520" height="100">` elements
 - **THEN** the returned HTML SHALL be unmodified
-
-### Requirement: OG image captured before Readability
-When `extractArticle` parses the article HTML, it SHALL query `<meta property="og:image">` from the parsed document BEFORE calling `Readability.parse()`, because Readability strips `<head>`.
-
-#### Scenario: OG image present in head
-- **WHEN** the article HTML contains `<meta property="og:image" content="https://example.com/hero.jpg">` in `<head>`
-- **THEN** `extractArticle` SHALL capture the URL `https://example.com/hero.jpg` for use as the hero image source
-
-#### Scenario: OG image absent
-- **WHEN** the article HTML has no `<meta property="og:image">` element
-- **THEN** `extractArticle` SHALL fall through to the feed `thumbnail` parameter, and SHALL fall through to no hero if neither is present
