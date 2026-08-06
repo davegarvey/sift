@@ -64,6 +64,10 @@ The `SyncJoinModal` SHALL include a "Scan QR" button that opens the camera-based
 ### Requirement: SyncShareModal displays pairing info
 The `SyncShareModal` SHALL display the pairing code and QR code, and auto-generate them when opened.
 
+#### Scenario: Intro text shown
+- **WHEN** the `SyncShareModal` opens
+- **THEN** the modal SHALL display a one-line intro stating that the user can type the code or scan the QR code on the other device
+
 #### Scenario: Code auto-generated on open
 - **WHEN** the `SyncShareModal` opens
 - **THEN** a new pairing code SHALL be generated automatically
