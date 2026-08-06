@@ -133,7 +133,7 @@ export async function refreshFeed(feed: Feed): Promise<void> {
       clearFeedError(feed);
       return;
     }
-    const parsed = parseFeed(result.body);
+    const parsed = parseFeed(result.body, feed.url);
     if (!parsed) {
       await recordFeedError(feed, 'Failed to parse feed', 200);
       return;

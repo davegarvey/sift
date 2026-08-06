@@ -39,7 +39,7 @@ export async function discoverFeed(url: string): Promise<DiscoveredFeed | null> 
 async function tryParse(url: string) {
   const result = await fetchFeed(url);
   if (result.kind !== 'modified') return null;
-  return parseFeed(result.body);
+  return parseFeed(result.body, url);
 }
 
 /**

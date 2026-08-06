@@ -27,21 +27,18 @@ export interface ParsedItem {
  * entry with the raw `content:encoded` / `content` HTML when present so the
  * reading view can prefer the feed's full content over Readability extraction.
  */
-export function parseFeed(xml: string): ParsedFeed | null {
+export function parseFeed(xml: string, baseUrl?: string): ParsedFeed | null {
   let data: FeedData;
   try {
     data = extractFromXml(xml, {
       descriptionMaxLen: 0,
+      baseUrl,
       getExtraEntryFields: (raw) => {
         // Pull `content:encoded` (RSS) or `content` (Atom) and any author info.
         const entry = raw as Record<string, unknown>;
         const contentEncoded = entry['content:encoded'];
-        const contentField = entry['content'];
-        const content =
-          contentField && typeof contentField === 'object'
-            ? (contentField as Record<string, unknown>)['#text'] ?? (contentField as Record<string, unknown>)['_text'] ?? (contentField as Record<string, unknown>)['_cdata'] ?? (contentField as Record<string, unknown>)['$t']
-            : contentField;
-        const html = typeof content === 'string' ? content : '';
+        const content = unwrapText(entry['content']);
+        const html = content && content.length > 0 ? content : '';
         const finalHtml = typeof contentEncoded === 'string' ? contentEncoded : html;
         const author = pickAuthor(entry);
         // The library auto-generates ids when `guid`/`id` is missing, but
@@ -59,7 +56,19 @@ export function parseFeed(xml: string): ParsedFeed | null {
         } else if (link) {
           stableGuid = link;
         }
-        const thumbnail = pickThumbnail(entry);
+        let thumbnail = pickThumbnail(entry);
+        if (!thumbnail) {
+          const summary = unwrapText(entry['summary']);
+          const description = unwrapText(entry['description']);
+          for (const source of [finalHtml, summary, description]) {
+            if (!source) continue;
+            const img = firstImgSrc(source, baseUrl);
+            if (img) {
+              thumbnail = img;
+              break;
+            }
+          }
+        }
         const result: Record<string, unknown> = {};
         if (finalHtml) result['_html'] = finalHtml;
         if (author) result['_author'] = author;
@@ -81,6 +90,33 @@ export function parseFeed(xml: string): ParsedFeed | null {
     description: data.description,
     items,
   };
+}
+
+function unwrapText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const node = value as Record<string, unknown>;
+    const text = node['#text'] ?? node['_text'] ?? node['_cdata'] ?? node['$t'];
+    return typeof text === 'string' ? text : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Find the first image URL in an HTML string. Strips HTML comments, then
+ * matches the first `<img src>` with either quote style, absolutifies it
+ * against `baseUrl`, and returns it only when it is an absolute http(s) URL.
+ */
+export function firstImgSrc(html: string, baseUrl?: string): string | undefined {
+  const withoutComments = html.replace(/<!--[\s\S]*?-->/g, '');
+  const match = withoutComments.match(/<img\b[^>]*src\s*=\s*(["'])(.*?)\1/i);
+  if (!match) return undefined;
+  try {
+    const absolute = new URL(match[2], baseUrl).toString();
+    return /^https?:/.test(absolute) ? absolute : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function pickThumbnail(entry: Record<string, unknown>): string | undefined {
