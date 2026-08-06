@@ -451,20 +451,23 @@ a:hover { text-decoration: underline; }
   color: var(--text);
 }
 
-.sidebar-action .refresh-icon-spinning {
+.sidebar-action .refresh-icon-spinning,
+.heading-action .refresh-icon-spinning {
   color: var(--accent);
 }
 
-/* Sidebar add-feed CTA. */
-.sidebar-add-feed {
-  padding: 8px 0 0;
-}
-
-/* Sidebar feed list grows to fill space, pushing footer to bottom. */
+/* Sidebar feed list grows to fill space; heading row and tag chips stay fixed. */
 .sidebar .section {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 8px 0;
+}
+
+.sidebar .feed-list {
+  flex: 1;
+  overflow-y: auto;
 }
 
 /* Bottom-pinned actions (palette, settings). */
@@ -473,12 +476,57 @@ a:hover { text-decoration: underline; }
   padding: 4px 0;
 }
 
+/* Heading row — Feeds label left, compact add/refresh icon actions right. */
+.sidebar .heading-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+  flex-shrink: 0;
+}
+
 .sidebar .section .heading {
+  flex: 1;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--overlay);
   padding: 4px 16px;
+}
+
+/* Compact icon actions in the heading row, matching the collapse-button pattern. */
+.sidebar .heading-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--subtext);
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar .heading-action:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sidebar .heading-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.sidebar .heading-action:disabled:hover {
+  background: none;
+  color: var(--subtext);
+}
+
+.sidebar .heading-action:focus-visible {
+  background: var(--surface);
+  color: var(--text);
 }
 
 .sidebar .feed {
@@ -570,6 +618,11 @@ a:hover { text-decoration: underline; }
     min-height: 36px;
     padding: 4px 12px;
     font-size: 14px;
+  }
+
+  .sidebar .heading-action {
+    width: 36px;
+    height: 36px;
   }
 }
 
@@ -1255,6 +1308,31 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
   color: var(--accent-text);
   cursor: pointer;
+}
+
+.empty-state .primary-cta {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--surface);
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.empty-state .primary-cta:hover {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.empty-state .primary-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Modal (palette, settings, add-feed, shortcuts, opml preview). */

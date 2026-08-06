@@ -53,25 +53,29 @@ export function Sidebar(props: { onNavigate?: () => void }) {
           </button>
         </div>
 
-        <div class="sidebar-add-feed">
-          <button class="sidebar-action" onClick={() => ctx.openModal({ kind: 'add-feed' })}>
-            <Plus size={14} /> Add feed
-          </button>
-        </div>
-
-        <button
-          class="sidebar-action"
-          title={refreshing() ? 'Refreshing…' : 'Refresh all feeds'}
-          onClick={() => void ctx.refreshAll()}
-          disabled={refreshing()}
-          aria-label={refreshing() ? 'Refreshing feeds' : 'Refresh all feeds'}
-        >
-          <RefreshIcon spinning={refreshing()} />
-          <span>Refresh</span>
-        </button>
-
         <div class="section">
-          <div class="heading">Feeds</div>
+          <div class="heading-row">
+            <div class="heading">Feeds</div>
+            <button
+              class="heading-action"
+              title="Add feed"
+              aria-label="Add feed"
+              onClick={() => ctx.openModal({ kind: 'add-feed' })}
+            >
+              <Plus size={14} />
+            </button>
+            <Show when={ctx.feeds().length > 0}>
+              <button
+                class="heading-action"
+                title={refreshing() ? 'Refreshing…' : 'Refresh all feeds'}
+                onClick={() => void ctx.refreshAll()}
+                disabled={refreshing()}
+                aria-label={refreshing() ? 'Refreshing feeds' : 'Refresh all feeds'}
+              >
+                <RefreshIcon spinning={refreshing()} />
+              </button>
+            </Show>
+          </div>
           <div class="tag-chips">
             <button
               class={`tag-chip ${ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
@@ -101,23 +105,25 @@ export function Sidebar(props: { onNavigate?: () => void }) {
               )}
             </For>
           </div>
-          <For each={visibleFeeds()}>
-            {(feed) => (
-              <FeedRow
-                feed={feed}
-                errors={ctx.feedErrors()}
-                fetchingFeeds={ctx.fetchingFeeds()}
-                active={ctx.state.riverScope === feed.id}
-                onClick={() => selectFeed(feed)}
-                onEdit={() =>
-                  ctx.openModal({
-                    kind: 'feed-editor',
-                    feedId: feed.id,
-                  })
-                }
-              />
-            )}
-          </For>
+          <div class="feed-list">
+            <For each={visibleFeeds()}>
+              {(feed) => (
+                <FeedRow
+                  feed={feed}
+                  errors={ctx.feedErrors()}
+                  fetchingFeeds={ctx.fetchingFeeds()}
+                  active={ctx.state.riverScope === feed.id}
+                  onClick={() => selectFeed(feed)}
+                  onEdit={() =>
+                    ctx.openModal({
+                      kind: 'feed-editor',
+                      feedId: feed.id,
+                    })
+                  }
+                />
+              )}
+            </For>
+          </div>
         </div>
 
         <div class="sidebar-actions-bottom">
