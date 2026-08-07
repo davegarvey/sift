@@ -123,11 +123,6 @@ Reference: ${origin}/openapi.json`,
             Give a chat tool or coding agent access to read your feeds and propose additions.
           </div>
         </Show>
-        <Show when={code() && !expired()}>
-          <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
-            Copy the prompt and paste it into a chat tool or coding agent.
-          </div>
-        </Show>
         <Show when={!code() && !error()}>
           <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
         </Show>
