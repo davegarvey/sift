@@ -1620,6 +1620,34 @@ a:hover { text-decoration: underline; }
   color: var(--text);
   position: relative;
 }
+.codeblock {
+  position: relative;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  padding: 10px 12px;
+  background: var(--crust, var(--base));
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--text);
+}
+.codeblock__copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--mantle);
+  color: var(--subtext);
+  cursor: pointer;
+}
+.codeblock__copy:hover {
+  color: var(--text);
+  background: var(--surface);
+}
 .sync-grid__expiry {
   font-size: 12px;
   color: var(--subtext);
