@@ -76,53 +76,57 @@ export function Sidebar(props: { onNavigate?: () => void }) {
               </button>
             </Show>
           </div>
-          <div class="tag-chips">
-            <button
-              class={`tag-chip ${ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
-              onClick={selectAll}
-              type="button"
-            >
-              all
-            </button>
-            <button
-              class={`tag-chip ${ctx.state.starredOnly ? 'active' : ''}`}
-              onClick={() => ctx.toggleStarFilter()}
-              type="button"
-              title="Toggle starred filter"
-              aria-label="Toggle starred filter"
-            >
-              <Star size={14} />
-            </button>
-            <For each={ctx.allTags()}>
-              {(tag) => (
-                <button
-                  class={`tag-chip ${ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
-                  onClick={() => ctx.toggleTag(tag)}
-                  type="button"
-                >
-                  {tag}
-                </button>
-              )}
-            </For>
-          </div>
+          <Show when={ctx.feeds().length > 0}>
+            <div class="tag-chips">
+              <button
+                class={`tag-chip ${ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
+                onClick={selectAll}
+                type="button"
+              >
+                all
+              </button>
+              <button
+                class={`tag-chip ${ctx.state.starredOnly ? 'active' : ''}`}
+                onClick={() => ctx.toggleStarFilter()}
+                type="button"
+                title="Toggle starred filter"
+                aria-label="Toggle starred filter"
+              >
+                <Star size={14} />
+              </button>
+              <For each={ctx.allTags()}>
+                {(tag) => (
+                  <button
+                    class={`tag-chip ${ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
+                    onClick={() => ctx.toggleTag(tag)}
+                    type="button"
+                  >
+                    {tag}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
           <div class="feed-list">
-            <For each={visibleFeeds()}>
-              {(feed) => (
-                <FeedRow
-                  feed={feed}
-                  errors={ctx.feedErrors()}
-                  fetchingFeeds={ctx.fetchingFeeds()}
-                  active={ctx.state.riverScope === feed.id}
-                  onClick={() => selectFeed(feed)}
-                  onEdit={() =>
-                    ctx.openModal({
-                      kind: 'feed-editor',
-                      feedId: feed.id,
-                    })
-                  }
-                />
-              )}
-            </For>
+            <Show when={ctx.feeds().length > 0} fallback={<div class="feed-list-empty">No feeds, yet.</div>}>
+              <For each={visibleFeeds()}>
+                {(feed) => (
+                  <FeedRow
+                    feed={feed}
+                    errors={ctx.feedErrors()}
+                    fetchingFeeds={ctx.fetchingFeeds()}
+                    active={ctx.state.riverScope === feed.id}
+                    onClick={() => selectFeed(feed)}
+                    onEdit={() =>
+                      ctx.openModal({
+                        kind: 'feed-editor',
+                        feedId: feed.id,
+                      })
+                    }
+                  />
+                )}
+              </For>
+            </Show>
           </div>
         </div>
 
