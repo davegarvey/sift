@@ -17,6 +17,8 @@ export function AgentsModal() {
   const [code, setCode] = createSignal<string | null>(null);
   const [expiresAt, setExpiresAt] = createSignal<number | null>(null);
   const [copied, setCopied] = createSignal(false);
+  const [copiedCmd, setCopiedCmd] = createSignal(false);
+  const [showTerminal, setShowTerminal] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [confirmId, setConfirmId] = createSignal<string | null>(null);
   const [ringFraction, setRingFraction] = createSignal(1);
@@ -51,11 +53,23 @@ export function AgentsModal() {
     }
   };
 
-  const copyCode = async () => {
-    if (!code()) return;
-    await navigator.clipboard.writeText(code()!);
+  const copyPrompt = async () => {
+    const c = code();
+    if (!c) return;
+    const origin = window.location.origin;
+    await navigator.clipboard.writeText(
+      `You are my Sift RSS sync agent. Pair with code ${c} via POST ${origin}/sync/tokens/redeem, then manage my subscriptions using the API documented at ${origin}/openapi.json.`,
+    );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyCommand = async () => {
+    const c = code();
+    if (!c) return;
+    await navigator.clipboard.writeText(`siftctl pair ${c}`);
+    setCopiedCmd(true);
+    setTimeout(() => setCopiedCmd(false), 2000);
   };
 
   const revoke = async (token: AgentTokenInfo) => {
@@ -86,23 +100,45 @@ export function AgentsModal() {
       <div class="modal-header">Agents</div>
       <div class="modal-body">
         <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
-          Give an AI agent (or a tool like ChatGPT) access to this sync group.
-          Pair it, then run <code style="font-size: 12px">siftctl pair {code() ?? '&lt;code&gt;'}</code> —
-          or paste the code into the tool. Revoke anytime; your devices are unaffected.
+          Copy the prompt and paste it into a chat tool like ChatGPT. The agent can then manage this sync group.
         </div>
         <Show when={code()}>
-          <div class="sync-grid" style="margin-bottom: 14px">
+          <div class="sync-grid" style="margin-bottom: 8px">
             <div class="sync-grid__cell">
               <span class="sync-grid__label">Pairing code</span>
               <span class="sync-grid__code">{code()}</span>
               <div style="display: flex; gap: 6px; justify-content: center">
-                <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy agent pairing code">
+                <button class="sync-grid__copy" onClick={() => void copyPrompt()} aria-label="Copy starter prompt for a chat tool">
                   {copied() ? <Check size={14} /> : <Copy size={14} />}
-                  <span style="font-size: 12px">Copy</span>
+                  <span style="font-size: 12px">Copy prompt</span>
                 </button>
               </div>
             </div>
           </div>
+          <button
+            class="sync-grid__copy"
+            style="margin-bottom: 10px"
+            onClick={() => setShowTerminal((v) => !v)}
+            aria-expanded={showTerminal()}
+          >
+            Using a terminal?
+          </button>
+          <Show when={showTerminal()}>
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--subtext)">
+              <div>Install <code style="font-size: 12px">siftctl</code> and pair this terminal. Commands manage the same subscriptions.</div>
+              <code style="font-size: 12px; color: var(--text)">npm i -g siftctl</code>
+              <div style="display: flex; align-items: center; gap: 6px">
+                <code style="font-size: 12px; color: var(--text)">siftctl pair {code() ?? '&lt;code&gt;'}</code>
+                <button class="sync-grid__copy" onClick={() => void copyCommand()} aria-label="Copy siftctl pair command">
+                  {copiedCmd() ? <Check size={14} /> : <Copy size={14} />}
+                  Copy
+                </button>
+              </div>
+              <div>
+                Then: <code style="font-size: 12px">siftctl feeds</code>, <code style="font-size: 12px">siftctl feed add &lt;url&gt;</code>, <code style="font-size: 12px">siftctl items &lt;url&gt;</code>
+              </div>
+            </div>
+          </Show>
         </Show>
         <Show when={!code() && !error()}>
           <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
