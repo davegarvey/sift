@@ -15,6 +15,18 @@ The Settings Sync section SHALL provide an "Agent access" row that opens a modal
 - **AND** SHALL revoke the token only on explicit confirmation
 - **AND** after the dialog closes, the agents modal SHALL be shown again with the token removed
 
+#### Scenario: Pairing code is minted on demand
+- **WHEN** the user opens the agents modal
+- **THEN** SHALL NOT mint an agent pairing code
+- **WHEN** the user activates "Pair an agent"
+- **THEN** the modal SHALL mint an 8-character code with a 5-minute countdown, displayed grouped (e.g., "abcd-efgh"), with a "Copy prompt" action and a secondary terminal-pairing path
+- **AND** a mint failure SHALL show an inline error and return the modal to the un-minted state
+
+#### Scenario: Expired pairing code offers a new one
+- **WHEN** the displayed agent pairing code reaches its 5-minute expiry
+- **THEN** the modal SHALL show an "Code expired" state with a "Get a new code" action
+- **AND** SHALL hide the "Copy prompt" action and the terminal-pairing path while expired
+
 ## MODIFIED Requirements
 
 ### Requirement: Sync key generation and storage

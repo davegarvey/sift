@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, createResource, Show, For } from 'solid-js';
+import { createSignal, onCleanup, createResource, Show, For } from 'solid-js';
 import { Check, Copy, Trash2 } from 'lucide-solid';
 import { useApp } from '../state';
 import { mintAgentCode, listAgentTokens, revokeAgentToken, type AgentTokenInfo } from '../sync/client';
@@ -27,6 +27,8 @@ export function AgentsModal() {
 
   const [tokens] = createResource(() => listAgentTokens());
 
+  const expired = () => expiresAt() !== null && Date.now() >= expiresAt()!;
+
   const startRingTimer = (exp: number) => {
     clearInterval(ringTimer);
     setRingFraction(1);
@@ -42,6 +44,7 @@ export function AgentsModal() {
       const res = await mintAgentCode();
       setCode(res.code);
       setExpiresAt(res.expiresAt);
+      setShowTerminal(false);
       startRingTimer(res.expiresAt);
     } catch (e) {
       setCode(null);
@@ -107,9 +110,10 @@ Reference: ${origin}/openapi.json`,
     });
   };
 
-  onMount(() => {
-    void generateCode();
-  });
+  const displayCode = () => {
+    const c = code();
+    return c ? c.slice(0, 4) + '-' + c.slice(4) : '';
+  };
 
   onCleanup(() => {
     clearInterval(ringTimer);
@@ -122,18 +126,21 @@ Reference: ${origin}/openapi.json`,
         <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
           Paste this prompt into a chat tool or coding agent. The agent can read your feeds and propose additions.
         </div>
+        <Show when={!code() && !error()}>
+          <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
+        </Show>
         <Show when={code()}>
           <div class="sync-grid sync-grid--single" style="margin-bottom: 8px">
             <div class="sync-grid__cell">
-              <span class="sync-grid__label">Pairing code</span>
-              <span class="sync-grid__code">{code()}</span>
-              <div style="display: flex; gap: 6px; justify-content: center">
-                <button class="sync-grid__copy" onClick={() => void copyPrompt()} aria-label="Copy starter prompt for a chat tool">
-                  {copied() ? <Check size={14} /> : <Copy size={14} />}
-                  <span style="font-size: 12px">Copy prompt</span>
-                </button>
-              </div>
-              <Show when={expiresAt()}>
+              <Show when={!expired()}>
+                <span class="sync-grid__label">Pairing code</span>
+                <span class="sync-grid__code">{displayCode()}</span>
+                <div style="display: flex; gap: 6px; justify-content: center">
+                  <button class="sync-grid__copy" onClick={() => void copyPrompt()} aria-label="Copy starter prompt for a chat tool">
+                    {copied() ? <Check size={14} /> : <Copy size={14} />}
+                    <span style="font-size: 12px">Copy prompt</span>
+                  </button>
+                </div>
                 <div style="display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--subtext)">
                   <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
                     <circle class="code-timer__bg" cx="12" cy="12" r="10" />
@@ -148,36 +155,39 @@ Reference: ${origin}/openapi.json`,
                   {`Expires in ${expiryLabel(expiresAt()!)}`}
                 </div>
               </Show>
+              <Show when={expired()}>
+                <span class="sync-grid__label">Code expired</span>
+                <button class="btn" style="align-self: center" onClick={() => void generateCode()}>Get a new code</button>
+              </Show>
             </div>
           </div>
-          <button
-            class="sync-grid__copy"
-            style="margin-bottom: 10px"
-            onClick={() => setShowTerminal((v) => !v)}
-            aria-expanded={showTerminal()}
-          >
-            Using a terminal?
-          </button>
-          <Show when={showTerminal()}>
-            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--subtext)">
-              <div>Install <code style="font-size: 12px">siftctl</code> and pair it to manage your subscriptions from the terminal.</div>
-              <div class="codeblock">
-                <code>npm i -g siftctl</code>
-                <button class="codeblock__copy" onClick={() => void copyInstall()} aria-label="Copy install command">
-                  {copiedInstall() ? <Check size={14} /> : <Copy size={14} />}
-                </button>
+          <Show when={!expired()}>
+            <button
+              class="sync-grid__copy"
+              style="margin-bottom: 10px"
+              onClick={() => setShowTerminal((v) => !v)}
+              aria-expanded={showTerminal()}
+            >
+              Using a terminal?
+            </button>
+            <Show when={showTerminal()}>
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--subtext)">
+                <div>Install <code style="font-size: 12px">siftctl</code> and pair it to manage your subscriptions from the terminal.</div>
+                <div class="codeblock">
+                  <code>npm i -g siftctl</code>
+                  <button class="codeblock__copy" onClick={() => void copyInstall()} aria-label="Copy install command">
+                    {copiedInstall() ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+                <div class="codeblock">
+                  <code>siftctl pair {code() ?? '&lt;code&gt;'}</code>
+                  <button class="codeblock__copy" onClick={() => void copyCommand()} aria-label="Copy siftctl pair command">
+                    {copiedCmd() ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
               </div>
-              <div class="codeblock">
-                <code>siftctl pair {code() ?? '&lt;code&gt;'}</code>
-                <button class="codeblock__copy" onClick={() => void copyCommand()} aria-label="Copy siftctl pair command">
-                  {copiedCmd() ? <Check size={14} /> : <Copy size={14} />}
-                </button>
-              </div>
-            </div>
+            </Show>
           </Show>
-        </Show>
-        <Show when={!code() && !error()}>
-          <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
         </Show>
         <Show when={error()}>
           <p class="error">{error()}</p>
