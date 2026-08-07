@@ -129,9 +129,12 @@ export function PairDeviceModal() {
       <div class="modal-header">Pair a device</div>
       <div class="modal-body">
         <Show when={!scanning()}>
+          <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+            It works one of two ways. Show a code for the other device, or enter a code from it.
+          </div>
           <div class="sync-grid">
             <div class="sync-grid__cell">
-              <span class="sync-grid__label">On your other device</span>
+              <span class="sync-grid__label">Show a code</span>
               <span class="sync-grid__code">{code() ?? '…'}</span>
               <div style="display: flex; gap: 6px; justify-content: center">
                 <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
@@ -147,7 +150,7 @@ export function PairDeviceModal() {
               </Show>
             </div>
             <div class="sync-grid__cell">
-              <span class="sync-grid__label">This device is new</span>
+              <span class="sync-grid__label">Enter a code</span>
               <form
                 style="display: flex; gap: 6px; align-items: center"
                 onSubmit={(e) => { e.preventDefault(); void doPair(); }}
