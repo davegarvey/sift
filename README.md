@@ -33,8 +33,12 @@ bun server/bun.ts   # bun runtime
 ### Cloudflare Workers
 
 ```sh
-npm run deploy    # git pull + vite build + wrangler deploy
+npm run deploy    # git pull + vite build + d1 migrations apply + wrangler deploy
 ```
+
+Migrations are applied as part of the deploy, immediately before the
+Worker ships. Workers Builds uses `npm run deploy:ci` (same sequence,
+no `git pull`) as its deploy command.
 
 ### Docker
 
@@ -58,7 +62,8 @@ Copy `.env.example` to `.env` and set:
 - `npm run lint` — eslint
 - `npm test` — vitest unit/integration tests
 - `npm run test:smoke` — Playwright smoke tests (requires `npm run dev`)
-- `npm run deploy` — `git pull && vite build && wrangler deploy`
+- `npm run deploy` — `git pull && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler deploy`
+- `npm run deploy:ci` — same, without `git pull` (Workers Builds deploy command)
 
 ## Privacy
 

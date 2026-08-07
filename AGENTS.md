@@ -10,7 +10,7 @@ Sift — a simple, slick, browser-first RSS reader.
 - `npm run typecheck` — `tsc --noEmit` (zero errors required)
 - `npm run lint` — `eslint . --max-warnings=0`
 - `npm test` — `vitest run`
-- `npm run deploy` — `git pull && vite build && wrangler deploy` (always deploy via this script — it pulls the latest before building)
+- `npm run deploy` — `git pull && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler deploy` (always deploy via this script — it pulls the latest before building and applies D1 migrations before the deploy). `npm run deploy:ci` is the same sequence without `git pull`, used as the Workers Builds deploy command.
 
 ## Architecture
 
