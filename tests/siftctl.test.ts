@@ -85,6 +85,22 @@ describe('siftctl: pair', () => {
   });
 });
 
+describe('siftctl: tokenFingerprint', () => {
+  it('computes a fingerprint without relying on the global crypto object', async () => {
+    vi.stubGlobal('crypto', undefined);
+    try {
+      const fp = await tokenFingerprint(TOKEN);
+      expect(fp).toHaveLength(4);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('matches the documented Crockford fingerprint scheme', async () => {
+    expect(await tokenFingerprint('test-token')).toBe('RQE9');
+  });
+});
+
 describe('siftctl: status', () => {
   it('reports capabilities, URL, and token fingerprint', async () => {
     setTokenFile(TOKEN);

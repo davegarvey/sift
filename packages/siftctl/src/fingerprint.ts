@@ -1,3 +1,5 @@
+import { webcrypto } from 'node:crypto';
+
 /** Crockford base32 alphabet (0-9 and A-Z minus I, L, O, U). */
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
@@ -7,7 +9,7 @@ const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
  * so `siftctl status` shows the same string as the Settings agents list.
  */
 export async function tokenFingerprint(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   const bytes = new Uint8Array(digest);
   const value = ((bytes[0] << 16) | (bytes[1] << 8) | bytes[2]) & 0xFFFFF;
   return (
