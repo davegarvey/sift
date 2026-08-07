@@ -203,7 +203,7 @@ Reference: ${origin}/openapi.json`,
           <Show
             when={!tokens.loading && tokens() && tokens()!.length > 0}
             fallback={
-              <div style="color: var(--subtext)">No agents paired yet.</div>
+              <div style="color: var(--subtext); margin-top: 12px">No agents paired yet.</div>
             }
           >
             <div style="display: flex; flex-direction: column; gap: 8px">
