@@ -2,15 +2,19 @@
 
 ### Requirement: MCP protocol over SSE
 
-The server SHALL expose an MCP-compatible endpoint at `/mcp` that supports SSE transport. The endpoint SHALL accept JSON-RPC 2.0 messages via HTTP POST and stream responses via Server-Sent Events. The server SHALL support the `initialize`, `notifications/initialized`, `tools/list`, and `tools/call` methods.
+The server SHALL expose an MCP-compatible endpoint at `/mcp` that supports SSE transport. The endpoint SHALL accept JSON-RPC 2.0 messages via HTTP POST and stream responses via Server-Sent Events. The server SHALL support the `initialize`, `notifications/initialized`, `tools/list`, and `tools/call` methods, and SHALL additionally serve the `2026-07-28` protocol revision with `server/discover` and per-request `_meta` envelope requests.
 
 #### Scenario: MCP handshake completes successfully
 - **WHEN** an MCP client connects to `GET /mcp` and receives an SSE stream
 - **THEN** the server SHALL send an `endpoint` event with a URL for POSTing JSON-RPC messages
-- **WHEN** the client sends `POST /mcp` with body `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
-- **THEN** the server SHALL respond via SSE with `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"sift-mcp","version":"0.1.0"}}}`
+- **WHEN** the client sends `POST /mcp` with body `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+- **THEN** the server SHALL respond via SSE with `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"sift-mcp","version":"0.49.6"}}}`
 - **WHEN** the client sends `{"jsonrpc":"2.0","method":"notifications/initialized"}`
 - **THEN** the server SHALL NOT send a response for this notification
+
+#### Scenario: 2026-07-28 client discovers the server
+- **WHEN** the client sends `POST /mcp` with a `server/discover` request carrying `io.modelcontextprotocol/protocolVersion: "2026-07-28"` in `params._meta`
+- **THEN** the server SHALL respond with its supported protocol versions, capabilities, and identity
 
 #### Scenario: Tool list is advertised
 - **WHEN** the client sends `POST /mcp` with body `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`

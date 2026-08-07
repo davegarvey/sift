@@ -9,12 +9,13 @@
  */
 
 import { Hono, type Context } from 'hono';
-import { requireSyncKey, getSyncKeyContext, isValidSyncKey, type SyncKeyEnv } from './auth';
+import { requirePrincipal, requireMaster, getSyncKeyContext, isValidSyncKey, type SyncKeyEnv } from './auth';
 import { RATE_LIMITS, checkRateLimit } from './ratelimit';
 import { nextMonotonicTime, currentMonotonicTime } from './monotonic';
 import { ensureSchema } from './schema';
 import { assertNoKeyLog, assertNoUserDataLog, assertNoUrlLog } from '../log';
 import { decodeItemId } from '../../src/sync/itemId';
+import { generateToken, generateTokenId, sha256Hex, tokenFingerprint } from './tokens';
 
 const PAIRING_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const PAIRING_CODE_LEN = 8;
@@ -23,19 +24,19 @@ const MAX_USERS = 100_000;
 
 interface FeedPayload {
   feedId: string;
-  feedUrl?: { value: string; at: number };
-  htmlUrl?: { value: string | null; at: number };
-  folder?: { value: string[] | null; at: number };
-  title?: { value: string; at: number };
-  tags?: { value: string[] | null; at: number };
-  deleted?: { value: 0 | 1; at: number };
+  feedUrl?: string;
+  htmlUrl?: string | null;
+  folder?: string[] | null;
+  title?: string;
+  tags?: string[] | null;
+  deleted?: 0 | 1;
 }
 
 interface FlagPayload {
   itemId: string;
   feedId: string;
-  read?: { value: 0 | 1 | null; at: number };
-  starred?: { value: 0 | 1 | null; at: number };
+  read?: 0 | 1 | null;
+  starred?: 0 | 1 | null;
 }
 
 interface PushBody {
@@ -43,57 +44,61 @@ interface PushBody {
   flags?: FlagPayload[];
 }
 
+/** True when a value is a legacy `{ value, at }` wrapper. */
+function isLegacyWrapper(v: unknown): v is { value: unknown; at: unknown } {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 function validateFeedPayload(f: FeedPayload): { message: string; field: string } | null {
   if (typeof f.feedId !== 'string' || !f.feedId) {
     return { message: 'feed.feedId must be a non-empty string', field: 'feedId' };
   }
   if (f.feedUrl !== undefined) {
-    if (typeof f.feedUrl.at !== 'number' || f.feedUrl.at < 0) {
-      return { message: 'feed.feedUrl.at must be a non-negative integer', field: 'feedUrl.at' };
+    if (isLegacyWrapper(f.feedUrl)) {
+      return { message: 'feed.feedUrl must not contain timestamps (server stamps all writes)', field: 'feedUrl' };
     }
-    if (typeof f.feedUrl.value !== 'string') {
-      return { message: 'feed.feedUrl.value must be a string', field: 'feedUrl.value' };
+    if (typeof f.feedUrl !== 'string') {
+      return { message: 'feed.feedUrl must be a string', field: 'feedUrl' };
     }
   }
   if (f.htmlUrl !== undefined) {
-    if (typeof f.htmlUrl.at !== 'number' || f.htmlUrl.at < 0) {
-      return { message: 'feed.htmlUrl.at must be a non-negative integer', field: 'htmlUrl.at' };
+    if (isLegacyWrapper(f.htmlUrl)) {
+      return { message: 'feed.htmlUrl must not contain timestamps (server stamps all writes)', field: 'htmlUrl' };
     }
-    if (f.htmlUrl.value !== null && typeof f.htmlUrl.value !== 'string') {
-      return { message: 'feed.htmlUrl.value must be a string or null', field: 'htmlUrl.value' };
+    if (f.htmlUrl !== null && typeof f.htmlUrl !== 'string') {
+      return { message: 'feed.htmlUrl must be a string or null', field: 'htmlUrl' };
     }
   }
   if (f.folder !== undefined) {
-    const v = f.folder;
-    if (typeof v.at !== 'number' || v.at < 0) {
-      return { message: 'feed.folder.at must be a non-negative integer', field: 'folder.at' };
+    if (isLegacyWrapper(f.folder)) {
+      return { message: 'feed.folder must not contain timestamps (server stamps all writes)', field: 'folder' };
     }
-    if (v.value !== null && !Array.isArray(v.value)) {
-      return { message: 'feed.folder.value must be an array or null', field: 'folder.value' };
+    if (f.folder !== null && !Array.isArray(f.folder)) {
+      return { message: 'feed.folder must be an array or null', field: 'folder' };
     }
   }
   if (f.title !== undefined) {
-    if (typeof f.title.at !== 'number' || f.title.at < 0) {
-      return { message: 'feed.title.at must be a non-negative integer', field: 'title.at' };
+    if (isLegacyWrapper(f.title)) {
+      return { message: 'feed.title must not contain timestamps (server stamps all writes)', field: 'title' };
     }
-    if (typeof f.title.value !== 'string') {
-      return { message: 'feed.title.value must be a string', field: 'title.value' };
+    if (typeof f.title !== 'string') {
+      return { message: 'feed.title must be a string', field: 'title' };
     }
   }
   if (f.tags !== undefined) {
-    if (typeof f.tags.at !== 'number' || f.tags.at < 0) {
-      return { message: 'feed.tags.at must be a non-negative integer', field: 'tags.at' };
+    if (isLegacyWrapper(f.tags)) {
+      return { message: 'feed.tags must not contain timestamps (server stamps all writes)', field: 'tags' };
     }
-    if (f.tags.value !== null && !Array.isArray(f.tags.value)) {
-      return { message: 'feed.tags.value must be an array or null', field: 'tags.value' };
+    if (f.tags !== null && !Array.isArray(f.tags)) {
+      return { message: 'feed.tags must be an array or null', field: 'tags' };
     }
   }
   if (f.deleted !== undefined) {
-    if (typeof f.deleted.at !== 'number' || f.deleted.at < 0) {
-      return { message: 'feed.deleted.at must be a non-negative integer', field: 'deleted.at' };
+    if (isLegacyWrapper(f.deleted)) {
+      return { message: 'feed.deleted must not contain timestamps (server stamps all writes)', field: 'deleted' };
     }
-    if (f.deleted.value !== 0 && f.deleted.value !== 1) {
-      return { message: 'feed.deleted.value must be 0 or 1', field: 'deleted.value' };
+    if (f.deleted !== 0 && f.deleted !== 1) {
+      return { message: 'feed.deleted must be 0 or 1', field: 'deleted' };
     }
   }
   return null;
@@ -111,19 +116,19 @@ function validateFlagPayload(g: FlagPayload): { message: string; field: string }
     return { message: 'flag.feedId does not match itemId', field: 'feedId' };
   }
   if (g.read !== undefined) {
-    if (typeof g.read.at !== 'number' || g.read.at < 0) {
-      return { message: 'flag.read.at must be a non-negative integer', field: 'read.at' };
+    if (isLegacyWrapper(g.read)) {
+      return { message: 'flag.read must not contain timestamps (server stamps all writes)', field: 'read' };
     }
-    if (g.read.value !== null && g.read.value !== 0 && g.read.value !== 1) {
-      return { message: 'flag.read.value must be 0, 1, or null', field: 'read.value' };
+    if (g.read !== null && g.read !== 0 && g.read !== 1) {
+      return { message: 'flag.read must be 0, 1, or null', field: 'read' };
     }
   }
   if (g.starred !== undefined) {
-    if (typeof g.starred.at !== 'number' || g.starred.at < 0) {
-      return { message: 'flag.starred.at must be a non-negative integer', field: 'starred.at' };
+    if (isLegacyWrapper(g.starred)) {
+      return { message: 'flag.starred must not contain timestamps (server stamps all writes)', field: 'starred' };
     }
-    if (g.starred.value !== null && g.starred.value !== 0 && g.starred.value !== 1) {
-      return { message: 'flag.starred.value must be 0, 1, or null', field: 'starred.value' };
+    if (g.starred !== null && g.starred !== 0 && g.starred !== 1) {
+      return { message: 'flag.starred must be 0, 1, or null', field: 'starred' };
     }
   }
   return null;
@@ -243,10 +248,14 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
   });
 
   // Authenticated data routes.
-  const auth = requireSyncKey(db);
-  app.use('/sync/otp', auth);
+  // Master-key-only routes: /sync/otp (a device code redeems to the master
+  // key), /sync/tokens (token lifecycle). Agent tokens: pull/push only.
+  const auth = requirePrincipal(db);
+  const masterAuth = requireMaster(db);
+  app.use('/sync/otp', masterAuth);
   app.use('/sync/push', auth);
   app.use('/sync/pull', auth);
+  app.use('/sync/tokens', masterAuth);
 
   // POST /sync/otp — issue a pairing code (server-generated).
   app.post('/sync/otp', async (c) => {
@@ -315,8 +324,8 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     }
 
     const row = await db
-      .prepare('SELECT sync_key, expires_at FROM pairing_codes WHERE code = ?')
-      .bind(code)
+      .prepare('SELECT sync_key, expires_at FROM pairing_codes WHERE code = ? AND kind = ?')
+      .bind(code, 'device')
       .first<{ sync_key: string; expires_at: number }>();
 
     if (!row) {
@@ -331,6 +340,138 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     await db.prepare('DELETE FROM pairing_codes WHERE code = ?').bind(code).run();
     assertNoKeyLog(row.sync_key);
     return c.json({ syncKey: row.sync_key });
+  });
+
+  // POST /sync/tokens — mint an agent pairing code (master key only).
+  // The code is redeemed by `siftctl pair` / an OAS consumer; the token
+  // never passes through the browser.
+  app.post('/sync/tokens', async (c) => {
+    const { syncKey } = getSyncKeyContext(c);
+
+    const rl = await checkRateLimit(
+      db,
+      `tokens:mint:${syncKey}`,
+      RATE_LIMITS.tokensMint.windowSeconds,
+      RATE_LIMITS.tokensMint.limit,
+      now(),
+    );
+    if (!rl.ok) {
+      return rateLimitResponse(`tokens:mint:${syncKey}`, syncKey, rl.retryAfter, 429);
+    }
+
+    const expiresAt = now() + PAIRING_TTL_SECONDS;
+    let code = '';
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = generatePairingCode();
+      try {
+        await db
+          .prepare('INSERT INTO pairing_codes (code, sync_key, expires_at, kind) VALUES (?, ?, ?, ?)')
+          .bind(candidate, syncKey, expiresAt, 'agent')
+          .run();
+        code = candidate;
+        break;
+      } catch (err) {
+        // Unique constraint violation → retry with a new code.
+        if (!String(err).includes('UNIQUE')) {
+          throw err;
+        }
+      }
+    }
+    if (!code) {
+      return new Response('Internal Server Error', { status: 500 });
+    }
+
+    return c.json({ code, expiresAt: expiresAt * 1000 });
+  });
+
+  // POST /sync/tokens/redeem — exchange an agent pairing code for a token.
+  // Public (like device redeem); rate-limited per IP on its own scope.
+  app.post('/sync/tokens/redeem', async (c) => {
+    const ip = clientIp(c);
+    const rl = await checkRateLimit(
+      db,
+      `tokens:redeem:${ip}`,
+      RATE_LIMITS.tokensRedeem.windowSeconds,
+      RATE_LIMITS.tokensRedeem.limit,
+      now(),
+    );
+    if (!rl.ok) {
+      return rateLimitResponse(`tokens:redeem:${ip}`, ip, rl.retryAfter, 429);
+    }
+
+    let body: { code?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return jsonError('Invalid JSON body', 'body');
+    }
+    const code = typeof body.code === 'string' ? body.code : '';
+    if (!isPairingCode(code)) {
+      return jsonError('Invalid pairing code', 'code');
+    }
+
+    const row = await db
+      .prepare('SELECT sync_key, expires_at FROM pairing_codes WHERE code = ? AND kind = ?')
+      .bind(code, 'agent')
+      .first<{ sync_key: string; expires_at: number }>();
+
+    if (!row) {
+      return c.text('Not Found', 404);
+    }
+    if (row.expires_at <= now()) {
+      await db.prepare('DELETE FROM pairing_codes WHERE code = ?').bind(code).run();
+      return c.text('Not Found', 404);
+    }
+
+    // One-time use.
+    await db.prepare('DELETE FROM pairing_codes WHERE code = ?').bind(code).run();
+
+    const token = generateToken();
+    const tokenId = generateTokenId();
+    const [tokenHash, fingerprint] = await Promise.all([
+      sha256Hex(token),
+      tokenFingerprint(token),
+    ]);
+    await db
+      .prepare(
+        'INSERT INTO tokens (token_id, token_hash, sync_key, scope, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .bind(tokenId, tokenHash, row.sync_key, 'rw', fingerprint, now())
+      .run();
+    assertNoKeyLog(row.sync_key);
+    return c.json({ token });
+  });
+
+  // GET /sync/tokens — list token metadata (master key only, never raw tokens).
+  app.get('/sync/tokens', async (c) => {
+    const { syncKey } = getSyncKeyContext(c);
+
+    const res = await db
+      .prepare('SELECT token_id, fingerprint, scope, created_at, last_seen_at FROM tokens WHERE sync_key = ? ORDER BY created_at ASC')
+      .bind(syncKey)
+      .all();
+    return c.json({ tokens: res.results });
+  });
+
+  // DELETE /sync/tokens — revoke a token by id (master key only).
+  app.delete('/sync/tokens', async (c) => {
+    const { syncKey } = getSyncKeyContext(c);
+
+    let body: { token_id?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return jsonError('Invalid JSON body', 'body');
+    }
+    const tokenId = typeof body.token_id === 'string' && body.token_id ? body.token_id : '';
+    if (!tokenId) {
+      return jsonError('token_id is required', 'token_id');
+    }
+    await db
+      .prepare('DELETE FROM tokens WHERE token_id = ? AND sync_key = ?')
+      .bind(tokenId, syncKey)
+      .run();
+    return c.body(null, 204);
   });
 
   // POST /sync/push — apply PATCH semantics to feeds and flags.
@@ -370,40 +511,32 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       if (err) return jsonError(err.message, err.field);
     }
 
-    // D5/D6 pre-pass: resolve the URL for each deleted feed — payload URL wins
-    // over the stored row's URL by per-field LWW (a delete racing a remote
-    // rename must tombstone the rows under the URL the PATCH leaves), with the
-    // DB as fallback for legacy URL-less deletes. The results build both the
-    // sibling-tombstone set (D5) and the in-batch tombstone map (D6).
-    const deleteIds = feeds.filter((f) => f.deleted?.value === 1).map((f) => f.feedId);
-    const rowUrlInfo = new Map<string, { url: string | null; urlAt: number | null }>();
+    // D5/D6 pre-pass: resolve the URL for each deleted feed — payload URL
+    // wins over the stored row's URL (a server-stamped payload is always
+    // newer), with the DB as fallback for legacy URL-less deletes. The
+    // results build both the sibling-tombstone set (D5) and the in-batch
+    // tombstone map (D6).
+    const deleteIds = feeds.filter((f) => f.deleted === 1).map((f) => f.feedId);
+    const rowUrlInfo = new Map<string, { url: string | null }>();
     if (deleteIds.length > 0) {
       const placeholders = deleteIds.map(() => '?').join(', ');
       const res = await db
-        .prepare(`SELECT feed_id, feed_url, feed_url_at FROM feeds WHERE sync_key = ? AND feed_id IN (${placeholders})`)
+        .prepare(`SELECT feed_id, feed_url FROM feeds WHERE sync_key = ? AND feed_id IN (${placeholders})`)
         .bind(syncKey, ...deleteIds)
         .all();
-      for (const r of res.results as Array<{ feed_id: string; feed_url: string | null; feed_url_at: number | null }>) {
-        rowUrlInfo.set(r.feed_id, { url: r.feed_url ?? null, urlAt: r.feed_url_at ?? null });
+      for (const r of res.results as Array<{ feed_id: string; feed_url: string | null }>) {
+        rowUrlInfo.set(r.feed_id, { url: r.feed_url ?? null });
       }
     }
     const siblingUrlByDelete = new Map<string, string>();
-    const deleteStampByDelete = new Map<string, number>();
     for (const f of feeds) {
-      if (f.deleted?.value !== 1) continue;
-      const row = rowUrlInfo.get(f.feedId);
-      let url: string | null = null;
-      if (f.feedUrl !== undefined && (!row || row.urlAt == null || f.feedUrl.at > row.urlAt)) {
-        url = f.feedUrl.value;
-      } else if (row?.url) {
-        url = row.url;
-      }
+      if (f.deleted !== 1) continue;
+      const url = f.feedUrl ?? rowUrlInfo.get(f.feedId)?.url ?? null;
       if (url) siblingUrlByDelete.set(f.feedId, url);
-      deleteStampByDelete.set(f.feedId, f.deleted.at);
     }
     const inBatchTombstones = new Map<string, string>();
     for (const f of feeds) {
-      if (f.deleted?.value !== 1) continue;
+      if (f.deleted !== 1) continue;
       const url = siblingUrlByDelete.get(f.feedId);
       if (url && !inBatchTombstones.has(url)) inBatchTombstones.set(url, f.feedId);
     }
@@ -416,11 +549,11 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     let d6Routed = 0;
     for (let i = 0; i < feeds.length; i++) {
       const f = feeds[i];
-      if (f.deleted?.value !== 0 || f.feedUrl === undefined) continue;
-      const revived = inBatchTombstones.get(f.feedUrl.value)
+      if (f.deleted !== 0 || f.feedUrl === undefined) continue;
+      const revived = inBatchTombstones.get(f.feedUrl)
         ?? (await db
           .prepare('SELECT feed_id FROM feeds WHERE sync_key = ? AND feed_url = ? AND deleted = 1 ORDER BY row_at ASC LIMIT 1')
-          .bind(syncKey, f.feedUrl.value)
+          .bind(syncKey, f.feedUrl)
           .first<{ feed_id: string }>())?.feed_id;
       if (revived && revived !== f.feedId) {
         effectiveFeedId.set(i, revived);
@@ -461,7 +594,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       // Step 2: clear tombstone — only on an explicit subscribe signal
       // (deleted: 0). A deleted: 1 push never clears (the PATCH below is
       // LWW-correct and must not regress a newer tombstone's deleted_at).
-      if (f.deleted !== undefined && f.deleted.value === 0) {
+      if (f.deleted !== undefined && f.deleted === 0) {
         stmts.push(
           db
             .prepare(
@@ -471,7 +604,10 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         );
       }
 
-      // Step 3: per-field PATCH.
+      // Step 3: per-field PATCH. Every field is stamped by the server with
+      // the batch time (no client timestamps exist in the protocol). The
+      // deleted field compares with >= so a tombstone wins equal stamps
+      // (an in-batch subscribe then delete leaves no live row).
       const fieldSets: string[] = [];
       const fieldBinds: unknown[] = [];
       if (f.feedUrl !== undefined) {
@@ -479,48 +615,48 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           "feed_url = CASE WHEN feed_url_at IS NULL OR ? > feed_url_at THEN ? ELSE feed_url END",
           "feed_url_at = CASE WHEN feed_url_at IS NULL OR ? > feed_url_at THEN ? ELSE feed_url_at END",
         );
-        fieldBinds.push(f.feedUrl.at, f.feedUrl.value);
-        fieldBinds.push(f.feedUrl.at, f.feedUrl.at);
+        fieldBinds.push(batchT, f.feedUrl);
+        fieldBinds.push(batchT, batchT);
       }
       if (f.folder !== undefined) {
         fieldSets.push(
           "folder = CASE WHEN folder_at IS NULL OR ? > folder_at THEN ? ELSE folder END",
           "folder_at = CASE WHEN folder_at IS NULL OR ? > folder_at THEN ? ELSE folder_at END",
         );
-        fieldBinds.push(f.folder.at, f.folder.value === null ? null : JSON.stringify(f.folder.value));
-        fieldBinds.push(f.folder.at, f.folder.at);
+        fieldBinds.push(batchT, f.folder === null ? null : JSON.stringify(f.folder));
+        fieldBinds.push(batchT, batchT);
       }
       if (f.title !== undefined) {
         fieldSets.push(
           "title = CASE WHEN title_at IS NULL OR ? > title_at THEN ? ELSE title END",
           "title_at = CASE WHEN title_at IS NULL OR ? > title_at THEN ? ELSE title_at END",
         );
-        fieldBinds.push(f.title.at, f.title.value);
-        fieldBinds.push(f.title.at, f.title.at);
+        fieldBinds.push(batchT, f.title);
+        fieldBinds.push(batchT, batchT);
       }
       if (f.htmlUrl !== undefined) {
         fieldSets.push(
           "html_url = CASE WHEN html_url_at IS NULL OR ? > html_url_at THEN ? ELSE html_url END",
           "html_url_at = CASE WHEN html_url_at IS NULL OR ? > html_url_at THEN ? ELSE html_url_at END",
         );
-        fieldBinds.push(f.htmlUrl.at, f.htmlUrl.value);
-        fieldBinds.push(f.htmlUrl.at, f.htmlUrl.at);
+        fieldBinds.push(batchT, f.htmlUrl);
+        fieldBinds.push(batchT, batchT);
       }
       if (f.tags !== undefined) {
         fieldSets.push(
           "tags = CASE WHEN tags_at IS NULL OR ? > tags_at THEN ? ELSE tags END",
           "tags_at = CASE WHEN tags_at IS NULL OR ? > tags_at THEN ? ELSE tags_at END",
         );
-        fieldBinds.push(f.tags.at, f.tags.value === null ? null : JSON.stringify(f.tags.value));
-        fieldBinds.push(f.tags.at, f.tags.at);
+        fieldBinds.push(batchT, f.tags === null ? null : JSON.stringify(f.tags));
+        fieldBinds.push(batchT, batchT);
       }
       if (f.deleted !== undefined) {
         fieldSets.push(
-          "deleted = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted END",
-          "deleted_at = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted_at END",
+          "deleted = CASE WHEN deleted_at IS NULL OR ? >= deleted_at THEN ? ELSE deleted END",
+          "deleted_at = CASE WHEN deleted_at IS NULL OR ? >= deleted_at THEN ? ELSE deleted_at END",
         );
-        fieldBinds.push(f.deleted.at, f.deleted.value);
-        fieldBinds.push(f.deleted.at, f.deleted.at);
+        fieldBinds.push(batchT, f.deleted);
+        fieldBinds.push(batchT, batchT);
       }
       stmts.push(
         db
@@ -534,27 +670,23 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           .prepare('UPDATE feeds SET row_at = ? WHERE sync_key = ? AND feed_id = ? AND ? > COALESCE(row_at, 0)')
           .bind(batchT, syncKey, fId, batchT),
       );
-      assertNoUrlLog(f.feedUrl?.value ?? '');
-      assertNoUrlLog(f.htmlUrl?.value ?? '');
+      assertNoUrlLog(f.feedUrl ?? '');
+      assertNoUrlLog(f.htmlUrl ?? '');
     }
 
-    // D5: tombstone every row sharing a deleted feed's URL (per-row LWW).
-    // One UPDATE per unique URL, using the max delete stamp across the batch.
-    // Column order deleted, deleted_at, row_at is load-bearing: the dev D1
-    // shim pairs CASE fields positionally.
-    const siblingByUrl = new Map<string, number>();
-    for (const [id, url] of siblingUrlByDelete) {
-      const stamp = deleteStampByDelete.get(id) ?? 0;
-      siblingByUrl.set(url, Math.max(siblingByUrl.get(url) ?? 0, stamp));
-    }
-    for (const [url, stamp] of siblingByUrl) {
+    // D5: tombstone every row sharing a deleted feed's URL. One UPDATE per
+    // unique URL. The deleted comparison uses >= so an in-batch subscribe
+    // that created a row under the URL is also tombstoned (ties win for
+    // tombstones). Column order deleted, deleted_at, row_at is load-bearing:
+    // the dev D1 shim pairs CASE fields positionally.
+    for (const url of siblingUrlByDelete.values()) {
       assertNoUrlLog(url);
       stmts.push(
         db
           .prepare(
-            'UPDATE feeds SET deleted = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted END, deleted_at = CASE WHEN deleted_at IS NULL OR ? > deleted_at THEN ? ELSE deleted_at END, row_at = CASE WHEN ? > row_at THEN ? ELSE row_at END WHERE sync_key = ? AND feed_url = ? AND feed_id != ?',
+            'UPDATE feeds SET deleted = CASE WHEN deleted_at IS NULL OR ? >= deleted_at THEN ? ELSE deleted END, deleted_at = CASE WHEN deleted_at IS NULL OR ? >= deleted_at THEN ? ELSE deleted_at END, row_at = CASE WHEN ? > row_at THEN ? ELSE row_at END WHERE sync_key = ? AND feed_url = ? AND feed_id != ?',
           )
-          .bind(stamp, 1, stamp, stamp, batchT, batchT, syncKey, url, inBatchTombstones.get(url) ?? ''),
+          .bind(batchT, 1, batchT, batchT, batchT, batchT, syncKey, url, inBatchTombstones.get(url) ?? ''),
       );
     }
 
@@ -572,16 +704,16 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           "read = CASE WHEN read_at IS NULL OR ? > read_at THEN ? ELSE read END",
           "read_at = CASE WHEN read_at IS NULL OR ? > read_at THEN ? ELSE read_at END",
         );
-        fieldBinds.push(g.read.at, g.read.value);
-        fieldBinds.push(g.read.at, g.read.at);
+        fieldBinds.push(batchT, g.read);
+        fieldBinds.push(batchT, batchT);
       }
       if (g.starred !== undefined) {
         fieldSets.push(
           "starred = CASE WHEN starred_at IS NULL OR ? > starred_at THEN ? ELSE starred END",
           "starred_at = CASE WHEN starred_at IS NULL OR ? > starred_at THEN ? ELSE starred_at END",
         );
-        fieldBinds.push(g.starred.at, g.starred.value);
-        fieldBinds.push(g.starred.at, g.starred.at);
+        fieldBinds.push(batchT, g.starred);
+        fieldBinds.push(batchT, batchT);
       }
       stmts.push(
         db

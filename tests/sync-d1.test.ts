@@ -114,16 +114,15 @@ describe('sync D1 integration', () => {
         headers: { 'X-Sync-Key': key },
       });
 
-      const now = Date.now();
       const pushRes = await mf.dispatchFetch('http://localhost/sync/push', {
         method: 'POST',
         headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           feeds: [{
             feedId: 'https://example.com/blog',
-            feedUrl: { value: 'https://example.com/blog', at: now },
-            title: { value: 'Test Feed', at: now },
-            deleted: { value: 0, at: now },
+            feedUrl: 'https://example.com/blog',
+            title: 'Test Feed',
+            deleted: 0,
           }],
         }),
       });
@@ -155,17 +154,16 @@ describe('sync D1 integration', () => {
         headers: { 'X-Sync-Key': key },
       });
 
-      const now = Date.now();
       const pushRes = await mf.dispatchFetch('http://localhost/sync/push', {
         method: 'POST',
         headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           feeds: [{
             feedId: 'https://example.com/tagged',
-            feedUrl: { value: 'https://example.com/tagged', at: now },
-            title: { value: 'Tagged Feed', at: now },
-            tags: { value: ['news', 'tech'], at: now },
-            deleted: { value: 0, at: now },
+            feedUrl: 'https://example.com/tagged',
+            title: 'Tagged Feed',
+            tags: ['news', 'tech'],
+            deleted: 0,
           }],
         }),
       });
@@ -181,7 +179,9 @@ describe('sync D1 integration', () => {
       expect(pull.feeds[0].feed_url).toBe('https://example.com/tagged');
       // tags should be stored as JSON text and returned as-is
       expect(pull.feeds[0].tags).toBe(JSON.stringify(['news', 'tech']));
-      expect(pull.feeds[0].tags_at).toBe(now);
+      // tags_at is stamped by the server with the monotonic batch time
+      expect((pull.feeds[0].tags_at as number) > 0).toBe(true);
+      expect((pull.feeds[0].tags_at as number) === pull.feeds[0].row_at).toBe(true);
     } finally {
       await mf.dispose();
     }
@@ -196,7 +196,6 @@ describe('sync D1 integration', () => {
         headers: { 'X-Sync-Key': key },
       });
 
-      const now = Date.now();
       const feedId = 'https://example.com/news';
       const itemId = `${encodeURIComponent(feedId)}::article-1`;
 
@@ -207,8 +206,8 @@ describe('sync D1 integration', () => {
           flags: [{
             itemId,
             feedId,
-            read: { value: 1, at: now },
-            starred: { value: 1, at: now },
+            read: 1,
+            starred: 1,
           }],
         }),
       });
@@ -245,9 +244,9 @@ describe('sync D1 integration', () => {
         body: JSON.stringify({
           feeds: [{
             feedId: 'https://example.com/old',
-            feedUrl: { value: 'https://example.com/old', at: t1 },
-            title: { value: 'Old Feed', at: t1 },
-            deleted: { value: 0, at: t1 },
+            feedUrl: 'https://example.com/old',
+            title: 'Old Feed',
+            deleted: 0,
           }],
         }),
       });
@@ -271,11 +270,45 @@ describe('sync D1 integration', () => {
     }
   });
 
+  it('push with legacy timestamp wrappers is rejected with 400', async () => {
+    const mf = await createMf();
+    try {
+      const key = makeSyncKey('legacy-400');
+      await mf.dispatchFetch('http://localhost/sync/register', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': key },
+      });
+
+      const res = await mf.dispatchFetch('http://localhost/sync/push', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feeds: [{
+            feedId: 'https://example.com/legacy',
+            feedUrl: { value: 'https://example.com/legacy', at: Date.now() },
+            deleted: { value: 0, at: Date.now() },
+          }],
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string; field: string };
+      expect(body.field).toBe('feedUrl');
+
+      // And nothing was written.
+      const pull = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
+        headers: { 'X-Sync-Key': key },
+      });
+      const data = await pull.json() as { feeds: Array<Record<string, unknown>> };
+      expect(data.feeds.length).toBe(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
   it('multi-device: OTP + redeem syncs feeds across keys', async () => {
     const mf = await createMf();
     try {
       const keyA = makeSyncKey('device-A----');
-      const now = Date.now();
 
       await mf.dispatchFetch('http://localhost/sync/register', {
         method: 'POST',
@@ -288,9 +321,9 @@ describe('sync D1 integration', () => {
         body: JSON.stringify({
           feeds: [{
             feedId: 'https://example.com/rss',
-            feedUrl: { value: 'https://example.com/rss', at: now },
-            title: { value: 'Device A Feed', at: now },
-            deleted: { value: 0, at: now },
+            feedUrl: 'https://example.com/rss',
+            title: 'Device A Feed',
+            deleted: 0,
           }],
         }),
       });
@@ -465,12 +498,12 @@ async function pullFeeds(mf: Miniflare, key: string): Promise<Array<Record<strin
   return body.feeds;
 }
 
-function feedPayload(feedId: string, url: string, at: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+function feedPayload(feedId: string, url: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     feedId,
-    feedUrl: { value: url, at },
-    title: { value: `Feed ${feedId.slice(0, 6)}`, at },
-    deleted: { value: 0, at },
+    feedUrl: url,
+    title: `Feed ${feedId.slice(0, 6)}`,
+    deleted: 0,
     ...extra,
   };
 }
@@ -481,14 +514,13 @@ describe('sync D1 tombstone semantics', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'meta-noclear');
-      const now = Date.now();
       const id = 'https://example.com/meta';
-      await push(mf, key, { feeds: [feedPayload(id, id, now)] });
+      await push(mf, key, { feeds: [feedPayload(id, id)] });
       await push(mf, key, {
-        feeds: [{ feedId: id, deleted: { value: 1, at: now + 100 } }],
+        feeds: [{ feedId: id, deleted: 1 }],
       });
       await push(mf, key, {
-        feeds: [{ feedId: id, feedUrl: { value: id, at: now + 200 }, title: { value: 'Renamed', at: now + 200 } }],
+        feeds: [{ feedId: id, feedUrl: id, title: 'Renamed' }],
       });
       const feeds = await pullFeeds(mf, key);
       const row = feeds.find((f) => f.feed_id === id);
@@ -499,23 +531,28 @@ describe('sync D1 tombstone semantics', () => {
     }
   });
 
-  it('a deleted:1 push does not regress a newer tombstone timestamp', async () => {
+  it('a deleted:1 push never regresses an existing tombstone', async () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'no-regress-');
-      const now = Date.now();
       const id = 'https://example.com/regress';
-      await push(mf, key, { feeds: [feedPayload(id, id, now)] });
+      await push(mf, key, { feeds: [feedPayload(id, id)] });
       await push(mf, key, {
-        feeds: [{ feedId: id, deleted: { value: 1, at: now + 500 } }],
+        feeds: [{ feedId: id, deleted: 1 }],
       });
+      let feeds = await pullFeeds(mf, key);
+      const firstStamp = feeds.find((f) => f.feed_id === id)?.deleted_at as number;
+      expect(firstStamp).toBeGreaterThan(0);
+
+      // A second delete (with a URL this time) lands in a newer batch:
+      // the tombstone stamp advances but the row stays tombstoned.
       await push(mf, key, {
-        feeds: [{ feedId: id, feedUrl: { value: id, at: now + 400 }, deleted: { value: 1, at: now + 400 } }],
+        feeds: [{ feedId: id, feedUrl: id, deleted: 1 }],
       });
-      const feeds = await pullFeeds(mf, key);
+      feeds = await pullFeeds(mf, key);
       const row = feeds.find((f) => f.feed_id === id);
       expect(row?.deleted).toBe(1);
-      expect(row?.deleted_at).toBe(now + 500);
+      expect((row?.deleted_at as number) > firstStamp).toBe(true);
     } finally {
       await mf.dispose();
     }
@@ -525,13 +562,12 @@ describe('sync D1 tombstone semantics', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'delete-url');
-      const now = Date.now();
       const url = 'https://example.com/shared';
       const a = 'device-a-feed';
       const b = 'device-b-feed';
-      await push(mf, key, { feeds: [feedPayload(a, url, now), feedPayload(b, url, now)] });
+      await push(mf, key, { feeds: [feedPayload(a, url), feedPayload(b, url)] });
       await push(mf, key, {
-        feeds: [{ feedId: a, feedUrl: { value: url, at: now }, deleted: { value: 1, at: now + 100 } }],
+        feeds: [{ feedId: a, feedUrl: url, deleted: 1 }],
       });
       const feeds = await pullFeeds(mf, key);
       const ra = feeds.find((f) => f.feed_id === a);
@@ -543,17 +579,16 @@ describe('sync D1 tombstone semantics', () => {
     }
   });
 
-  it('a legacy URL-less delete resolves the URL from the stored row', async () => {
+  it('a URL-less delete resolves the URL from the stored row', async () => {
     const mf = await createMf();
     try {
-      const key = await setupKey(mf, 'legacy-del');
-      const now = Date.now();
-      const url = 'https://example.com/legacy';
-      const a = 'legacy-a';
-      const b = 'legacy-b';
-      await push(mf, key, { feeds: [feedPayload(a, url, now), feedPayload(b, url, now)] });
+      const key = await setupKey(mf, 'urlless-del');
+      const url = 'https://example.com/urlless';
+      const a = 'urlless-a';
+      const b = 'urlless-b';
+      await push(mf, key, { feeds: [feedPayload(a, url), feedPayload(b, url)] });
       await push(mf, key, {
-        feeds: [{ feedId: a, deleted: { value: 1, at: now + 100 } }],
+        feeds: [{ feedId: a, deleted: 1 }],
       });
       const feeds = await pullFeeds(mf, key);
       expect(feeds.find((f) => f.feed_id === a)?.deleted).toBe(1);
@@ -567,15 +602,14 @@ describe('sync D1 tombstone semantics', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'revive-url');
-      const now = Date.now();
       const url = 'https://example.com/revive';
       const original = 'original-id';
       const fresh = 'fresh-uuid';
-      await push(mf, key, { feeds: [feedPayload(original, url, now)] });
+      await push(mf, key, { feeds: [feedPayload(original, url)] });
       await push(mf, key, {
-        feeds: [{ feedId: original, deleted: { value: 1, at: now + 100 } }],
+        feeds: [{ feedId: original, deleted: 1 }],
       });
-      await push(mf, key, { feeds: [feedPayload(fresh, url, now + 200)] });
+      await push(mf, key, { feeds: [feedPayload(fresh, url)] });
       const feeds = await pullFeeds(mf, key);
       const rows = feeds.filter((f) => f.feed_url === url);
       expect(rows.length).toBe(1);
@@ -590,15 +624,14 @@ describe('sync D1 tombstone semantics', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'batch-del-sub');
-      const now = Date.now();
       const url = 'https://example.com/batch1';
       const original = 'batch-orig';
       const fresh = 'batch-fresh';
-      await push(mf, key, { feeds: [feedPayload(original, url, now)] });
+      await push(mf, key, { feeds: [feedPayload(original, url)] });
       await push(mf, key, {
         feeds: [
-          { feedId: original, feedUrl: { value: url, at: now + 100 }, deleted: { value: 1, at: now + 100 } },
-          feedPayload(fresh, url, now + 200),
+          { feedId: original, feedUrl: url, deleted: 1 },
+          feedPayload(fresh, url),
         ],
       });
       const feeds = await pullFeeds(mf, key);
@@ -615,14 +648,13 @@ describe('sync D1 tombstone semantics', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'batch-sub-del');
-      const now = Date.now();
       const url = 'https://example.com/batch2';
       const keeper = 'batch-keeper';
-      await push(mf, key, { feeds: [feedPayload(keeper, url, now)] });
+      await push(mf, key, { feeds: [feedPayload(keeper, url)] });
       await push(mf, key, {
         feeds: [
-          feedPayload('batch-new', url, now + 100),
-          { feedId: keeper, feedUrl: { value: url, at: now + 100 }, deleted: { value: 1, at: now + 200 } },
+          feedPayload('batch-new', url),
+          { feedId: keeper, feedUrl: url, deleted: 1 },
         ],
       });
       const feeds = await pullFeeds(mf, key);
@@ -637,12 +669,11 @@ describe('sync D1 tombstone semantics', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'ghost-del-');
-      const now = Date.now();
       const url = 'https://example.com/ghost';
       const b = 'ghost-sibling';
-      await push(mf, key, { feeds: [feedPayload(b, url, now)] });
+      await push(mf, key, { feeds: [feedPayload(b, url)] });
       await push(mf, key, {
-        feeds: [{ feedId: 'never-pushed', feedUrl: { value: url, at: now + 100 }, deleted: { value: 1, at: now + 100 } }],
+        feeds: [{ feedId: 'never-pushed', feedUrl: url, deleted: 1 }],
       });
       const feeds = await pullFeeds(mf, key);
       const ghost = feeds.find((f) => f.feed_id === 'never-pushed');
@@ -653,22 +684,24 @@ describe('sync D1 tombstone semantics', () => {
     }
   });
 
-  it('a delete after a remote rename tombstones rows under the winning URL', async () => {
+  it('a delete tombstones rows under the payload URL (the winning URL)', async () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'rename-del');
-      const now = Date.now();
       const oldUrl = 'https://example.com/old';
       const newUrl = 'https://example.com/new';
       const target = 'rename-target';
       const sibling = 'rename-sibling';
-      await push(mf, key, { feeds: [feedPayload(target, oldUrl, now)] });
-      await push(mf, key, { feeds: [feedPayload(sibling, newUrl, now + 50)] });
+      await push(mf, key, { feeds: [feedPayload(target, oldUrl)] });
+      await push(mf, key, { feeds: [feedPayload(sibling, newUrl)] });
+      // Rename target to the sibling's URL.
       await push(mf, key, {
-        feeds: [{ feedId: target, feedUrl: { value: newUrl, at: now + 100 } }],
+        feeds: [{ feedId: target, feedUrl: newUrl }],
       });
+      // Delete the target: the payload URL is the winning URL (the server
+      // stamps it newer than any stored value), so the sibling is tombstoned.
       await push(mf, key, {
-        feeds: [{ feedId: target, feedUrl: { value: oldUrl, at: now + 80 }, deleted: { value: 1, at: now + 80 } }],
+        feeds: [{ feedId: target, feedUrl: newUrl, deleted: 1 }],
       });
       const feeds = await pullFeeds(mf, key);
       const rt = feeds.find((f) => f.feed_id === target);
@@ -685,15 +718,14 @@ describe('sync D1 tombstone semantics', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'tomb-window');
-      const now = Date.now();
       const url = 'https://example.com/window';
       const original = 'window-orig';
-      await push(mf, key, { feeds: [feedPayload(original, url, now)] });
+      await push(mf, key, { feeds: [feedPayload(original, url)] });
       await push(mf, key, {
-        feeds: [{ feedId: original, deleted: { value: 1, at: now + 100 } }],
+        feeds: [{ feedId: original, deleted: 1 }],
       });
       await push(mf, key, {
-        feeds: [{ feedId: original, feedUrl: { value: url, at: now + 200 }, deleted: { value: 0, at: now + 200 } }],
+        feeds: [{ feedId: original, feedUrl: url, deleted: 0 }],
       });
       const feeds = await pullFeeds(mf, key);
       const rows = feeds.filter((f) => f.feed_url === url);
@@ -729,12 +761,11 @@ describe('sync D1 time consistency', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'batch-rowat');
-      const now = Date.now();
       await push(mf, key, {
         feeds: [
-          feedPayload('rowat-a', 'https://ex.com/a', now),
-          feedPayload('rowat-b', 'https://ex.com/b', now),
-          feedPayload('rowat-c', 'https://ex.com/c', now),
+          feedPayload('rowat-a', 'https://ex.com/a'),
+          feedPayload('rowat-b', 'https://ex.com/b'),
+          feedPayload('rowat-c', 'https://ex.com/c'),
         ],
       });
       let feeds = await pullFeeds(mf, key);
@@ -743,7 +774,7 @@ describe('sync D1 time consistency', () => {
       expect(feeds.find((f) => f.feed_id === 'rowat-c')?.row_at).toBe(r1);
 
       await push(mf, key, {
-        feeds: [{ feedId: 'rowat-a', feedUrl: { value: 'https://ex.com/a', at: now }, title: { value: 'Renamed', at: now } }],
+        feeds: [{ feedId: 'rowat-a', feedUrl: 'https://ex.com/a', title: 'Renamed' }],
       });
       feeds = await pullFeeds(mf, key);
       const r2 = feeds.find((f) => f.feed_id === 'rowat-a')?.row_at as number;
@@ -757,11 +788,10 @@ describe('sync D1 time consistency', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'sib-rowat-');
-      const now = Date.now();
       const url = 'https://ex.com/sib';
-      await push(mf, key, { feeds: [feedPayload('sib-a', url, now), feedPayload('sib-b', url, now)] });
+      await push(mf, key, { feeds: [feedPayload('sib-a', url), feedPayload('sib-b', url)] });
       await push(mf, key, {
-        feeds: [{ feedId: 'sib-a', feedUrl: { value: url, at: now }, deleted: { value: 1, at: now + 100 } }],
+        feeds: [{ feedId: 'sib-a', feedUrl: url, deleted: 1 }],
       });
       const feeds = await pullFeeds(mf, key);
       const ra = feeds.find((f) => f.feed_id === 'sib-a')?.row_at as number;
@@ -776,8 +806,7 @@ describe('sync D1 time consistency', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'incr-pull-');
-      const now = Date.now();
-      await push(mf, key, { feeds: [feedPayload('incr-a', 'https://ex.com/incr', now)] });
+      await push(mf, key, { feeds: [feedPayload('incr-a', 'https://ex.com/incr')] });
 
       const first = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
         headers: { 'X-Sync-Key': key },
@@ -815,13 +844,12 @@ describe('sync D1 time consistency', () => {
     const mf = await createMf();
     try {
       const key = await setupKey(mf, 'cap-live--');
-      const now = Date.now();
       for (let i = 0; i < 5; i++) {
-        await push(mf, key, { feeds: [feedPayload(`cap-${i}`, `https://ex.com/cap-${i}`, now)] });
+        await push(mf, key, { feeds: [feedPayload(`cap-${i}`, `https://ex.com/cap-${i}`)] });
       }
       for (let i = 0; i < 3; i++) {
         await push(mf, key, {
-          feeds: [{ feedId: `cap-${i}`, feedUrl: { value: `https://ex.com/cap-${i}`, at: now }, deleted: { value: 1, at: now + 100 } }],
+          feeds: [{ feedId: `cap-${i}`, feedUrl: `https://ex.com/cap-${i}`, deleted: 1 }],
         });
       }
       const d1 = await mf.getD1Database('DB');

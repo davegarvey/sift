@@ -11,6 +11,7 @@ import { SettingsDrawer } from './components/SettingsDrawer';
 import { PairResultModal } from './components/PairResultModal';
 import { SyncJoinModal } from './components/SyncJoinModal';
 import { SyncShareModal } from './components/SyncShareModal';
+import { AgentsModal } from './components/AgentsModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { ConfirmUnsubscribeModal } from './components/ConfirmUnsubscribeModal';
 import { FeedEditorModal } from './components/FeedEditorModal';
@@ -201,6 +202,9 @@ function Shell() {
       </Show>
       <Show when={ctx.state.modal.kind === 'sync-share'}>
         <Backdrop><SyncShareModal /></Backdrop>
+      </Show>
+      <Show when={ctx.state.modal.kind === 'agents'}>
+        <Backdrop><AgentsModal /></Backdrop>
       </Show>
       <Show when={ctx.state.modal.kind === 'about'}>
         <Backdrop><AboutModal /></Backdrop>

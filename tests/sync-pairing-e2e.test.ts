@@ -469,7 +469,7 @@ describe('sync pairing first-time setup', () => {
       method: 'POST',
       headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        feeds: [{ feedId, deleted: { value: 1, at: Date.now() } }],
+        feeds: [{ feedId, deleted: 1 }],
       }),
     });
     expect(delRes.status).toBe(204);
@@ -526,7 +526,7 @@ describe('sync pairing first-time setup', () => {
       method: 'POST',
       headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        feeds: [{ feedId, feedUrl: { value: 'https://ex.com/u2', at: Date.now() } }],
+        feeds: [{ feedId, feedUrl: 'https://ex.com/u2' }],
       }),
     });
     expect(res.status).toBe(204);
@@ -534,7 +534,7 @@ describe('sync pairing first-time setup', () => {
       method: 'POST',
       headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        feeds: [{ feedId, deleted: { value: 1, at: Date.now() } }],
+        feeds: [{ feedId, deleted: 1 }],
       }),
     });
     expect(res.status).toBe(204);
@@ -806,9 +806,9 @@ describe('sync pairing first-time setup', () => {
         body: JSON.stringify({
           feeds: [{
             feedId: id,
-            feedUrl: { value: url, at: now },
-            title: { value: 'Dup Feed', at: now },
-            deleted: { value: 0, at: now },
+            feedUrl: url,
+            title: 'Dup Feed',
+            deleted: 0,
           }],
         }),
       });
@@ -838,7 +838,7 @@ describe('sync pairing first-time setup', () => {
       method: 'POST',
       headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        feeds: [{ feedId: idA, feedUrl: { value: url, at: Date.now() }, deleted: { value: 1, at: Date.now() } }],
+        feeds: [{ feedId: idA, feedUrl: url, deleted: 1 }],
       }),
     });
     expect(delRes.status).toBe(204);
@@ -894,7 +894,7 @@ describe('sync pairing first-time setup', () => {
       method: 'POST',
       headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        feeds: [{ feedId: original, deleted: { value: 1, at: Date.now() } }],
+        feeds: [{ feedId: original, deleted: 1 }],
       }),
     });
     expect(delRes.status).toBe(204);
@@ -907,9 +907,9 @@ describe('sync pairing first-time setup', () => {
       body: JSON.stringify({
         feeds: [{
           feedId: fresh,
-          feedUrl: { value: url, at: Date.now() },
-          title: { value: 'Resub Feed', at: Date.now() },
-          deleted: { value: 0, at: Date.now() },
+          feedUrl: url,
+          title: 'Resub Feed',
+          deleted: 0,
         }],
       }),
     });

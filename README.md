@@ -68,14 +68,68 @@ anywhere persistent.
 
 The `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged
-or exposed to third parties.
+or exposed to third parties. Agent tokens are stored in D1 as SHA-256 hashes
+only — the raw token never touches the database — and are revocable from
+Settings.
 
 ## MCP server
 
 When `MCP_ENABLED=true`, the server exposes a Model Context Protocol endpoint
 at `/mcp` for AI agent integration. Available tools: `list_feeds`, `get_feed`,
-`discover_feed`, `add_feed`, `remove_feed`, `get_feed_items`. An SSE relay at
-`/api/events` provides real-time browser communication for feed operations.
+`discover_feed`, `add_feed`, `remove_feed`, `get_feed_items`. The endpoint
+serves both the `2025-11-25` and `2026-07-28` protocol revisions — modern
+clients negotiate via `server/discover`; legacy clients fall back to the
+`initialize` handshake. An SSE relay at `/api/events` provides real-time
+browser communication for feed operations.
+
+MCP is a **local-only** feature of the Node/Bun server. For agent access on
+the hosted deployment, use the sync API instead (below).
+
+## AI agents (sync API)
+
+The sync API treats an AI agent as just another sync device. Agents read
+feeds and change subscriptions through the same D1-backed, multi-tenant,
+conflict-merged sync the browsers use — no MCP, no gateway process.
+
+### Via `siftctl` (recommended)
+
+```sh
+npm i -g siftctl        # or: npx siftctl
+siftctl pair <code>     # code from Settings → Sync → Agents
+siftctl feeds
+siftctl feed add https://example.com/feed.xml
+siftctl items https://example.com/feed.xml
+```
+
+Environment: `SIFTCTL_TOKEN` (overrides the token file at
+`~/.config/siftctl/token`), `SIFTCTL_URL` (defaults to the hosted deployment),
+`SIFTCTL_HOME`. Exit codes: 0 success, 1 runtime/API error, 2 usage. All data
+commands support `--json` for machine consumption.
+
+### Via the OpenAPI document
+
+The sync API is described at `https://sift.davegarvey.workers.dev/openapi.json`.
+Point an OpenAPI-aware agent (ChatGPT Actions, etc.) at that URL with
+`X-Sync-Key` as the API-key header. Writes carry no timestamps — the server
+stamps everything.
+
+### Pairing and tokens
+
+- Pairing: Settings → Sync → Agents → "Pair an agent" shows an 8-character
+  code (5-minute expiry) that `siftctl pair` or `POST /sync/tokens/redeem`
+  exchanges for a token.
+- Tokens are 23-character credentials starting with `t` — distinct from the
+  master sync key, which never leaves your browser. Tokens can only call
+  `/sync/pull` and `/sync/push`; they cannot mint device codes, register, or
+  manage tokens (a device code would redeem to the master key).
+- **Revocation**: Settings → Sync → Agents lists every token (by fingerprint)
+  with a revoke button. Revocation is immediate and does not affect your
+  devices. Rotating the sync key orphans old tokens (they stay valid against
+  the old key's data and can no longer be listed).
+- **Warning**: a token grants read/write of your subscriptions to whoever
+  holds it. Treat it like a password; if you paste it into a third-party
+  service (e.g., ChatGPT), you are trusting that service with it. Revoke it
+  when done.
 
 ## Known v0 limitations
 
