@@ -67,6 +67,7 @@ export function SyncShareModal() {
     <div class="modal modal-center">
       <div class="modal-header">Add another device</div>
       <div class="modal-body">
+        <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">On your other device, type the code or scan the QR code.</div>
         <div class="sync-grid">
           <div class="sync-grid__cell">
             <span class="sync-grid__label">Pairing code</span>
