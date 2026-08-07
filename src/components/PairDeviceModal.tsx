@@ -1,7 +1,7 @@
 import { Show, createSignal, onMount, onCleanup } from 'solid-js';
 import { Check, Copy } from 'lucide-solid';
 import { useApp } from '../state';
-import { issueOtp, redeemCode } from '../sync/client';
+import { issueOtp, redeemCode, SyncClientError } from '../sync/client';
 import { renderSyncKeyQr } from '../sync/qr';
 import { isValidSyncKey } from '../sync/key';
 import { QrScannerOverlay } from './QrScannerOverlay';
@@ -53,9 +53,17 @@ export function PairDeviceModal() {
       if (delay > 0) {
         expireTimer = setTimeout(() => void generateCode(), delay);
       }
-    } catch {
+    } catch (e) {
       if (mounted) {
-        setShareError('Could not refresh the code. Tap to retry.');
+        if (e instanceof SyncClientError && e.status === 429) {
+          setShareError('Too many pairing codes issued recently. Try again in a few minutes.');
+        } else if (e instanceof SyncClientError && (e.status === 401 || e.status === 403)) {
+          setShareError('Your sync key is not recognized by this server. Regenerate it in Settings, or re-pair this device.');
+        } else if (e instanceof SyncClientError) {
+          setShareError(`Could not refresh the code (${e.status}). Tap to retry.`);
+        } else {
+          setShareError('Cannot reach the sync server. Check your connection and try again.');
+        }
       }
     }
   };
