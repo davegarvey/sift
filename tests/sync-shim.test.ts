@@ -158,3 +158,35 @@ describe('sync routes on the local-d1 shim', () => {
     expect(body.syncKey).toBe(key);
   });
 });
+
+describe('local-d1 persistence', () => {
+  it('round-trips tables through the persist file', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'sift-local-d1-'));
+    const path = join(dir, 'db.json');
+
+    try {
+      const first = new LocalD1Database({ persistPath: path });
+      const key = makeSyncKey('shim-persist');
+      const app = createSyncRoutes(first as unknown as Parameters<typeof createSyncRoutes>[0]);
+      const reg = await app.request('/sync/register', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': key },
+      });
+      expect(reg.status).toBe(204);
+      await new Promise((r) => setTimeout(r, 150)); // let the debounced flush land
+
+      const second = new LocalD1Database({ persistPath: path });
+      const app2 = createSyncRoutes(second as unknown as Parameters<typeof createSyncRoutes>[0]);
+      const pull = await app2.request('/sync/pull?since=0', {
+        headers: { 'X-Sync-Key': key },
+      });
+      expect(pull.status).toBe(200);
+      expect((await pull.json() as { feeds: unknown[] }).feeds).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

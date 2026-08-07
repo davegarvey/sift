@@ -115,14 +115,27 @@ export async function rotateSyncKey(oldKey: string, newKey: string): Promise<voi
   if (!res.ok) throw new SyncClientError(`Rotate failed: ${res.status}`, res.status);
 }
 
-export async function issueOtp(): Promise<{ code: string; expiresAt: number }> {  const key = await getStoredSyncKey();
+export async function issueOtp(): Promise<{ code: string; expiresAt: number }> {
+  const key = await getStoredSyncKey();
   if (!key) throw new SyncClientError('No sync key stored', 401);
   return withRetry(async () => {
-    const res = await fetchWithTimeout(
+    let res = await fetchWithTimeout(
       '/sync/otp',
       { method: 'POST', headers: { 'X-Sync-Key': key } },
       PUSH_TIMEOUT_MS,
     );
+    if (res.status === 401) {
+      // Pairing is an explicit registration point. A key the server does
+      // not know (fresh environment, cleared storage) is registered before
+      // the code is issued. A rotated key is refused by register (403) and
+      // stays dead — this never resurrects one.
+      await register();
+      res = await fetchWithTimeout(
+        '/sync/otp',
+        { method: 'POST', headers: { 'X-Sync-Key': key } },
+        PUSH_TIMEOUT_MS,
+      );
+    }
     if (!res.ok) {
       const ra = Number(res.headers.get('Retry-After') ?? '60');
       if (res.status === 429) {

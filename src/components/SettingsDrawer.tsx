@@ -1,4 +1,4 @@
-import { Check, Copy } from 'lucide-solid';
+import { Check, Copy, ExternalLink } from 'lucide-solid';
 import { version } from '../../package.json';
 import { Show, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { useApp } from '../state';
@@ -43,12 +43,20 @@ export function SettingsDrawer() {
     const text = await file.text();
     const parsed = parseOpml(text);
     const preview = await buildMergePreview(parsed);
-    if (confirm(`Import ${preview.newSubscriptions.length} feeds? (${preview.skipped} already subscribed, ${preview.total} total found)`)) {
-      await applyMerge(preview);
-      await ctx.reloadFeeds();
-      void ctx.mcpNotifySync();
-      void ctx.refreshAll();
-    }
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Import OPML',
+      message: `Import ${preview.newSubscriptions.length} feeds?`,
+      hint: `${preview.skipped} already subscribed, ${preview.total} total found`,
+      confirmLabel: 'Import',
+      returnTo: { kind: 'settings' },
+      onConfirm: async () => {
+        await applyMerge(preview);
+        await ctx.reloadFeeds();
+        void ctx.mcpNotifySync();
+        void ctx.refreshAll();
+      },
+    });
     input.value = '';
   };
 
@@ -129,7 +137,19 @@ export function SettingsDrawer() {
 
       </div>
       <div class="modal-footer">
-        <span style={{ color: "var(--overlay)", "margin-right": "auto" }}>v{version}</span>
+        <span style={{ display: 'flex', 'align-items': 'center', gap: '6px', color: 'var(--overlay)', 'margin-right': 'auto' }}>
+          <span>v{version}</span>
+          <a
+            href="https://github.com/davegarvey/sift"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Sift on GitHub"
+            aria-label="Sift on GitHub"
+            style={{ display: 'inline-flex', color: 'var(--overlay)' }}
+          >
+            <ExternalLink size={14} />
+          </a>
+        </span>
         <button class="btn primary" onClick={() => ctx.closeModal()}>Done</button>
       </div>
     </div>
@@ -140,9 +160,7 @@ function SyncSection() {
   const ctx = useApp();
   const [syncError, setSyncError] = createSignal<string | null>(null);
   const [fingerprint, setFingerprint] = createSignal<string | null>(null);
-  const [copied, setCopied] = createSignal(false);
   const [syncing, setSyncing] = createSignal(false);
-  const [confirmRegen, setConfirmRegen] = createSignal(false);
   const enabled = () => Boolean(ctx.syncKey());
 
   createEffect(() => {
@@ -160,21 +178,22 @@ function SyncSection() {
       await ctx.enableSync();
     } catch (e) {
       console.error('Failed to enable sync:', e);
-      setSyncError(e instanceof Error ? e.message : 'Failed to enable sync');
+      setSyncError('Failed to enable sync');
     }
   };
 
   const toggleOff = () => {
-    void ctx.disableSync();
-    setSyncError(null);
-  };
-
-  const copyFingerprint = async () => {
-    const fp = fingerprint();
-    if (!fp) return;
-    await navigator.clipboard.writeText(fp);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Disable sync',
+      message: 'Your other devices will stop syncing. Server data is kept until you generate a new key. Continue?',
+      confirmLabel: 'Disable',
+      danger: true,
+      returnTo: { kind: 'settings' },
+      onConfirm: async () => {
+        await ctx.disableSync();
+      },
+    });
   };
 
   const syncNow = async () => {
@@ -188,19 +207,25 @@ function SyncSection() {
     }
   };
 
-  const regenerate = async () => {
-    if (!confirmRegen()) {
-      setConfirmRegen(true);
-      setTimeout(() => setConfirmRegen(false), 3000);
-      return;
-    }
-    setConfirmRegen(false);
-    setSyncError(null);
-    try {
-      await ctx.regenerateSyncKey();
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'Regeneration failed');
-    }
+  const regenerate = () => {
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Regenerate sync key',
+      message: 'Agents will lose access. Other devices will need to pair again.',
+      hint: 'If a device was lost or stolen, regenerating the key is the only way to revoke its access.',
+      confirmLabel: 'Regenerate',
+      danger: true,
+      returnTo: { kind: 'settings' },
+      onConfirm: async () => {
+        setSyncError(null);
+        try {
+          await ctx.regenerateSyncKey();
+        } catch (e) {
+          console.error('Failed to regenerate sync key:', e);
+          setSyncError('Failed to regenerate the key');
+        }
+      },
+    });
   };
 
   // Recompute relative times while the drawer is open.
@@ -217,7 +242,7 @@ function SyncSection() {
     const err = lastError();
     const errAt = lastErrorAt();
     if (err && errAt) {
-      return { text: `Sync failed ${humanRelativeTime(new Date(errAt))} — ${err}`, error: true };
+      return { text: `Sync failed ${humanRelativeTime(new Date(errAt))}`, error: true, detail: err };
     }
     const pending = pendingCount();
     if (pending > 0) {
@@ -242,54 +267,44 @@ function SyncSection() {
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' || e.key === ' ' ? (e.preventDefault(), void (enabled() ? toggleOff() : toggleOn())) : null}
         />
-        <Show when={syncError()}>
-          <p class="error" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{syncError()}</p>
-        </Show>
       </div>
-      <Show when={enabled()}>
-        <div class="row">
-          <label>
-            <Show when={fingerprint()} fallback="Group">
-              Group: {fingerprint()}
+        <Show when={!enabled()}>
+          <p style={{ 'font-size': '14px', color: 'var(--subtext)', margin: '0 0 4px', 'line-height': '1.5' }}>
+            Sync keeps your subscriptions and reading progress in step across your devices. There is no account. If you lose your key, the data on the server is gone.
+          </p>
+        </Show>
+        <Show when={!enabled()}>
+          <div class="row">
+            <label>Join an existing sync</label>
+            <button class="btn" onClick={() => ctx.openModal({ kind: 'pair-device' })}>Join</button>
+          </div>
+        </Show>
+        <Show when={syncError()}>
+          <p class="error">{syncError()}</p>
+        </Show>
+        <Show when={enabled()}>
+          <div class="row">
+            <label classList={{ error: statusLine().error }} title={statusLine().detail ?? undefined}>
+              {statusLine().text}
+            <Show when={fingerprint()}>
+              <span style={{ 'font-size': '13px', color: 'var(--subtext)' }}> · Group {fingerprint()}</span>
             </Show>
           </label>
-          <Show when={fingerprint()}>
-            <button class="sync-grid__copy" onClick={() => void copyFingerprint()} aria-label="Copy group fingerprint">
-              {copied() ? <Check size={14} /> : <Copy size={14} />}
-            </button>
-          </Show>
-        </div>
-        <div class="row" style="border-top: 0">
-          <label classList={{ error: statusLine().error }}>{statusLine().text}</label>
           <button class="btn" disabled={syncing()} onClick={() => void syncNow()}>
             {syncing() ? 'Syncing…' : 'Sync now'}
           </button>
         </div>
         <div class="row">
-          <label>Pair this device with an existing sync</label>
-          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-join' })}>Join</button>
-        </div>
-        <div class="row" style="border-top: 0">
-          <label>
-            <Show when={fingerprint()} fallback="Add another device to this sync">
-              Add another device to group {fingerprint()}
-            </Show>
-          </label>
-          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-share' })}>Invite</button>
+          <label>Pair another device</label>
+          <button class="btn" onClick={() => ctx.openModal({ kind: 'pair-device' })}>Pair</button>
         </div>
         <div class="row">
-          <label>Agents (AI access to this sync)</label>
+          <label>Agent access</label>
           <button class="btn" onClick={() => ctx.openModal({ kind: 'agents' })}>Manage</button>
         </div>
-        <div class="row" style="border-top: 0">
-          <label>Regenerate sync key — revokes every agent token; other devices must re-pair</label>
-          <button
-            class="btn"
-            classList={{ 'btn-danger': confirmRegen() }}
-            onClick={() => void regenerate()}
-          >
-            {confirmRegen() ? 'Confirm' : 'Regenerate'}
-          </button>
+        <div class="row danger">
+          <label>Regenerate sync key</label>
+          <button class="btn" onClick={regenerate}>Regenerate</button>
         </div>
       </Show>
     </div>

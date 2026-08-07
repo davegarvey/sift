@@ -17,6 +17,13 @@ export function relativeTime(ts: number): string {
   return `${years}y`;
 }
 
+/** Format the remaining time until an expiry timestamp ("<1 min", "5 min"). */
+export function expiryLabel(expiresAt: number): string {
+  const minutes = Math.ceil((expiresAt - Date.now()) / 60000);
+  if (minutes < 1) return '<1 min';
+  return `${minutes} min`;
+}
+
 /** Format a Date as human-readable relative time with decaying precision.
  *  "2h ago" → "Wednesday" → "last month" → "Jun 2026" */
 export function humanRelativeTime(date: Date): string {

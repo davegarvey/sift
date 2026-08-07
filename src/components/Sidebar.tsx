@@ -43,7 +43,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
     <nav class="sidebar" aria-label="Feeds" data-collapsed={String(collapsed())}>
       <Show when={!collapsed()}>
         <div class="sidebar-header">
-          <button class="sidebar-wordmark" type="button" title="About Sift" onClick={() => ctx.openModal({ kind: 'about' })}>sift</button>
+          <a class="sidebar-wordmark" href="/" title="Sift">sift</a>
           <button
             class="sidebar-collapse desktop-only"
             title="Close sidebar"

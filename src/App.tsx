@@ -9,27 +9,34 @@ import { CommandPalette } from './components/CommandPalette';
 import { AddFeedModal } from './components/AddFeedModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { PairResultModal } from './components/PairResultModal';
-import { SyncJoinModal } from './components/SyncJoinModal';
-import { SyncShareModal } from './components/SyncShareModal';
+import { PairDeviceModal } from './components/PairDeviceModal';
 import { AgentsModal } from './components/AgentsModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
-import { ConfirmUnsubscribeModal } from './components/ConfirmUnsubscribeModal';
+import { ConfirmModal } from './components/ConfirmModal';
 import { FeedEditorModal } from './components/FeedEditorModal';
-import { AboutModal } from './components/AboutModal';
 import './styles.css';
 
 function Shell() {
   const ctx = useApp();
 
+  const closeModalWithReturn = () => {
+    const modal = ctx.state.modal;
+    if (modal.kind === 'confirm' && modal.returnTo) {
+      ctx.openModal(modal.returnTo);
+    } else {
+      ctx.closeModal();
+    }
+  };
+
   const nav = (e: KeyboardEvent) => {
     // Don't intercept typing into inputs/textareas.
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-      if (e.key === 'Escape' && ctx.state.modal.kind !== 'none') ctx.closeModal();
+      if (e.key === 'Escape' && ctx.state.modal.kind !== 'none') closeModalWithReturn();
       return;
     }
     if (ctx.state.modal.kind !== 'none') {
-      if (e.key === 'Escape') ctx.closeModal();
+      if (e.key === 'Escape') closeModalWithReturn();
       return;
     }
     if (ctx.state.view === 'reading') {
@@ -191,23 +198,17 @@ function Shell() {
       <Show when={ctx.state.modal.kind === 'feed-editor'}>
         <Backdrop><FeedEditorModal /></Backdrop>
       </Show>
-      <Show when={ctx.state.modal.kind === 'confirm-unsubscribe'}>
-        <Backdrop><ConfirmUnsubscribeModal /></Backdrop>
+      <Show when={ctx.state.modal.kind === 'confirm'}>
+        <Backdrop><ConfirmModal /></Backdrop>
       </Show>
       <Show when={ctx.state.modal.kind === 'pair-result'}>
         <Backdrop><PairResultModal /></Backdrop>
       </Show>
-      <Show when={ctx.state.modal.kind === 'sync-join'}>
-        <Backdrop><SyncJoinModal /></Backdrop>
-      </Show>
-      <Show when={ctx.state.modal.kind === 'sync-share'}>
-        <Backdrop><SyncShareModal /></Backdrop>
+      <Show when={ctx.state.modal.kind === 'pair-device'}>
+        <Backdrop><PairDeviceModal /></Backdrop>
       </Show>
       <Show when={ctx.state.modal.kind === 'agents'}>
         <Backdrop><AgentsModal /></Backdrop>
-      </Show>
-      <Show when={ctx.state.modal.kind === 'about'}>
-        <Backdrop><AboutModal /></Backdrop>
       </Show>
     </div>
   );
@@ -219,7 +220,14 @@ function Backdrop(props: { children: JSX.Element }) {
     <div
       class="modal-backdrop"
       onClick={(e) => {
-        if (e.target === e.currentTarget) ctx.closeModal();
+        if (e.target === e.currentTarget) {
+          const modal = ctx.state.modal;
+          if (modal.kind === 'confirm' && modal.returnTo) {
+            ctx.openModal(modal.returnTo);
+          } else {
+            ctx.closeModal();
+          }
+        }
       }}
     >
       {props.children}

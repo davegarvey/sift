@@ -1507,6 +1507,12 @@ a:hover { text-decoration: underline; }
   padding: 8px 0;
 }
 
+.settings .row.danger {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
 .settings .row label {
   font-size: 14px;
 }
@@ -1593,6 +1599,9 @@ a:hover { text-decoration: underline; }
   gap: 12px;
   margin-bottom: 12px;
 }
+.sync-grid--single {
+  grid-template-columns: 1fr;
+}
 .sync-grid__cell {
   background: var(--mantle);
   border: 1px solid var(--hairline);
@@ -1648,11 +1657,6 @@ a:hover { text-decoration: underline; }
   color: var(--text);
   background: var(--surface);
 }
-.sync-grid__expiry {
-  font-size: 12px;
-  color: var(--subtext);
-  text-align: center;
-}
 
 .code-timer {
   width: 16px;
@@ -1685,7 +1689,7 @@ a:hover { text-decoration: underline; }
   background: transparent;
   color: var(--subtext);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 .sync-grid__copy:hover {
   color: var(--text);
@@ -1703,7 +1707,7 @@ a:hover { text-decoration: underline; }
   height: 120px;
 }
 .sync-grid__hint {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--subtext);
   line-height: 1.4;
   text-align: center;
@@ -1712,27 +1716,6 @@ a:hover { text-decoration: underline; }
   .sync-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* Sync "or" divider. */
-.sync-or-divider {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 16px 0;
-}
-.sync-or-divider span:first-child,
-.sync-or-divider span:last-child {
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
-}
-.sync-or-divider span:nth-child(2) {
-  font-size: 11px;
-  color: var(--overlay);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  flex-shrink: 0;
 }
 
 /* QR scanner overlay. */
@@ -1888,7 +1871,13 @@ a:hover { text-decoration: underline; }
 }
 .add-feed .samples ul { margin: 8px 0 0; padding-left: 18px; }
 .add-feed .error {
-  color: #d20f39;
+  color: var(--red);
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.error {
+  color: var(--red);
   margin: 8px 0;
   font-size: 13px;
 }

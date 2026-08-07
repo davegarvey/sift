@@ -101,7 +101,7 @@ export function QrScannerOverlay(props: { onClose: (paired?: boolean) => void })
       } else if (err.name === 'AbortError') {
         setErrorMsg('Camera permission prompt was dismissed. Tap "Scan QR" to try again.');
       } else {
-        setErrorMsg(`Camera error: ${(err as Error).message || 'Unknown'}. Enter the pairing code manually.`);
+        setErrorMsg('Camera error. Enter the pairing code manually.');
       }
       setState('error');
     }
