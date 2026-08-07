@@ -137,6 +137,65 @@ export async function redeemCode(code: string): Promise<string> {
   }, (err) => err instanceof SyncClientError && err.status === 429);
 }
 
+/** Mint an agent pairing code (master-key auth). The code is redeemed by
+ *  `siftctl pair` or an OAS consumer; the token never passes through here. */
+export async function mintAgentCode(): Promise<{ code: string; expiresAt: number }> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(
+      '/sync/tokens',
+      { method: 'POST', headers: { 'X-Sync-Key': key } },
+      PUSH_TIMEOUT_MS,
+    );
+    if (res.status === 429) {
+      const ra = Number(res.headers.get('Retry-After') ?? '60');
+      await sleep(ra * 1000);
+      throw new SyncClientError('Token mint rate-limited', 429, ra);
+    }
+    if (!res.ok) throw new SyncClientError(`Token mint failed: ${res.status}`, res.status);
+    return (await res.json()) as { code: string; expiresAt: number };
+  }, (err) => err instanceof SyncClientError && err.status === 429);
+}
+
+export interface AgentTokenInfo {
+  token_id: string;
+  fingerprint: string;
+  scope: string;
+  created_at: number;
+  last_seen_at: number | null;
+}
+
+/** List agent tokens (master-key auth). Metadata only — never raw tokens. */
+export async function listAgentTokens(): Promise<AgentTokenInfo[]> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  const res = await fetchWithTimeout(
+    '/sync/tokens',
+    { method: 'GET', headers: { 'X-Sync-Key': key } },
+    PUSH_TIMEOUT_MS,
+  );
+  if (!res.ok) throw new SyncClientError(`Token list failed: ${res.status}`, res.status);
+  const body = (await res.json()) as { tokens: AgentTokenInfo[] };
+  return body.tokens;
+}
+
+/** Revoke an agent token by id (master-key auth). */
+export async function revokeAgentToken(tokenId: string): Promise<void> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  const res = await fetchWithTimeout(
+    '/sync/tokens',
+    {
+      method: 'DELETE',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token_id: tokenId }),
+    },
+    PUSH_TIMEOUT_MS,
+  );
+  if (!res.ok) throw new SyncClientError(`Token revoke failed: ${res.status}`, res.status);
+}
+
 export interface PushChunk {
   feeds?: unknown[];
   flags?: unknown[];

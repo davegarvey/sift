@@ -10,8 +10,7 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
 import { listFeeds } from '../src/db/feeds';
-import { getDirty, enqueueFlag } from '../src/sync/queue';
-import { setStoredServerOffset } from '../src/sync/key';
+import { getDirty, enqueueFeed, enqueueFlag } from '../src/sync/queue';
 import { subscribeFeed, unsubscribeFeed, updateFeedMeta } from '../src/feeds/service';
 
 beforeEach(async () => {
@@ -123,15 +122,14 @@ describe('unsubscribeFeed', () => {
   });
 });
 
-describe('server-clock offset on push', () => {
+describe('push payload contract', () => {
   beforeEach(async () => {
     const { setStoredSyncKey } = await import('../src/sync/key');
     await setStoredSyncKey('a'.repeat(22));
   });
 
-  it('converts outgoing stamps to the server frame', async () => {
+  it('sends bare flag values with no timestamps', async () => {
     const { flushNow } = await import('../src/sync/push');
-    await setStoredServerOffset(5000);
     const itemId = 'feed-id::guid-1';
     enqueueFlag({
       itemId,
@@ -148,30 +146,47 @@ describe('server-clock offset on push', () => {
     }) as unknown as typeof globalThis.fetch;
     await flushNow();
     const flag = captured.flags?.[0];
-    expect((flag?.read as { at: number }).at).toBe(6000);
-    expect((flag?.starred as { at: number }).at).toBe(7000);
+    expect(flag).toEqual({ itemId, feedId: 'feed-id', read: 1, starred: 0 });
+    expect(JSON.stringify(captured)).not.toContain('"at"');
     expect(getDirty().length).toBe(0);
   });
 
-  it('uses the local stamp unchanged when no offset is stored', async () => {
+  it('sends bare feed values with no timestamps', async () => {
     const { flushNow } = await import('../src/sync/push');
-    await setStoredServerOffset(null);
-    const itemId = 'feed-id::guid-2';
-    enqueueFlag({
-      itemId,
-      feedId: 'feed-id',
-      read: 1,
-      readAt: 1000,
-      starred: 0,
-      starredAt: 1000,
+    const { clearAllDirty } = await import('../src/sync/queue');
+    await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
+    clearAllDirty();
+    await subscribeFeed({ url: 'https://example.com/feed', title: 'Example' });
+    const dirty = getDirty();
+    const entry = dirty.find((e) => e.kind === 'feed-upsert')!;
+    const feedId = entry.feedId;
+    clearAllDirty();
+    enqueueFeed({
+      feedId,
+      feedUrl: { value: 'https://example.com/feed', at: 1000 },
+      title: 'Example',
+      titleAt: 1000,
+      folder: null,
+      folderAt: 0,
+      htmlUrl: null,
+      tags: null,
+      tagsAt: 0,
+      deleted: 0,
+      deletedAt: null,
     });
-    let captured: { flags?: Array<Record<string, unknown>> } = {};
+    let captured: { feeds?: Array<Record<string, unknown>> } = {};
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       captured = JSON.parse(String(init?.body));
       return new Response(null, { status: 204 });
     }) as unknown as typeof globalThis.fetch;
     await flushNow();
-    const flag = captured.flags?.[0];
-    expect((flag?.read as { at: number }).at).toBe(1000);
+    const feed = captured.feeds?.[0];
+    expect(feed).toEqual({
+      feedId,
+      feedUrl: 'https://example.com/feed',
+      title: 'Example',
+      deleted: 0,
+    });
+    expect(JSON.stringify(captured)).not.toContain('"at"');
   });
 });

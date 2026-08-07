@@ -38,6 +38,16 @@ export async function ensureSchema(db: D1Database): Promise<void> {
       sync_key    TEXT NOT NULL,
       expires_at  INTEGER NOT NULL
     )`,
+    `CREATE TABLE IF NOT EXISTS tokens (
+      token_id         TEXT PRIMARY KEY,
+      token_hash       TEXT NOT NULL UNIQUE,
+      sync_key         TEXT NOT NULL,
+      scope            TEXT NOT NULL DEFAULT 'rw',
+      fingerprint      TEXT NOT NULL,
+      created_at       INTEGER NOT NULL,
+      last_seen_at     INTEGER,
+      last_seen_minute INTEGER
+    )`,
     `CREATE TABLE IF NOT EXISTS counters (
       name  TEXT PRIMARY KEY,
       value INTEGER NOT NULL
@@ -52,14 +62,16 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_flags_row_at    ON flags(sync_key, row_at)`,
     `CREATE INDEX IF NOT EXISTS idx_flags_feed_id   ON flags(sync_key, feed_id)`,
     `CREATE INDEX IF NOT EXISTS idx_pairing_expires ON pairing_codes(expires_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_tokens_sync_key ON tokens(sync_key)`,
     `CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
   ];
   await db.batch(statements.map((sql) => db.prepare(sql)));
 
-  // Migration: add html_url / html_url_at to existing feeds tables.
+  // Migrations: additive columns on existing tables.
   const migrations = [
     `ALTER TABLE feeds ADD COLUMN html_url TEXT`,
     `ALTER TABLE feeds ADD COLUMN html_url_at INTEGER`,
+    `ALTER TABLE pairing_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'device'`,
   ];
   for (const sql of migrations) {
     try {
@@ -67,5 +79,12 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     } catch {
       // Column already exists — swallow the error.
     }
+  }
+
+  // Index on a migrated column must be created after the ALTER.
+  try {
+    await db.prepare('CREATE INDEX IF NOT EXISTS idx_pairing_kind ON pairing_codes(kind)').run();
+  } catch {
+    // kind column missing — swallow the error.
   }
 }
