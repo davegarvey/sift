@@ -37,9 +37,6 @@
     "fake-indexeddb": "^6.2.5"
   },
   "private": true,
-  "workspaces": [
-    "packages/siftctl"
-  ],
   "scripts": {
     "build": "vite build",
     "deploy": "git pull --ff-only && vite build && wrangler deploy",
@@ -52,5 +49,8 @@
     "typecheck": "tsc --noEmit"
   },
   "type": "module",
-  "version": "0.51.1"
+  "version": "0.52.0",
+  "workspaces": [
+    "packages/siftctl"
+  ]
 }
