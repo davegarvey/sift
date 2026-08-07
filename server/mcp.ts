@@ -1,10 +1,5 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { Server, createMcpHandler, type CallToolResult, type Tool } from '@modelcontextprotocol/server';
+import pkg from '../package.json';
 import { Relay } from './relay';
 import { fetchUpstream } from './fetch';
 import { parseFeed } from '../src/feeds/parse';
@@ -18,7 +13,7 @@ type Discovered = {
   samples: string[];
 };
 
-const toolDefinitions = [
+const toolDefinitions: Tool[] = [
   {
     name: 'list_feeds',
     description: 'List all subscribed RSS feeds',
@@ -88,15 +83,15 @@ function textResult(content: string, isError?: boolean): CallToolResult {
 
 export function createMcpServer(relay: Relay): Server {
   const server = new Server(
-    { name: 'sift-mcp', version: '0.1.0' },
+    { name: 'sift-mcp', version: pkg.version },
     { capabilities: { tools: {} } },
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler('tools/list', async () => ({
     tools: toolDefinitions,
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler('tools/call', async (request) => {
     const { name, arguments: args } = request.params;
 
     try {
@@ -124,13 +119,8 @@ export function createMcpServer(relay: Relay): Server {
   return server;
 }
 
-export async function handleMcpRequest(request: Request, relay: Relay): Promise<Response> {
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    enableJsonResponse: true,
-  });
-  const server = createMcpServer(relay);
-  await server.connect(transport);
-  return transport.handleRequest(request);
+export function createMcpHttpHandler(relay: Relay) {
+  return createMcpHandler(() => createMcpServer(relay));
 }
 
 function handleGetFeed(relay: Relay, args: Record<string, unknown>): CallToolResult {

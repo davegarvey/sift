@@ -7,7 +7,7 @@ import {
 } from './fetch';
 import { assertNoUrlLog } from './log';
 import { Relay, sseResponse } from './relay';
-import { handleMcpRequest } from './mcp';
+import { createMcpHttpHandler } from './mcp';
 import { createSyncRoutes } from './sync/routes';
 
 export type AppEnv = Env;
@@ -133,6 +133,8 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
   });
 
   if (mcpEnabled && relay) {
+    const mcpHttpHandler = createMcpHttpHandler(relay);
+
     app.get('/api/capabilities', (c) => c.json({ mcp: true }));
 
     app.get('/api/events', () => sseResponse(relay));
@@ -173,7 +175,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
         headers,
         body: raw.method === 'GET' ? undefined : await raw.blob(),
       });
-      return handleMcpRequest(request, relay);
+      return mcpHttpHandler.fetch(request);
     });
   }
 
