@@ -25,7 +25,7 @@ import { scheduleFlush, flushNow } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { setOnSync } from './sync/merge';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
-import { redeemCode, register } from './sync/client';
+import { redeemCode, register, rotateSyncKey } from './sync/client';
 import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, updateFeedMeta, changeFeedUrl, type SubscribeInput } from './feeds/service';
 import { isIdle, onCatchup, clearActivityOnHide } from './util/idle';
 
@@ -35,7 +35,7 @@ type ModalKind =
   | { kind: 'palette' }
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
-  | { kind: 'add-feed' }
+  | { kind: 'add-feed'; url?: string }
   | { kind: 'feed-editor'; feedId: string }
   | { kind: 'confirm-unsubscribe'; feedId: string }
   | { kind: 'pair-result'; success: boolean; message: string }
@@ -414,10 +414,7 @@ export const AppProvider: ParentComponent = (props) => {
     }
     await updateSettingsWith({ syncKey: key });
     try {
-      // Register the sync key on the server before any push attempt.
-      // pushChunk also auto-registers on 401, but an explicit register
-      // here avoids a 401 -> retry cycle on a fresh D1.
-      await register();
+      // runFirstTimeSetup registers the key before its first pull.
       await triggerFirstTime();
     } catch (e) {
       await disableSync();
@@ -437,6 +434,7 @@ export const AppProvider: ParentComponent = (props) => {
     await setStoredSyncKey(key);
     await updateSettingsWith({ syncKey: key });
     try {
+      // runFirstTimeSetup registers the key before its first pull.
       await triggerFirstTime();
     } finally {
       await reloadFeeds();
@@ -445,9 +443,19 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const regenerateSyncKey = async () => {
+    const oldKey = await getStoredSyncKey();
     const newKey = generateSyncKey();
     await setStoredSyncKey(newKey);
     await updateSettingsWith({ syncKey: newKey });
+    if (!oldKey) return;
+    try {
+      // Server-side rotation: registers the new key and permanently deads
+      // the old one (all agent tokens orphaned, register refuses to
+      // resurrect it). Local rotation still succeeds if this fails.
+      await rotateSyncKey(oldKey, newKey);
+    } catch (e) {
+      console.error('Failed to rotate sync key on server:', e);
+    }
   };
 
   const syncNow = async () => {
@@ -602,6 +610,15 @@ export const AppProvider: ParentComponent = (props) => {
       await reloadItems();
       history.replaceState(null, '', window.location.pathname);
       openModal({ kind: 'pair-result', success, message });
+    }
+
+    // Agent intent: ?intent=add&url=<feed-url> opens the add-feed modal
+    // prefilled. The value is passed through unvalidated — discovery-time
+    // validation gates it; nothing is fetched as a side effect of loading.
+    const intent = params.get('intent');
+    if (intent === 'add') {
+      openModal({ kind: 'add-feed', url: params.get('url') ?? undefined });
+      history.replaceState(null, '', window.location.pathname);
     }
   })().finally(() => setHydrated(true));
 

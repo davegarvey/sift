@@ -9,7 +9,7 @@ import type { DiscoveredFeed } from '../feeds/discover';
 
 export function AddFeedModal() {
   const ctx = useApp();
-  const [url, setUrl] = createSignal('');
+  const [url, setUrl] = createSignal(ctx.state.modal.kind === 'add-feed' ? ctx.state.modal.url ?? '' : '');
   const [discovered, setDiscovered] = createSignal<DiscoveredFeed | null>(null);
   const [discovering, setDiscovering] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);

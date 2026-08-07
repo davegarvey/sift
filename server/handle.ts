@@ -34,7 +34,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
    * If-Modified-Since) and passes through 304 responses. Never logs the URL.
    */
   app.get('/feed', async (c) => {
-    const upstream = getUpstreamUrl(c.req.url);
+    const upstream = await getUpstreamUrl(c.req.url);
     if (!upstream) return badRequest('Missing or invalid `url` query parameter');
     assertNoUrlLog(upstream);
 
@@ -86,7 +86,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
    * browser runs Readability on the result. Never logs the URL.
    */
   app.get('/article', async (c) => {
-    const upstream = getUpstreamUrl(c.req.url);
+    const upstream = await getUpstreamUrl(c.req.url);
     if (!upstream) return badRequest('Missing or invalid `url` query parameter');
     assertNoUrlLog(upstream);
 
@@ -114,7 +114,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
    * as data: URIs in extracted article HTML. Never logs the URL.
    */
   app.get('/img', async (c) => {
-    const upstream = getUpstreamUrl(c.req.url);
+    const upstream = await getUpstreamUrl(c.req.url);
     if (!upstream) return badRequest('Missing or invalid `url` query parameter');
     assertNoUrlLog(upstream);
 

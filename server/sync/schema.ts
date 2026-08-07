@@ -72,6 +72,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `ALTER TABLE feeds ADD COLUMN html_url TEXT`,
     `ALTER TABLE feeds ADD COLUMN html_url_at INTEGER`,
     `ALTER TABLE pairing_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'device'`,
+    `ALTER TABLE users ADD COLUMN rotated_at INTEGER`,
   ];
   for (const sql of migrations) {
     try {

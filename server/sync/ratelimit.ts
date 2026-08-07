@@ -58,4 +58,43 @@ export const RATE_LIMITS = {
   pull: { windowSeconds: 60, limit: 60 },
   tokensMint: { windowSeconds: 3600, limit: 20 },
   tokensRedeem: { windowSeconds: 60, limit: 10 },
+  rotate: { windowSeconds: 3600, limit: 20 },
 } as const;
+
+/**
+ * In-memory windowed rate limiter (per isolate).
+ *
+ * Used where a D1-backed counter would make the guard the attack surface:
+ * code-pull brute-force attempts would each upsert a `rate_limits` row, so
+ * a distributed guessing campaign would drain the shared D1 write quota.
+ * Memory counters cost nothing and still stop a single source. They are
+ * approximate across isolates (an attacker rotating edges multiplies
+ * budget) — that is the documented bound for a 40-bit, 5-minute code.
+ */
+const memoryBuckets = new Map<string, { windowStart: number; count: number }>();
+const MEMORY_BUCKET_SWEEP = 10_000;
+
+export function checkMemoryRateLimit(
+  scope: string,
+  windowSeconds: number,
+  limit: number,
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): RateLimitResult {
+  if (memoryBuckets.size >= MEMORY_BUCKET_SWEEP) {
+    for (const [key, bucket] of memoryBuckets) {
+      if (bucket.windowStart < nowSeconds - windowSeconds) memoryBuckets.delete(key);
+    }
+  }
+  const windowStart = Math.floor(nowSeconds / windowSeconds) * windowSeconds;
+  const windowEnd = windowStart + windowSeconds;
+  const bucket = memoryBuckets.get(scope);
+  if (!bucket || bucket.windowStart !== windowStart) {
+    memoryBuckets.set(scope, { windowStart, count: 1 });
+    return { ok: true, retryAfter: 0 };
+  }
+  if (bucket.count >= limit) {
+    return { ok: false, retryAfter: Math.max(1, windowEnd - nowSeconds) };
+  }
+  bucket.count += 1;
+  return { ok: true, retryAfter: 0 };
+}
