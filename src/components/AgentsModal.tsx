@@ -119,7 +119,7 @@ Reference: ${origin}/openapi.json`,
       <div class="modal-header">Agents</div>
       <div class="modal-body">
         <Show when={!code()}>
-          <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+          <div style="margin-bottom: 10px; font-size: 14px; color: var(--subtext)">
             Give a chat tool or coding agent access to read your feeds and propose additions.
           </div>
         </Show>
@@ -128,7 +128,7 @@ Reference: ${origin}/openapi.json`,
         </Show>
         <Show when={code()}>
           <Show when={!expired()}>
-            <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+            <div style="margin-bottom: 10px; font-size: 14px; color: var(--subtext)">
               Copy the prompt and paste it into a chat tool or coding agent.
             </div>
             <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px">
@@ -136,7 +136,7 @@ Reference: ${origin}/openapi.json`,
                 {copied() ? <Check size={14} /> : <Copy size={14} />}
                 <span style="margin-left: 4px">Copy prompt</span>
               </button>
-              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--subtext)">
+              <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--subtext)">
                 <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
                   <circle class="code-timer__bg" cx="12" cy="12" r="10" />
                   <circle
@@ -152,15 +152,15 @@ Reference: ${origin}/openapi.json`,
             </div>
             <button
               class="sync-grid__copy"
-              style="margin-bottom: 10px"
+              style="margin-bottom: 10px; font-size: 13px"
               onClick={() => setShowTerminal((v) => !v)}
               aria-expanded={showTerminal()}
             >
               Using a terminal?
             </button>
             <Show when={showTerminal()}>
-              <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--subtext)">
-                <div>Install <code style="font-size: 12px">siftctl</code> and pair it to manage your subscriptions from the terminal.</div>
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 13px; color: var(--subtext)">
+                <div>Install <code style="font-size: 13px">siftctl</code> and pair it to manage your subscriptions from the terminal.</div>
                 <div class="codeblock">
                   <code>npm i -g siftctl</code>
                   <button class="codeblock__copy" onClick={() => void copyInstall()} aria-label="Copy install command">
@@ -177,14 +177,14 @@ Reference: ${origin}/openapi.json`,
             </Show>
           </Show>
           <Show when={expired()}>
-            <p style="margin: 0 0 8px; font-size: 13px; color: var(--subtext)">The code expired.</p>
+            <p style="margin: 0 0 8px; font-size: 14px; color: var(--subtext)">The code expired.</p>
             <button class="btn" onClick={() => void generateCode()}>Get a new code</button>
           </Show>
         </Show>
         <Show when={error()}>
           <p class="error">{error()}</p>
         </Show>
-        <div style="font-size: 13px">
+        <div style="font-size: 14px">
           <Show
             when={!tokens.loading && tokens() && tokens()!.length > 0}
             fallback={
@@ -197,7 +197,7 @@ Reference: ${origin}/openapi.json`,
                   <div class="row" style="align-items: center">
                     <label style="flex: 1; min-width: 0">
                       <span style="font-weight: 600">{token.fingerprint}</span>
-                      <span style="display: block; font-size: 12px; color: var(--subtext)">
+                      <span style="display: block; font-size: 13px; color: var(--subtext)">
                         {token.scope} · created {relativeTime(token.created_at)} · last seen {token.last_seen_at === null ? 'not seen yet' : relativeTime(token.last_seen_at)}
                       </span>
                     </label>
