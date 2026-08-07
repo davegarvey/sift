@@ -111,27 +111,46 @@ commands support `--json` for machine consumption.
 ### Via the OpenAPI document
 
 The sync API is described at `https://sift.davegarvey.workers.dev/openapi.json`.
-Point an OpenAPI-aware agent (ChatGPT Actions, etc.) at that URL with
-`X-Sync-Key` as the API-key header. Writes carry no timestamps — the server
-stamps everything.
+Point an OpenAPI-aware agent (ChatGPT Actions, a coding agent like Claude
+Code or opencode) at that URL with `X-Sync-Key` as the API-key header.
+Writes carry no timestamps — the server stamps everything.
+
+### Via a hosted chat tool (ChatGPT, Claude web)
+
+Hosted chat tools cannot POST or send auth headers, but they can fetch plain
+GET URLs. Settings → Sync → Agents → "Copy prompt" gives a prompt built for
+them:
+
+- **Reads**: the agent fetches `GET /sync/pull?code=<code>`. The code is the
+  credential — read-only, multi-use, valid until its 5-minute expiry, and
+  rate-limited per IP. No token is minted, so nothing to revoke.
+- **Writes**: the agent proposes adds as clickable links
+  `…/?intent=add&url=<feed-url>`. Clicking opens the app's add-feed modal
+  prefilled; you approve by running discovery and subscribing. The agent
+  never touches your subscriptions directly.
 
 ### Pairing and tokens
 
 - Pairing: Settings → Sync → Agents → "Pair an agent" shows an 8-character
   code (5-minute expiry) that `siftctl pair` or `POST /sync/tokens/redeem`
-  exchanges for a token.
+  exchanges for a token. The same code works on `GET /sync/pull` as a
+  read-only credential for hosted chat agents.
 - Tokens are 23-character credentials starting with `t` — distinct from the
   master sync key, which never leaves your browser. Tokens can only call
   `/sync/pull` and `/sync/push`; they cannot mint device codes, register, or
   manage tokens (a device code would redeem to the master key).
 - **Revocation**: Settings → Sync → Agents lists every token (by fingerprint)
   with a revoke button. Revocation is immediate and does not affect your
-  devices. Rotating the sync key orphans old tokens (they stay valid against
-  the old key's data and can no longer be listed).
+  devices. Regenerating the sync key (Settings → Sync → Regenerate) is the
+  kill switch: the old key is marked dead server-side — every agent token
+  stops working instantly, `register` refuses to resurrect the old key, and
+  other devices must re-pair with the new key.
 - **Warning**: a token grants read/write of your subscriptions to whoever
   holds it. Treat it like a password; if you paste it into a third-party
-  service (e.g., ChatGPT), you are trusting that service with it. Revoke it
-  when done.
+  service, you are trusting that service with it. Revoke it when done. A
+  pairing code pasted into a chat tool is far less dangerous — read-only and
+  dead in 5 minutes — but agents share your per-sync-key pull budget with
+  your browsers, so a runaway agent can slow your devices' sync.
 
 ## Known v0 limitations
 

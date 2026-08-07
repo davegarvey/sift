@@ -3,7 +3,7 @@
   "info": {
     "title": "Sift Sync API",
     "version": "0.49.6",
-    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags) for AI agents and other tools. Agents are first-class sync devices: they authenticate with a scoped, revocable agent token and can read your feeds and change subscriptions.\n\nGet started: open Sift Settings → Sync → Agents → pair an agent, then redeem the 8-character code via POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the X-Sync-Key header.\n\nSecurity notes:\n- Agent tokens can only call GET /sync/pull and POST /sync/push. The register, otp, and tokens endpoints are master-key-only and will reject agent tokens with 401.\n- A token grants read/write of the subscriptions it is bound to. Revoke it anytime from Settings; revocation takes effect immediately.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
+    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags) for AI agents and other tools. Agents are first-class sync devices: they authenticate with a scoped, revocable agent token and can read your feeds and change subscriptions.\n\nGet started: open Sift Settings → Sync → Agents → pair an agent, then redeem the 8-character code via POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the X-Sync-Key header.\n\nHosted chat tools (ChatGPT, Claude web) cannot POST or send headers. They can read with the pairing code directly: GET /sync/pull?code=<code> works with no headers and stays valid until the code's 5-minute expiry. To add a feed, such agents propose a link of the form /?intent=add&url=<feed-url> (URL-encoded) — the user clicks it and approves the add in the app; the agent never writes directly.\n\nSecurity notes:\n- Agent tokens can only call GET /sync/pull and POST /sync/push. The register, otp, and tokens endpoints are master-key-only and will reject agent tokens with 401.\n- A token grants read/write of the subscriptions it is bound to. Revoke it anytime from Settings; revocation takes effect immediately. Rotating the sync key orphans all tokens.\n- A pairing code on GET /sync/pull is read-only and expires in 5 minutes; it can appear in chat history — treat it as a short-lived read capability.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
     "contact": {
       "name": "Sift"
     }
@@ -156,13 +156,19 @@
     "/sync/pull": {
       "get": {
         "summary": "Pull changes since a cursor",
-        "description": "Returns feeds and flags with row_at >= since, plus the new serverTime to use as the next cursor. since=0 returns everything. Agent tokens are allowed.",
+        "description": "Returns feeds and flags with row_at >= since, plus the new serverTime to use as the next cursor. since=0 returns everything. Authenticate with the X-Sync-Key header (master key or agent token), or — for hosted chat agents that cannot send headers — pass the 8-character agent pairing code in the `code` query parameter. A code authenticates read-only, is multi-use until its 5-minute expiry, and is brute-force guarded per IP. Responses are Cache-Control: no-store.",
         "parameters": [
           {
             "name": "since",
             "in": "query",
             "schema": { "type": "integer", "minimum": 0 },
             "description": "Cursor from the previous pull's serverTime; 0 for the full dump."
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "schema": { "type": "string", "minLength": 8, "maxLength": 8 },
+            "description": "Agent pairing code from Settings → Sync → Agents. Alternative to the X-Sync-Key header; read-only; valid until expiry. Mutually exclusive with the header."
           }
         ],
         "responses": {
@@ -175,7 +181,8 @@
             }
           },
           "401": { "description": "Missing, revoked, or invalid credential" },
-          "429": { "description": "Rate limited (per sync key)" }
+          "404": { "description": "Unknown, expired, or non-agent `code`" },
+          "429": { "description": "Rate limited (per sync key, or per IP for code pulls)" }
         }
       }
     },

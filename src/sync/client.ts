@@ -2,12 +2,14 @@
  * HTTP client for the sync API.
  *
  * - `register()` — POST /sync/register, idempotent.
+ * - `rotateSyncKey()` — POST /sync/rotate, regenerate the sync key.
  * - `issueOtp()` — POST /sync/otp, returns the server-generated code.
  * - `redeemCode()` — POST /sync/redeem, returns the sync key.
  * - `pushDirty()` — POST /sync/push, returns ok or error.
  * - `pullSince()` — GET /sync/pull?since=…, returns server payload.
  *
- * 401 on a request with a known-locally key triggers an auto-register + retry.
+ * Registration is explicit (pairing, enabling sync, rotation). A 401 is
+ * never auto-recovered — a rotated or revoked key stays dead by design.
  * 413 (push) → split payload and retry.
  * 429 → respect Retry-After; fall back to exponential backoff.
  * 5xx / network → exponential backoff (1s, 2s, 5s, 10s, max 60s).
@@ -94,8 +96,26 @@ export async function register(): Promise<void> {
   }
 }
 
-export async function issueOtp(): Promise<{ code: string; expiresAt: number }> {
-  const key = await getStoredSyncKey();
+/**
+ * Regenerate the sync key (master-key auth). `oldKey` goes in the header
+ * (it may already be replaced in storage when this is called); `newKey` in
+ * the body. The server registers the new key and permanently deads the old
+ * one — its agent tokens stop working and register refuses to resurrect it.
+ */
+export async function rotateSyncKey(oldKey: string, newKey: string): Promise<void> {
+  const res = await fetchWithTimeout(
+    '/sync/rotate',
+    {
+      method: 'POST',
+      headers: { 'X-Sync-Key': oldKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sync_key: newKey }),
+    },
+    PUSH_TIMEOUT_MS,
+  );
+  if (!res.ok) throw new SyncClientError(`Rotate failed: ${res.status}`, res.status);
+}
+
+export async function issueOtp(): Promise<{ code: string; expiresAt: number }> {  const key = await getStoredSyncKey();
   if (!key) throw new SyncClientError('No sync key stored', 401);
   return withRetry(async () => {
     const res = await fetchWithTimeout(
@@ -202,31 +222,23 @@ export interface PushChunk {
 }
 
 /**
- * Push a chunk. On 401, auto-register and retry once. On 413, returns the
- * payload as-is so the caller can split and retry.
+ * Push a chunk. On 413, returns the payload as-is so the caller can split
+ * and retry. A 401 is final — a rotated or revoked key is never
+ * auto-registered (registration is explicit: pairing and rotation).
  */
 export async function pushChunk(chunk: PushChunk): Promise<{ retried: boolean }> {
   const key = await getStoredSyncKey();
   if (!key) throw new SyncClientError('No sync key stored', 401);
 
-  const doFetch = async (): Promise<Response> => {
-    return fetchWithTimeout(
-      '/sync/push',
-      {
-        method: 'POST',
-        headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
-        body: JSON.stringify(chunk),
-      },
-      PUSH_TIMEOUT_MS,
-    );
-  };
-
-  let res = await doFetch();
-  if (res.status === 401) {
-    await register();
-    res = await doFetch();
-    if (res.ok) return { retried: true };
-  }
+  const res = await fetchWithTimeout(
+    '/sync/push',
+    {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(chunk),
+    },
+    PUSH_TIMEOUT_MS,
+  );
   if (res.status === 413) {
     throw new SyncClientError('Payload too large', 413);
   }
@@ -250,10 +262,6 @@ export async function pullSince(since: number): Promise<PullPayload> {
       { method: 'GET', headers: { 'X-Sync-Key': key } },
       PULL_TIMEOUT_MS,
     );
-    if (res.status === 401) {
-      await register();
-      throw new SyncClientError('Pull 401, retrying after register', 401);
-    }
     if (res.status === 429) {
       const ra = Number(res.headers.get('Retry-After') ?? '60');
       await sleep(ra * 1000);
@@ -261,7 +269,7 @@ export async function pullSince(since: number): Promise<PullPayload> {
     }
     if (!res.ok) throw new SyncClientError(`Pull failed: ${res.status}`, res.status);
     return (await res.json()) as PullPayload;
-  }, (err) => err instanceof SyncClientError && (err.status === 429 || err.status === 401));
+  }, (err) => err instanceof SyncClientError && err.status === 429);
 }
 
 /**

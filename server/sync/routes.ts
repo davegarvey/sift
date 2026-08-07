@@ -9,7 +9,17 @@
  */
 
 import { Hono, type Context } from 'hono';
-import { requirePrincipal, requireMaster, getSyncKeyContext, isValidSyncKey, type SyncKeyEnv } from './auth';
+import {
+  requirePrincipal,
+  requireMaster,
+  requirePullPrincipal,
+  getSyncKeyContext,
+  isValidSyncKey,
+  generatePairingCode,
+  isPairingCode,
+  clientIp,
+  type SyncKeyEnv,
+} from './auth';
 import { RATE_LIMITS, checkRateLimit } from './ratelimit';
 import { nextMonotonicTime, currentMonotonicTime } from './monotonic';
 import { ensureSchema } from './schema';
@@ -17,8 +27,6 @@ import { assertNoKeyLog, assertNoUserDataLog, assertNoUrlLog } from '../log';
 import { decodeItemId } from '../../src/sync/itemId';
 import { generateToken, generateTokenId, sha256Hex, tokenFingerprint } from './tokens';
 
-const PAIRING_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
-const PAIRING_CODE_LEN = 8;
 const PAIRING_TTL_SECONDS = 5 * 60;
 const MAX_USERS = 100_000;
 
@@ -134,33 +142,11 @@ function validateFlagPayload(g: FlagPayload): { message: string; field: string }
   return null;
 }
 
-function clientIp(c: Context): string {
-  return c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? '0.0.0.0';
-}
-
 function rateLimitResponse(scope: string, limitKey: string, retryAfter: number, status: 429 | 503 = 429): Response {
   return new Response(null, {
     status,
-    headers: { 'Retry-After': String(retryAfter) },
+    headers: { 'Retry-After': String(retryAfter), 'Cache-Control': 'no-store' },
   });
-}
-
-function generatePairingCode(): string {
-  const bytes = new Uint8Array(PAIRING_CODE_LEN);
-  crypto.getRandomValues(bytes);
-  let s = '';
-  for (let i = 0; i < PAIRING_CODE_LEN; i++) {
-    s += PAIRING_ALPHABET[bytes[i] % PAIRING_ALPHABET.length];
-  }
-  return s;
-}
-
-function isPairingCode(s: string): boolean {
-  if (s.length !== PAIRING_CODE_LEN) return false;
-  for (const ch of s) {
-    if (!PAIRING_ALPHABET.includes(ch)) return false;
-  }
-  return true;
 }
 
 function jsonError(message: string, fieldName?: string, fieldValue?: unknown): Response {
@@ -238,6 +224,16 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       return new Response('Service at capacity', { status: 503 });
     }
 
+    // Check 4: a rotated (regenerated-away) key must never be resurrected.
+    // Otherwise a stolen old key could be re-registered into a working group.
+    const existing = await db
+      .prepare('SELECT rotated_at FROM users WHERE sync_key = ?')
+      .bind(syncKey)
+      .first<{ rotated_at: number | null }>();
+    if (existing && existing.rotated_at !== null) {
+      return c.text('Forbidden', 403);
+    }
+
     // Lazy create (idempotent).
     await db
       .prepare('INSERT OR IGNORE INTO users (sync_key, created_at) VALUES (?, ?)')
@@ -249,13 +245,61 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
 
   // Authenticated data routes.
   // Master-key-only routes: /sync/otp (a device code redeems to the master
-  // key), /sync/tokens (token lifecycle). Agent tokens: pull/push only.
+  // key), /sync/tokens (token lifecycle), /sync/rotate. Agent tokens:
+  // pull/push only. Pull additionally accepts an agent pairing code
+  // (?code=) — read-only.
   const auth = requirePrincipal(db);
   const masterAuth = requireMaster(db);
+  const pullAuth = requirePullPrincipal(db);
   app.use('/sync/otp', masterAuth);
   app.use('/sync/push', auth);
-  app.use('/sync/pull', auth);
+  app.use('/sync/pull', pullAuth);
   app.use('/sync/tokens', masterAuth);
+  app.use('/sync/rotate', masterAuth);
+
+  // POST /sync/rotate — regenerate the sync key (master key only).
+  // Body: { sync_key: <new key> }. The header carries the OLD key. The old
+  // key's users row is marked rotated: master-key auth and agent-token auth
+  // reject it (401) and /sync/register refuses to resurrect it (403) — a
+  // rotated key is dead, devices must re-pair with the new key, and every
+  // agent token minted under it is orphaned. The new key is registered so
+  // the regenerating browser keeps its group (its dirty state then pushes
+  // into the new row as usual).
+  app.post('/sync/rotate', async (c) => {
+    const { syncKey: oldKey } = getSyncKeyContext(c);
+
+    const rl = await checkRateLimit(
+      db,
+      `rotate:${oldKey}`,
+      RATE_LIMITS.rotate.windowSeconds,
+      RATE_LIMITS.rotate.limit,
+      now(),
+    );
+    if (!rl.ok) {
+      return rateLimitResponse(`rotate:${oldKey}`, oldKey, rl.retryAfter, 429);
+    }
+
+    let body: { sync_key?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return jsonError('Invalid JSON body', 'body');
+    }
+    const newKey = typeof body.sync_key === 'string' ? body.sync_key : '';
+    if (!isValidSyncKey(newKey)) {
+      return jsonError('sync_key must be a 22-character base64url key', 'sync_key');
+    }
+    if (newKey === oldKey) {
+      return jsonError('sync_key must differ from the current key', 'sync_key');
+    }
+
+    await db.batch([
+      db.prepare('INSERT OR IGNORE INTO users (sync_key, created_at) VALUES (?, ?)').bind(newKey, now()),
+      db.prepare('UPDATE users SET rotated_at = ? WHERE sync_key = ?').bind(now(), oldKey),
+    ]);
+    assertNoKeyLog(oldKey);
+    return c.body(null, 204);
+  });
 
   // POST /sync/otp — issue a pairing code (server-generated).
   app.post('/sync/otp', async (c) => {
@@ -732,8 +776,12 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     return c.body(null, 204);
   });
 
-  // GET /sync/pull?since=<ms>
+  // GET /sync/pull?since=<ms>&code=<agent code>
+  // The `code` query parameter authenticates read-only (agent pairing code);
+  // responses are never cached — pull data is personal and a code rides in
+  // the URL, so shared caches must not replay one user's state to another.
   app.get('/sync/pull', async (c) => {
+    c.header('Cache-Control', 'no-store');
     const { syncKey } = getSyncKeyContext(c);
 
     const rl = await checkRateLimit(

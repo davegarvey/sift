@@ -3,7 +3,7 @@ import { listItems } from '../db/items';
 import { getItemFlags, bulkSetFlags, type ItemFlag } from '../db/flags';
 import { enqueueFeed, enqueueFlag, clearAllDirty } from './queue';
 import { flushNow, scheduleFlush } from './push';
-import { pullSince, type PullPayload } from './client';
+import { pullSince, register, type PullPayload } from './client';
 import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
 import { getStoredLastSyncAt, setStoredLastSyncAt, setStoredServerOffset } from './key';
 import { decodeItemId } from './itemId';
@@ -111,6 +111,11 @@ async function mergePayload(payload: RemotePayload, serverTime: number): Promise
 }
 
 export async function runFirstTimeSetup(): Promise<number> {
+  // Registration is explicit: ensure the server knows this key before the
+  // first pull. Idempotent (INSERT OR IGNORE); a rotated key is refused
+  // with 403 and the setup fails, which is the intended outcome.
+  await register();
+
   const existingFeeds = await listFeeds();
   const existingFlags = await getItemFlags();
 

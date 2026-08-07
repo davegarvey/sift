@@ -142,6 +142,7 @@ function SyncSection() {
   const [fingerprint, setFingerprint] = createSignal<string | null>(null);
   const [copied, setCopied] = createSignal(false);
   const [syncing, setSyncing] = createSignal(false);
+  const [confirmRegen, setConfirmRegen] = createSignal(false);
   const enabled = () => Boolean(ctx.syncKey());
 
   createEffect(() => {
@@ -184,6 +185,21 @@ function SyncSection() {
       // The status store records the failure; nothing else to surface here.
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const regenerate = async () => {
+    if (!confirmRegen()) {
+      setConfirmRegen(true);
+      setTimeout(() => setConfirmRegen(false), 3000);
+      return;
+    }
+    setConfirmRegen(false);
+    setSyncError(null);
+    try {
+      await ctx.regenerateSyncKey();
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'Regeneration failed');
     }
   };
 
@@ -264,6 +280,16 @@ function SyncSection() {
         <div class="row">
           <label>Agents (AI access to this sync)</label>
           <button class="btn" onClick={() => ctx.openModal({ kind: 'agents' })}>Manage</button>
+        </div>
+        <div class="row" style="border-top: 0">
+          <label>Regenerate sync key — revokes every agent token; other devices must re-pair</label>
+          <button
+            class="btn"
+            classList={{ 'btn-danger': confirmRegen() }}
+            onClick={() => void regenerate()}
+          >
+            {confirmRegen() ? 'Confirm' : 'Regenerate'}
+          </button>
         </div>
       </Show>
     </div>

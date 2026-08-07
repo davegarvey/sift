@@ -59,7 +59,17 @@ export function AgentsModal() {
     if (!c) return;
     const origin = window.location.origin;
     await navigator.clipboard.writeText(
-      `You are my Sift RSS sync agent. Pair with code ${c} via POST ${origin}/sync/tokens/redeem, then manage my subscriptions using the API documented at ${origin}/openapi.json.`,
+      `You are my Sift RSS agent.
+
+What you can do
+- Read my subscriptions and items. Fetch GET ${origin}/sync/pull?code=${c}
+- Propose feeds to add. Send a link: ${origin}/?intent=add&url=<feed-url>
+
+Rules
+- Access expires in 5 minutes.
+- You cannot change my subscriptions. I approve each add by clicking its link.
+
+Reference: ${origin}/openapi.json`,
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -107,7 +117,7 @@ export function AgentsModal() {
       <div class="modal-header">Agents</div>
       <div class="modal-body">
         <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
-          Copy the prompt and paste it into a chat tool like ChatGPT. The agent can then manage your feeds.
+          Copy the prompt and paste it into a chat tool like ChatGPT or Claude, or a coding agent. The agent can then read your feeds and propose additions.
         </div>
         <Show when={code()}>
           <div class="sync-grid" style="margin-bottom: 8px">
