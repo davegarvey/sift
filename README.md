@@ -93,6 +93,8 @@ conflict-merged sync the browsers use — no MCP, no gateway process.
 
 ### Via `siftctl` (recommended)
 
+Published to npm on each release. Install and pair:
+
 ```sh
 npm i -g siftctl        # or: npx siftctl
 siftctl pair <code>     # code from Settings → Sync → Agents

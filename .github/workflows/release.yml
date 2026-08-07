@@ -34,7 +34,7 @@ jobs:
         run: |
           BUMP_TYPE=$(./grubble --bump-type)
           echo "BUMP_TYPE=$BUMP_TYPE"
-          ./grubble --tag --preset node --package-files package.json
+          ./grubble --tag --preset node --package-files "package.json,packages/siftctl/package.json"
           NEW=$(./grubble --raw --preset node)
           echo "NEW=$NEW"
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
@@ -72,3 +72,24 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           git tag "v${VERSION}"
           git push origin "v${VERSION}"
+
+  publish-siftctl:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build --workspace siftctl
+
+      - run: npm publish --workspace siftctl
