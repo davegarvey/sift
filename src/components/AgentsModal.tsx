@@ -110,11 +110,6 @@ Reference: ${origin}/openapi.json`,
     });
   };
 
-  const displayCode = () => {
-    const c = code();
-    return c ? c.slice(0, 4) + '-' + c.slice(4) : '';
-  };
-
   onCleanup(() => {
     clearInterval(ringTimer);
   });
@@ -137,38 +132,29 @@ Reference: ${origin}/openapi.json`,
           <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
         </Show>
         <Show when={code()}>
-          <div class="sync-grid sync-grid--single" style="margin-bottom: 8px">
-            <div class="sync-grid__cell">
-              <Show when={!expired()}>
-                <span class="sync-grid__label">Pairing code</span>
-                <span class="sync-grid__code">{displayCode()}</span>
-                <div style="display: flex; gap: 6px; justify-content: center">
-                  <button class="sync-grid__copy" onClick={() => void copyPrompt()} aria-label="Copy starter prompt for a chat tool">
-                    {copied() ? <Check size={14} /> : <Copy size={14} />}
-                    <span style="font-size: 12px">Copy prompt</span>
-                  </button>
-                </div>
-                <div style="display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--subtext)">
-                  <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle class="code-timer__bg" cx="12" cy="12" r="10" />
-                    <circle
-                      class="code-timer__progress"
-                      cx="12" cy="12" r="10"
-                      stroke-dasharray={`${2 * Math.PI * 10}`}
-                      stroke-dashoffset={`${2 * Math.PI * 10 * (1 - ringFraction())}`}
-                      style={{ stroke: ringFraction() > 0.1 ? undefined : 'var(--red)' }}
-                    />
-                  </svg>
-                  {`Expires in ${expiryLabel(expiresAt()!)}`}
-                </div>
-              </Show>
-              <Show when={expired()}>
-                <span class="sync-grid__label">Code expired</span>
-                <button class="btn" style="align-self: center" onClick={() => void generateCode()}>Get a new code</button>
-              </Show>
-            </div>
-          </div>
           <Show when={!expired()}>
+            <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+              Copy the prompt and paste it into a chat tool or coding agent.
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px">
+              <button class="btn primary" onClick={() => void copyPrompt()} aria-label="Copy starter prompt for a chat tool">
+                {copied() ? <Check size={14} /> : <Copy size={14} />}
+                <span style="margin-left: 4px">Copy prompt</span>
+              </button>
+              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--subtext)">
+                <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle class="code-timer__bg" cx="12" cy="12" r="10" />
+                  <circle
+                    class="code-timer__progress"
+                    cx="12" cy="12" r="10"
+                    stroke-dasharray={`${2 * Math.PI * 10}`}
+                    stroke-dashoffset={`${2 * Math.PI * 10 * (1 - ringFraction())}`}
+                    style={{ stroke: ringFraction() > 0.1 ? undefined : 'var(--red)' }}
+                  />
+                </svg>
+                {`Expires in ${expiryLabel(expiresAt()!)}`}
+              </div>
+            </div>
             <button
               class="sync-grid__copy"
               style="margin-bottom: 10px"
@@ -194,6 +180,10 @@ Reference: ${origin}/openapi.json`,
                 </div>
               </div>
             </Show>
+          </Show>
+          <Show when={expired()}>
+            <p style="margin: 0 0 8px; font-size: 13px; color: var(--subtext)">The code expired.</p>
+            <button class="btn" onClick={() => void generateCode()}>Get a new code</button>
           </Show>
         </Show>
         <Show when={error()}>

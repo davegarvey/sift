@@ -136,10 +136,11 @@ them:
 
 ### Pairing and tokens
 
-- Pairing: Settings → Sync → Agents → "Pair an agent" shows an 8-character
-  code (5-minute expiry) that `siftctl pair` or `POST /sync/tokens/redeem`
-  exchanges for a token. The same code works on `GET /sync/pull` as a
-  read-only credential for hosted chat agents.
+- Pairing: Settings → Sync → Agents → "Pair an agent" mints an 8-character
+  code (5-minute expiry), embedded in the copied prompt and the `siftctl pair`
+  command. `siftctl pair` or `POST /sync/tokens/redeem` exchange it for a
+  token. The same code works on `GET /sync/pull` as a read-only credential
+  for hosted chat agents.
 - Tokens are 23-character credentials starting with `t` — distinct from the
   master sync key, which never leaves your browser. Tokens can only call
   `/sync/pull` and `/sync/push`; they cannot mint device codes, register, or

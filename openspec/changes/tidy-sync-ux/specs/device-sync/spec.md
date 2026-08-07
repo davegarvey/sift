@@ -19,7 +19,8 @@ The Settings Sync section SHALL provide an "Agent access" row that opens a modal
 - **WHEN** the user opens the agents modal
 - **THEN** SHALL NOT mint an agent pairing code
 - **WHEN** the user activates "Pair an agent"
-- **THEN** the modal SHALL mint an 8-character code with a 5-minute countdown, displayed grouped (e.g., "abcd-efgh"), with a "Copy prompt" action and a secondary terminal-pairing path
+- **THEN** the modal SHALL mint an 8-character code with a 5-minute countdown
+- **AND** SHALL embed the code in a "Copy prompt" action and a secondary terminal-pairing path rather than displaying it
 - **AND** a mint failure SHALL show an inline error and return the modal to the un-minted state
 
 #### Scenario: Expired pairing code offers a new one
