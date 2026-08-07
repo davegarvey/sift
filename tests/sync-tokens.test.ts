@@ -163,6 +163,9 @@ describe('agent tokens: lifecycle (D1)', () => {
       expect(list.tokens[0].scope).toBe('rw');
       expect(list.tokens[0].fingerprint).toMatch(/^[0-9A-Z]{4}$/);
       expect(list.tokens[0].last_seen_at).not.toBeNull();
+      // created_at is reported in epoch milliseconds (not seconds).
+      expect(list.tokens[0].created_at).toBeGreaterThan(1_700_000_000_000);
+      expect(list.tokens[0].created_at).toBeLessThan(Date.now() + 60_000);
       expect(JSON.stringify(list)).not.toContain(token);
 
       // Revoke.
