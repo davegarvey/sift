@@ -40,7 +40,7 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', '.wrangler/**'],
+    ignores: ['dist/**', 'node_modules/**', '.wrangler/**', 'packages/**'],
   },
   {
     files: ['server/sync.ts', 'server/sync/**/*.ts'],

@@ -53,23 +53,22 @@ describe('sync routes on the local-d1 shim', () => {
     return body.feeds;
   }
 
-  function feed(feedId: string, url: string, at: number): Record<string, unknown> {
+  function feed(feedId: string, url: string): Record<string, unknown> {
     return {
       feedId,
-      feedUrl: { value: url, at },
-      title: { value: `Feed ${feedId.slice(0, 6)}`, at },
-      deleted: { value: 0, at },
+      feedUrl: url,
+      title: `Feed ${feedId.slice(0, 6)}`,
+      deleted: 0,
     };
   }
 
   it('shim: a metadata-only push does not clear a tombstone', async () => {
     const key = makeSyncKey('shim-meta-');
     await register(key);
-    const now = Date.now();
     const id = 'https://ex.com/meta';
-    await push(key, { feeds: [feed(id, id, now)] });
-    await push(key, { feeds: [{ feedId: id, deleted: { value: 1, at: now + 100 } }] });
-    await push(key, { feeds: [{ feedId: id, feedUrl: { value: id, at: now + 200 }, title: { value: 'Renamed', at: now + 200 } }] });
+    await push(key, { feeds: [feed(id, id)] });
+    await push(key, { feeds: [{ feedId: id, deleted: 1 }] });
+    await push(key, { feeds: [{ feedId: id, feedUrl: id, title: 'Renamed' }] });
     const feeds = await pullFeeds(key);
     const row = feeds.find((f) => f.feed_id === id);
     expect(row?.deleted).toBe(1);
@@ -79,12 +78,11 @@ describe('sync routes on the local-d1 shim', () => {
   it('shim: a delete tombstones every row sharing the URL', async () => {
     const key = makeSyncKey('shim-del-1-');
     await register(key);
-    const now = Date.now();
     const url = 'https://ex.com/shared';
     const a = 'shim-a';
     const b = 'shim-b';
-    await push(key, { feeds: [feed(a, url, now), feed(b, url, now)] });
-    await push(key, { feeds: [{ feedId: a, feedUrl: { value: url, at: now }, deleted: { value: 1, at: now + 100 } }] });
+    await push(key, { feeds: [feed(a, url), feed(b, url)] });
+    await push(key, { feeds: [{ feedId: a, feedUrl: url, deleted: 1 }] });
     const feeds = await pullFeeds(key);
     expect(feeds.find((f) => f.feed_id === a)?.deleted).toBe(1);
     expect(feeds.find((f) => f.feed_id === b)?.deleted).toBe(1);
@@ -93,13 +91,12 @@ describe('sync routes on the local-d1 shim', () => {
   it('shim: a subscribe revives the tombstoned row by URL without inserting', async () => {
     const key = makeSyncKey('shim-revive');
     await register(key);
-    const now = Date.now();
     const url = 'https://ex.com/revive';
     const original = 'shim-orig';
     const fresh = 'shim-fresh';
-    await push(key, { feeds: [feed(original, url, now)] });
-    await push(key, { feeds: [{ feedId: original, deleted: { value: 1, at: now + 100 } }] });
-    await push(key, { feeds: [feed(fresh, url, now + 200)] });
+    await push(key, { feeds: [feed(original, url)] });
+    await push(key, { feeds: [{ feedId: original, deleted: 1 }] });
+    await push(key, { feeds: [feed(fresh, url)] });
     const feeds = await pullFeeds(key);
     const rows = feeds.filter((f) => f.feed_url === url);
     expect(rows.length).toBe(1);
@@ -110,15 +107,14 @@ describe('sync routes on the local-d1 shim', () => {
   it('shim: a same-batch delete-then-subscribe revives the in-batch tombstone', async () => {
     const key = makeSyncKey('shim-batch-');
     await register(key);
-    const now = Date.now();
     const url = 'https://ex.com/batch';
     const original = 'shim-borig';
     const fresh = 'shim-bfresh';
-    await push(key, { feeds: [feed(original, url, now)] });
+    await push(key, { feeds: [feed(original, url)] });
     await push(key, {
       feeds: [
-        { feedId: original, feedUrl: { value: url, at: now + 100 }, deleted: { value: 1, at: now + 100 } },
-        feed(fresh, url, now + 200),
+        { feedId: original, feedUrl: url, deleted: 1 },
+        feed(fresh, url),
       ],
     });
     const feeds = await pullFeeds(key);
@@ -126,5 +122,19 @@ describe('sync routes on the local-d1 shim', () => {
     expect(rows.length).toBe(1);
     expect(rows[0].feed_id).toBe(original);
     expect(rows[0].deleted).toBe(0);
+  });
+
+  it('shim: a same-batch subscribe-then-delete leaves no live row', async () => {
+    const key = makeSyncKey('shim-batch2');
+    await register(key);
+    const url = 'https://ex.com/batch2';
+    await push(key, {
+      feeds: [
+        { feedId: 'shim-new', feedUrl: url, deleted: 0 },
+        { feedId: 'shim-new', feedUrl: url, deleted: 1 },
+      ],
+    });
+    const feeds = await pullFeeds(key);
+    expect(feeds.filter((f) => f.feed_url === url && f.deleted === 0).length).toBe(0);
   });
 });

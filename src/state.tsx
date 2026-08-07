@@ -41,6 +41,7 @@ type ModalKind =
   | { kind: 'pair-result'; success: boolean; message: string }
   | { kind: 'sync-join' }
   | { kind: 'sync-share' }
+  | { kind: 'agents' }
   | { kind: 'about' }
   ;
 

@@ -56,4 +56,6 @@ export const RATE_LIMITS = {
   redeem: { windowSeconds: 60, limit: 10 },
   push: { windowSeconds: 60, limit: 60 },
   pull: { windowSeconds: 60, limit: 60 },
+  tokensMint: { windowSeconds: 3600, limit: 20 },
+  tokensRedeem: { windowSeconds: 60, limit: 10 },
 } as const;

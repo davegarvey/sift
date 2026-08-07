@@ -261,6 +261,10 @@ function SyncSection() {
           </label>
           <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-share' })}>Invite</button>
         </div>
+        <div class="row">
+          <label>Agents (AI access to this sync)</label>
+          <button class="btn" onClick={() => ctx.openModal({ kind: 'agents' })}>Manage</button>
+        </div>
       </Show>
     </div>
   );

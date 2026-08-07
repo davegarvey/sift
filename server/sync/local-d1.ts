@@ -460,7 +460,9 @@ export class LocalD1Database {
   /**
    * Apply a single CASE assignment. Both ?s in the CASE consume params:
    * params[offset] is the comparison timestamp, params[offset + 1] is
-   * the THEN value.
+   * the THEN value. The comparison operator (>, >=) is read from the SQL
+   * so the deleted-field tie-break (tombstone wins equal stamps) matches
+   * D1 semantics.
    */
   private _applyCase(
     row: Record<string, unknown>,
@@ -476,7 +478,8 @@ export class LocalD1Database {
     const newValue = params[offset + 1];
     if (newAt == null) return;
     const existingAt = row[atName] as number | null | undefined;
-    if (existingAt == null || newAt > existingAt) {
+    const op = sql.match(/CASE\s+WHEN\s+\w+_at\s+IS\s+NULL\s+OR\s+\?\s*(>=|>)/i)?.[1] ?? '>';
+    if (existingAt == null || (op === '>=' ? newAt >= existingAt : newAt > existingAt)) {
       row[fieldName] = newValue;
       row[atName] = newAt;
     }
@@ -499,6 +502,8 @@ export class LocalD1Database {
         return ['sync_key', 'item_id'];
       case 'pairing_codes':
         return ['code'];
+      case 'tokens':
+        return ['token_id'];
       case 'rate_limits':
         return ['scope', 'window_start'];
       case 'counters':
