@@ -18,6 +18,10 @@
   ],
   "license": "MIT",
   "name": "siftctl",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davegarvey/sift.git"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
