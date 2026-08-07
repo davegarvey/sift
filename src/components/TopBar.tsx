@@ -16,7 +16,7 @@ export function TopBar() {
       >
         {open() ? <ChevronLeft size={18} /> : <PanelLeft size={18} />}
       </button>
-      <button class="wordmark" type="button" title="About Sift" onClick={() => ctx.openModal({ kind: 'about' })}>sift</button>
+      <a class="wordmark" href="/" title="Sift">sift</a>
     </div>
   );
 }

@@ -14,7 +14,6 @@ import { AgentsModal } from './components/AgentsModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { ConfirmModal } from './components/ConfirmModal';
 import { FeedEditorModal } from './components/FeedEditorModal';
-import { AboutModal } from './components/AboutModal';
 import './styles.css';
 
 function Shell() {
@@ -210,9 +209,6 @@ function Shell() {
       </Show>
       <Show when={ctx.state.modal.kind === 'agents'}>
         <Backdrop><AgentsModal /></Backdrop>
-      </Show>
-      <Show when={ctx.state.modal.kind === 'about'}>
-        <Backdrop><AboutModal /></Backdrop>
       </Show>
     </div>
   );

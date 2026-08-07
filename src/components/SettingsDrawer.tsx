@@ -1,4 +1,4 @@
-import { Check, Copy } from 'lucide-solid';
+import { Check, Copy, ExternalLink } from 'lucide-solid';
 import { version } from '../../package.json';
 import { Show, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { useApp } from '../state';
@@ -137,7 +137,19 @@ export function SettingsDrawer() {
 
       </div>
       <div class="modal-footer">
-        <span style={{ color: "var(--overlay)", "margin-right": "auto" }}>v{version}</span>
+        <span style={{ display: 'flex', 'align-items': 'center', gap: '6px', color: 'var(--overlay)', 'margin-right': 'auto' }}>
+          <span>v{version}</span>
+          <a
+            href="https://github.com/davegarvey/sift"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Sift on GitHub"
+            aria-label="Sift on GitHub"
+            style={{ display: 'inline-flex', color: 'var(--overlay)' }}
+          >
+            <ExternalLink size={14} />
+          </a>
+        </span>
         <button class="btn primary" onClick={() => ctx.closeModal()}>Done</button>
       </div>
     </div>
@@ -258,7 +270,7 @@ function SyncSection() {
       </div>
         <Show when={!enabled()}>
           <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '0 0 4px', 'line-height': '1.5' }}>
-            Sync copies your subscriptions and read state between devices using a server-stored key. There is no account; if you lose the key, server data is not recoverable.
+            Sync keeps your subscriptions and reading progress in step across your devices. There is no account. If you lose your key, the data on the server is gone.
           </p>
         </Show>
         <Show when={syncError()}>

@@ -41,7 +41,6 @@ type ModalKind =
   | { kind: 'confirm'; title: string; message: string; hint?: string; confirmLabel: string; danger?: boolean; onConfirm: () => void | Promise<void>; returnTo?: ModalKind }
   | { kind: 'pair-device' }
   | { kind: 'agents' }
-  | { kind: 'about' }
   ;
 
 export interface AppState {
