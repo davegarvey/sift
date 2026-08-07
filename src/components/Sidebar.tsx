@@ -108,7 +108,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             </div>
           </Show>
           <div class="feed-list">
-            <Show when={ctx.feeds().length > 0} fallback={<div class="feed-list-empty">No feeds, yet.</div>}>
+            <Show when={ctx.feeds().length > 0} fallback={ctx.hydrated() ? <div class="feed-list-empty">No feeds, yet.</div> : null}>
               <For each={visibleFeeds()}>
                 {(feed) => (
                   <FeedRow
