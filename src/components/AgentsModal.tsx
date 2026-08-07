@@ -46,7 +46,8 @@ export function AgentsModal() {
     } catch (e) {
       setCode(null);
       setExpiresAt(null);
-      setError(e instanceof Error ? e.message : 'Failed to mint a code');
+      console.error('Failed to create a code:', e);
+      setError('Failed to create a code. Try again.');
     }
   };
 
@@ -90,7 +91,7 @@ Reference: ${origin}/openapi.json`,
       kind: 'confirm',
       title: 'Revoke agent',
       message: `Revoke access for ${token.fingerprint}?`,
-      hint: 'The agent will lose access to this sync immediately. It can be re-paired later.',
+      hint: 'The agent will lose access immediately. It can be paired again later.',
       confirmLabel: 'Revoke',
       danger: true,
       returnTo: { kind: 'agents' },
@@ -99,7 +100,8 @@ Reference: ${origin}/openapi.json`,
         try {
           await revokeAgentToken(token.token_id);
         } catch (e) {
-          setError(e instanceof Error ? e.message : 'Failed to revoke');
+          console.error('Failed to revoke agent:', e);
+          setError('Failed to revoke. Try again.');
         }
       },
     });
@@ -118,7 +120,7 @@ Reference: ${origin}/openapi.json`,
       <div class="modal-header">Agents</div>
       <div class="modal-body">
         <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
-          Copy the prompt and paste it into a chat tool like ChatGPT or Claude, or a coding agent. The agent can then read your feeds and propose additions.
+          Paste this prompt into a chat tool or coding agent. The agent can read your feeds and propose additions.
         </div>
         <Show when={code()}>
           <div class="sync-grid sync-grid--single" style="margin-bottom: 8px">
@@ -212,7 +214,7 @@ Reference: ${origin}/openapi.json`,
         </div>
       </div>
       <div class="modal-footer" style="justify-content: space-between">
-        <span style="font-size: 12px; color: var(--subtext)">You can revoke a token anytime. Agents can read your feeds and propose additions.</span>
+        <span style="font-size: 12px; color: var(--subtext)">You can revoke an agent at any time. Agents can read your feeds and propose additions.</span>
         <button class="btn primary" onClick={() => ctx.closeModal()}>Close</button>
       </div>
     </div>

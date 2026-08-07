@@ -166,7 +166,7 @@ function SyncSection() {
       await ctx.enableSync();
     } catch (e) {
       console.error('Failed to enable sync:', e);
-      setSyncError(e instanceof Error ? e.message : 'Failed to enable sync');
+      setSyncError('Failed to enable sync');
     }
   };
 
@@ -199,8 +199,8 @@ function SyncSection() {
     ctx.openModal({
       kind: 'confirm',
       title: 'Regenerate sync key',
-      message: 'Revokes every agent token, and other devices must re-pair with the new key.',
-      hint: 'Server data under the old key is kept but orphaned. If a device was lost or stolen, rotating the key is the only way to revoke its access.',
+      message: 'Agents will lose access. Other devices will need to pair again.',
+      hint: 'If a device was lost or stolen, regenerating the key is the only way to revoke its access.',
       confirmLabel: 'Regenerate',
       danger: true,
       returnTo: { kind: 'settings' },
@@ -209,7 +209,8 @@ function SyncSection() {
         try {
           await ctx.regenerateSyncKey();
         } catch (e) {
-          setSyncError(e instanceof Error ? e.message : 'Regeneration failed');
+          console.error('Failed to regenerate sync key:', e);
+          setSyncError('Failed to regenerate the key');
         }
       },
     });
@@ -229,7 +230,7 @@ function SyncSection() {
     const err = lastError();
     const errAt = lastErrorAt();
     if (err && errAt) {
-      return { text: `Sync failed ${humanRelativeTime(new Date(errAt))} — ${err}`, error: true };
+      return { text: `Sync failed ${humanRelativeTime(new Date(errAt))}`, error: true, detail: err };
     }
     const pending = pendingCount();
     if (pending > 0) {
@@ -255,13 +256,18 @@ function SyncSection() {
           onKeyDown={(e) => e.key === 'Enter' || e.key === ' ' ? (e.preventDefault(), void (enabled() ? toggleOff() : toggleOn())) : null}
         />
       </div>
-      <Show when={syncError()}>
-        <p class="error">{syncError()}</p>
-      </Show>
-      <Show when={enabled()}>
-        <div class="row">
-          <label classList={{ error: statusLine().error }}>
-            {statusLine().text}
+        <Show when={!enabled()}>
+          <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '0 0 4px', 'line-height': '1.5' }}>
+            Sync copies your subscriptions and read state between devices using a server-stored key. There is no account; if you lose the key, server data is not recoverable.
+          </p>
+        </Show>
+        <Show when={syncError()}>
+          <p class="error">{syncError()}</p>
+        </Show>
+        <Show when={enabled()}>
+          <div class="row">
+            <label classList={{ error: statusLine().error }} title={statusLine().detail ?? undefined}>
+              {statusLine().text}
             <Show when={fingerprint()}>
               <span style={{ 'font-size': '12px', color: 'var(--subtext)' }}> · Group {fingerprint()}</span>
             </Show>

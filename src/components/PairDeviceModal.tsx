@@ -56,13 +56,13 @@ export function PairDeviceModal() {
     } catch (e) {
       if (mounted) {
         if (e instanceof SyncClientError && e.status === 429) {
-          setShareError('Too many pairing codes issued recently. Try again in a few minutes.');
+          setShareError('Too many codes issued recently. Try again in a few minutes.');
         } else if (e instanceof SyncClientError && (e.status === 401 || e.status === 403)) {
-          setShareError('Your sync key is not recognized by this server. Regenerate it in Settings, or re-pair this device.');
+          setShareError('This server does not recognise your key. Regenerate it in Settings, or pair this device again.');
         } else if (e instanceof SyncClientError) {
-          setShareError(`Could not refresh the code (${e.status}). Tap to retry.`);
+          setShareError('Could not refresh the code. Try again.');
         } else {
-          setShareError('Cannot reach the sync server. Check your connection and try again.');
+          setShareError('Cannot reach the server. Check your connection and try again.');
         }
       }
     }
@@ -140,7 +140,7 @@ export function PairDeviceModal() {
                 </button>
               </div>
               <div class="sync-grid__qr" innerHTML={pairUrl() ? renderSyncKeyQr(pairUrl()) : ''} />
-              <span class="sync-grid__hint">Open Sift on your other device, then enter the code or scan the QR code.</span>
+              <span class="sync-grid__hint">On your other device, enter this code or scan the QR code.</span>
               <Show when={shareError()}>
                 <p class="error" style="margin: 4px 0 0; text-align: center">{shareError()}</p>
                 <button class="btn" style="align-self: center" onClick={() => void generateCode()}>Retry</button>
@@ -185,7 +185,7 @@ export function PairDeviceModal() {
               >
                 Scan QR
               </button>
-              <span class="sync-grid__hint">Enter the code shown on your other device, or scan its QR code.</span>
+              <span class="sync-grid__hint">Enter the code shown on your other device.</span>
             </div>
           </div>
         </Show>
