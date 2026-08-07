@@ -43,12 +43,20 @@ export function SettingsDrawer() {
     const text = await file.text();
     const parsed = parseOpml(text);
     const preview = await buildMergePreview(parsed);
-    if (confirm(`Import ${preview.newSubscriptions.length} feeds? (${preview.skipped} already subscribed, ${preview.total} total found)`)) {
-      await applyMerge(preview);
-      await ctx.reloadFeeds();
-      void ctx.mcpNotifySync();
-      void ctx.refreshAll();
-    }
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Import OPML',
+      message: `Import ${preview.newSubscriptions.length} feeds?`,
+      hint: `${preview.skipped} already subscribed, ${preview.total} total found`,
+      confirmLabel: 'Import',
+      returnTo: { kind: 'settings' },
+      onConfirm: async () => {
+        await applyMerge(preview);
+        await ctx.reloadFeeds();
+        void ctx.mcpNotifySync();
+        void ctx.refreshAll();
+      },
+    });
     input.value = '';
   };
 
@@ -140,9 +148,7 @@ function SyncSection() {
   const ctx = useApp();
   const [syncError, setSyncError] = createSignal<string | null>(null);
   const [fingerprint, setFingerprint] = createSignal<string | null>(null);
-  const [copied, setCopied] = createSignal(false);
   const [syncing, setSyncing] = createSignal(false);
-  const [confirmRegen, setConfirmRegen] = createSignal(false);
   const enabled = () => Boolean(ctx.syncKey());
 
   createEffect(() => {
@@ -165,16 +171,17 @@ function SyncSection() {
   };
 
   const toggleOff = () => {
-    void ctx.disableSync();
-    setSyncError(null);
-  };
-
-  const copyFingerprint = async () => {
-    const fp = fingerprint();
-    if (!fp) return;
-    await navigator.clipboard.writeText(fp);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Disable sync',
+      message: 'Your other devices will stop syncing. Server data is kept until you generate a new key. Continue?',
+      confirmLabel: 'Disable',
+      danger: true,
+      returnTo: { kind: 'settings' },
+      onConfirm: async () => {
+        await ctx.disableSync();
+      },
+    });
   };
 
   const syncNow = async () => {
@@ -188,19 +195,24 @@ function SyncSection() {
     }
   };
 
-  const regenerate = async () => {
-    if (!confirmRegen()) {
-      setConfirmRegen(true);
-      setTimeout(() => setConfirmRegen(false), 3000);
-      return;
-    }
-    setConfirmRegen(false);
-    setSyncError(null);
-    try {
-      await ctx.regenerateSyncKey();
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'Regeneration failed');
-    }
+  const regenerate = () => {
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Regenerate sync key',
+      message: 'Revokes every agent token, and other devices must re-pair with the new key.',
+      hint: 'Server data under the old key is kept but orphaned. If a device was lost or stolen, rotating the key is the only way to revoke its access.',
+      confirmLabel: 'Regenerate',
+      danger: true,
+      returnTo: { kind: 'settings' },
+      onConfirm: async () => {
+        setSyncError(null);
+        try {
+          await ctx.regenerateSyncKey();
+        } catch (e) {
+          setSyncError(e instanceof Error ? e.message : 'Regeneration failed');
+        }
+      },
+    });
   };
 
   // Recompute relative times while the drawer is open.
@@ -242,54 +254,33 @@ function SyncSection() {
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' || e.key === ' ' ? (e.preventDefault(), void (enabled() ? toggleOff() : toggleOn())) : null}
         />
-        <Show when={syncError()}>
-          <p class="error" style={{ margin: '4px 0 0', 'font-size': '13px' }}>{syncError()}</p>
-        </Show>
       </div>
+      <Show when={syncError()}>
+        <p class="error">{syncError()}</p>
+      </Show>
       <Show when={enabled()}>
         <div class="row">
-          <label>
-            <Show when={fingerprint()} fallback="Group">
-              Group: {fingerprint()}
+          <label classList={{ error: statusLine().error }}>
+            {statusLine().text}
+            <Show when={fingerprint()}>
+              <span style={{ 'font-size': '12px', color: 'var(--subtext)' }}> · Group {fingerprint()}</span>
             </Show>
           </label>
-          <Show when={fingerprint()}>
-            <button class="sync-grid__copy" onClick={() => void copyFingerprint()} aria-label="Copy group fingerprint">
-              {copied() ? <Check size={14} /> : <Copy size={14} />}
-            </button>
-          </Show>
-        </div>
-        <div class="row" style="border-top: 0">
-          <label classList={{ error: statusLine().error }}>{statusLine().text}</label>
           <button class="btn" disabled={syncing()} onClick={() => void syncNow()}>
             {syncing() ? 'Syncing…' : 'Sync now'}
           </button>
         </div>
         <div class="row">
-          <label>Pair this device with an existing sync</label>
-          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-join' })}>Join</button>
-        </div>
-        <div class="row" style="border-top: 0">
-          <label>
-            <Show when={fingerprint()} fallback="Add another device to this sync">
-              Add another device to group {fingerprint()}
-            </Show>
-          </label>
-          <button class="btn" onClick={() => ctx.openModal({ kind: 'sync-share' })}>Invite</button>
+          <label>Pair another device</label>
+          <button class="btn" onClick={() => ctx.openModal({ kind: 'pair-device' })}>Pair</button>
         </div>
         <div class="row">
-          <label>Agents (AI access to this sync)</label>
+          <label>Agent access</label>
           <button class="btn" onClick={() => ctx.openModal({ kind: 'agents' })}>Manage</button>
         </div>
-        <div class="row" style="border-top: 0">
-          <label>Regenerate sync key — revokes every agent token; other devices must re-pair</label>
-          <button
-            class="btn"
-            classList={{ 'btn-danger': confirmRegen() }}
-            onClick={() => void regenerate()}
-          >
-            {confirmRegen() ? 'Confirm' : 'Regenerate'}
-          </button>
+        <div class="row danger">
+          <label>Regenerate sync key</label>
+          <button class="btn" onClick={regenerate}>Regenerate</button>
         </div>
       </Show>
     </div>

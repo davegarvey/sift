@@ -81,9 +81,20 @@ export function FeedEditorModal() {
     }
   };
 
-  const handleUnsubscribe = async () => {
+  const handleUnsubscribe = () => {
     ctx.closeModal();
-    ctx.openModal({ kind: 'confirm-unsubscribe', feedId });
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Unsubscribe',
+      message: `Unsubscribe from ${feed()?.title ?? 'this feed'}?`,
+      hint: 'This will remove the feed and all its items. This cannot be undone.',
+      confirmLabel: 'Unsubscribe',
+      danger: true,
+      onConfirm: async () => {
+        await ctx.unsubscribeFeed(feedId);
+        void ctx.mcpNotifySync();
+      },
+    });
   };
 
   return (

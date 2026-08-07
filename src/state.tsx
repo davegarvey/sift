@@ -37,10 +37,9 @@ type ModalKind =
   | { kind: 'settings' }
   | { kind: 'add-feed'; url?: string }
   | { kind: 'feed-editor'; feedId: string }
-  | { kind: 'confirm-unsubscribe'; feedId: string }
   | { kind: 'pair-result'; success: boolean; message: string }
-  | { kind: 'sync-join' }
-  | { kind: 'sync-share' }
+  | { kind: 'confirm'; title: string; message: string; hint?: string; confirmLabel: string; danger?: boolean; onConfirm: () => void | Promise<void>; returnTo?: ModalKind }
+  | { kind: 'pair-device' }
   | { kind: 'agents' }
   | { kind: 'about' }
   ;

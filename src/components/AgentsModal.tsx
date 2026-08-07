@@ -2,6 +2,7 @@ import { createSignal, onMount, onCleanup, createResource, Show, For } from 'sol
 import { Check, Copy, Trash2 } from 'lucide-solid';
 import { useApp } from '../state';
 import { mintAgentCode, listAgentTokens, revokeAgentToken, type AgentTokenInfo } from '../sync/client';
+import { expiryLabel } from '../util/time';
 
 function relativeTime(t: number | null): string {
   if (t === null) return 'never';
@@ -21,15 +22,10 @@ export function AgentsModal() {
   const [copiedCmd, setCopiedCmd] = createSignal(false);
   const [showTerminal, setShowTerminal] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [confirmId, setConfirmId] = createSignal<string | null>(null);
   const [ringFraction, setRingFraction] = createSignal(1);
-  const [reloadTick, setReloadTick] = createSignal(0);
   let ringTimer: ReturnType<typeof setInterval> | undefined;
 
-  const [tokens] = createResource(
-    () => reloadTick(),
-    () => listAgentTokens(),
-  );
+  const [tokens] = createResource(() => listAgentTokens());
 
   const startRingTimer = (exp: number) => {
     clearInterval(ringTimer);
@@ -89,19 +85,24 @@ Reference: ${origin}/openapi.json`,
     setTimeout(() => setCopiedCmd(false), 2000);
   };
 
-  const revoke = async (token: AgentTokenInfo) => {
-    if (confirmId() !== token.token_id) {
-      setConfirmId(token.token_id);
-      return;
-    }
-    setConfirmId(null);
-    setError(null);
-    try {
-      await revokeAgentToken(token.token_id);
-      setReloadTick((t) => t + 1);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to revoke');
-    }
+  const revoke = (token: AgentTokenInfo) => {
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Revoke agent',
+      message: `Revoke access for ${token.fingerprint}?`,
+      hint: 'The agent will lose access to this sync immediately. It can be re-paired later.',
+      confirmLabel: 'Revoke',
+      danger: true,
+      returnTo: { kind: 'agents' },
+      onConfirm: async () => {
+        setError(null);
+        try {
+          await revokeAgentToken(token.token_id);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'Failed to revoke');
+        }
+      },
+    });
   };
 
   onMount(() => {
@@ -120,7 +121,7 @@ Reference: ${origin}/openapi.json`,
           Copy the prompt and paste it into a chat tool like ChatGPT or Claude, or a coding agent. The agent can then read your feeds and propose additions.
         </div>
         <Show when={code()}>
-          <div class="sync-grid" style="margin-bottom: 8px">
+          <div class="sync-grid sync-grid--single" style="margin-bottom: 8px">
             <div class="sync-grid__cell">
               <span class="sync-grid__label">Pairing code</span>
               <span class="sync-grid__code">{code()}</span>
@@ -130,6 +131,21 @@ Reference: ${origin}/openapi.json`,
                   <span style="font-size: 12px">Copy prompt</span>
                 </button>
               </div>
+              <Show when={expiresAt()}>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--subtext)">
+                  <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle class="code-timer__bg" cx="12" cy="12" r="10" />
+                    <circle
+                      class="code-timer__progress"
+                      cx="12" cy="12" r="10"
+                      stroke-dasharray={`${2 * Math.PI * 10}`}
+                      stroke-dashoffset={`${2 * Math.PI * 10 * (1 - ringFraction())}`}
+                      style={{ stroke: ringFraction() > 0.1 ? undefined : 'var(--red)' }}
+                    />
+                  </svg>
+                  {`Expires in ${expiryLabel(expiresAt()!)}`}
+                </div>
+              </Show>
             </div>
           </div>
           <button
@@ -162,22 +178,7 @@ Reference: ${origin}/openapi.json`,
           <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
         </Show>
         <Show when={error()}>
-          <p class="error" style="margin: 4px 0; font-size: 13px">{error()}</p>
-        </Show>
-        <Show when={expiresAt()}>
-          <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--subtext); margin-bottom: 10px">
-            <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
-              <circle class="code-timer__bg" cx="12" cy="12" r="10" />
-              <circle
-                class="code-timer__progress"
-                cx="12" cy="12" r="10"
-                stroke-dasharray={`${2 * Math.PI * 10}`}
-                stroke-dashoffset={`${2 * Math.PI * 10 * (1 - ringFraction())}`}
-                style={{ stroke: ringFraction() > 0.1 ? undefined : 'var(--red)' }}
-              />
-            </svg>
-            {`Expires in ${Math.max(0, Math.ceil((expiresAt()! - Date.now()) / 60000))} min`}
-          </div>
+          <p class="error">{error()}</p>
         </Show>
         <div style="font-size: 13px">
           <Show
@@ -198,11 +199,10 @@ Reference: ${origin}/openapi.json`,
                     </label>
                     <button
                       class="btn"
-                      classList={{ 'btn-danger': confirmId() === token.token_id }}
-                      onClick={() => void revoke(token)}
+                      onClick={() => revoke(token)}
                     >
                       <Trash2 size={14} />
-                      {confirmId() === token.token_id ? 'Confirm' : 'Revoke'}
+                      Revoke
                     </button>
                   </div>
                 )}
@@ -212,7 +212,7 @@ Reference: ${origin}/openapi.json`,
         </div>
       </div>
       <div class="modal-footer" style="justify-content: space-between">
-        <span style="font-size: 12px; color: var(--subtext)">You can revoke a token anytime. Agents can read and change your subscriptions.</span>
+        <span style="font-size: 12px; color: var(--subtext)">You can revoke a token anytime. Agents can read your feeds and propose additions.</span>
         <button class="btn primary" onClick={() => ctx.closeModal()}>Close</button>
       </div>
     </div>
