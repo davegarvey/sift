@@ -59,6 +59,7 @@ class LocalD1Stmt {
     if (upper.startsWith('UPDATE')) return this.db._update(trimmed, this.params);
     if (upper.startsWith('DELETE')) return this.db._delete(trimmed, this.params);
     if (upper.startsWith('DROP TABLE')) return this.db._dropTable(trimmed);
+    if (upper.startsWith('ALTER TABLE')) return this.db._alterTable(trimmed, this.params);
     if (upper.startsWith('SELECT')) return this.db._select(trimmed, this.params);
 
     throw new Error(`local-d1: unsupported SQL: ${trimmed.slice(0, 80)}`);
@@ -67,6 +68,8 @@ class LocalD1Stmt {
 
 export class LocalD1Database {
   private tables = new Map<string, Map<string, Record<string, unknown>>>();
+  /** Column defaults added via ALTER TABLE ... ADD COLUMN ... DEFAULT x. */
+  private tableDefaults = new Map<string, Map<string, unknown>>();
 
   prepare(sql: string): any {
     return new LocalD1Stmt(this, sql);
@@ -155,6 +158,15 @@ export class LocalD1Database {
     // Build a key from primary key columns
     const pkCols = this._pkCols(tableName);
     const key = pkCols.map((c) => String(row[c] ?? '')).join('::');
+
+    // Apply ALTER-added column defaults (e.g. pairing_codes.kind) to rows
+    // that did not specify the column.
+    const defaults = this.tableDefaults.get(tableName);
+    if (defaults) {
+      for (const [col, val] of defaults) {
+        if (row[col] === undefined) row[col] = val;
+      }
+    }
 
     // Bump auto-increment for RETURNING
     if (returningCol === 'value' && tableName === 'counters') {
@@ -489,6 +501,34 @@ export class LocalD1Database {
     const m = sql.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)/i);
     if (!m) return [];
     this.tables.delete(m[1]);
+    this.tableDefaults.delete(m[1]);
+    return [];
+  }
+
+  /**
+   * ALTER TABLE ... ADD COLUMN <col> <type> [DEFAULT <literal>] — the SQL
+   * subset used by ensureSchema migrations. Adds the column to every
+   * existing row and registers the default for future INSERTs.
+   */
+  _alterTable(sql: string, _params: unknown[]): Record<string, unknown>[] {
+    const m = sql.match(
+      /ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)\s+.*?(?:DEFAULT\s+(?:(?:'([^']*)')|(\d+)))?\s*$/i,
+    );
+    if (!m) return [];
+    const tableName = m[1];
+    const col = m[2];
+    const table = this.tables.get(tableName);
+    if (!table) return [];
+    let defValue: unknown = null;
+    if (m[3] !== undefined) defValue = m[3];
+    else if (m[4] !== undefined) defValue = parseInt(m[4], 10);
+    if (!this.tableDefaults.has(tableName)) this.tableDefaults.set(tableName, new Map());
+    const defaults = this.tableDefaults.get(tableName)!;
+    if (defaults.has(col)) return [];
+    defaults.set(col, defValue);
+    for (const row of table.values()) {
+      if (row[col] === undefined) row[col] = defValue;
+    }
     return [];
   }
 

@@ -137,4 +137,24 @@ describe('sync routes on the local-d1 shim', () => {
     const feeds = await pullFeeds(key);
     expect(feeds.filter((f) => f.feed_url === url && f.deleted === 0).length).toBe(0);
   });
+
+  it('shim: device OTP code redeems (pairing_codes.kind default)', async () => {
+    const key = makeSyncKey('shim-otp---');
+    await register(key);
+    const otpRes = await app.request('/sync/otp', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key },
+    });
+    expect(otpRes.status).toBe(200);
+    const { code } = (await otpRes.json()) as { code: string };
+
+    const redeemRes = await app.request('/sync/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    expect(redeemRes.status).toBe(200);
+    const body = (await redeemRes.json()) as { syncKey: string };
+    expect(body.syncKey).toBe(key);
+  });
 });
