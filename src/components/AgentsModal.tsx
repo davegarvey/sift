@@ -184,36 +184,29 @@ Reference: ${origin}/openapi.json`,
         <Show when={error()}>
           <p class="error">{error()}</p>
         </Show>
-        <div style="font-size: 14px">
-          <Show
-            when={!tokens.loading && tokens() && tokens()!.length > 0}
-            fallback={
-              <div style="color: var(--subtext); margin-top: 12px">No agents paired yet.</div>
-            }
-          >
-            <div style="display: flex; flex-direction: column; gap: 8px">
-              <For each={tokens()}>
-                {(token) => (
-                  <div class="row" style="align-items: center">
-                    <label style="flex: 1; min-width: 0">
-                      <span style="font-weight: 600">{token.fingerprint}</span>
-                      <span style="display: block; font-size: 13px; color: var(--subtext)">
-                        {token.scope} · created {relativeTime(token.created_at)} · last seen {token.last_seen_at === null ? 'not seen yet' : relativeTime(token.last_seen_at)}
-                      </span>
-                    </label>
-                    <button
-                      class="btn"
-                      onClick={() => revoke(token)}
-                    >
-                      <Trash2 size={14} />
-                      Revoke
-                    </button>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
-        </div>
+        <Show when={!tokens.loading && tokens() && tokens()!.length > 0}>
+          <div style="font-size: 14px; display: flex; flex-direction: column; gap: 8px">
+            <For each={tokens()}>
+              {(token) => (
+                <div class="row" style="align-items: center">
+                  <label style="flex: 1; min-width: 0">
+                    <span style="font-weight: 600">{token.fingerprint}</span>
+                    <span style="display: block; font-size: 13px; color: var(--subtext)">
+                      {token.scope} · created {relativeTime(token.created_at)} · last seen {token.last_seen_at === null ? 'not seen yet' : relativeTime(token.last_seen_at)}
+                    </span>
+                  </label>
+                  <button
+                    class="btn"
+                    onClick={() => revoke(token)}
+                  >
+                    <Trash2 size={14} />
+                    Revoke
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
       </div>
       <div class="modal-footer">
         <button class="btn primary" onClick={() => ctx.closeModal()}>Close</button>
