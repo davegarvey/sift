@@ -85,12 +85,33 @@ describe('siftctl: pair', () => {
   });
 });
 
+describe('siftctl: tokenFingerprint', () => {
+  it('computes a fingerprint without relying on the global crypto object', async () => {
+    vi.stubGlobal('crypto', undefined);
+    try {
+      const fp = await tokenFingerprint(TOKEN);
+      expect(fp).toHaveLength(4);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('matches the documented Crockford fingerprint scheme', async () => {
+    expect(await tokenFingerprint('test-token')).toBe('RQE9');
+  });
+});
+
 describe('siftctl: status', () => {
   it('reports capabilities, URL, and token fingerprint', async () => {
     setTokenFile(TOKEN);
     mockFetch(async (url) => {
-      expect(url).toBe(`${BASE}/sync/capabilities`);
-      return jsonRes({ sync: true });
+      if (url === `${BASE}/sync/capabilities`) {
+        return jsonRes({ sync: true });
+      }
+      if (url === `${BASE}/sync/status`) {
+        return jsonRes({ groupFingerprint: 'XK7B' });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
     });
     const code = await runCli(['status', '--json']);
     expect(code).toBe(0);
@@ -99,6 +120,41 @@ describe('siftctl: status', () => {
     expect(parsed.url).toBe(BASE);
     expect(parsed.paired).toBe(true);
     expect(parsed.fingerprint).toBe(await tokenFingerprint(TOKEN));
+    expect(parsed.groupFingerprint).toBe('XK7B');
+  });
+
+  it('prints the group code in human-readable output', async () => {
+    setTokenFile(TOKEN);
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/capabilities`) {
+        return jsonRes({ sync: true });
+      }
+      if (url === `${BASE}/sync/status`) {
+        return jsonRes({ groupFingerprint: 'XK7B' });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const code = await runCli(['status']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('Group: XK7B');
+  });
+
+  it('degrades gracefully when the server lacks /sync/status (404)', async () => {
+    setTokenFile(TOKEN);
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/capabilities`) {
+        return jsonRes({ sync: true });
+      }
+      if (url === `${BASE}/sync/status`) {
+        return new Response('Not Found', { status: 404 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const code = await runCli(['status', '--json']);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.paired).toBe(true);
+    expect(parsed.groupFingerprint).toBeNull();
   });
 });
 

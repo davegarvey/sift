@@ -38,6 +38,19 @@ export async function capabilities(): Promise<{ sync: boolean }> {
   return (await res.json()) as { sync: boolean };
 }
 
+export interface GroupStatus {
+  groupFingerprint: string | null;
+}
+
+export async function groupStatus(token: string): Promise<GroupStatus> {
+  const res = await request('/sync/status', { token });
+  if (res.status === 404) return { groupFingerprint: null }; // server predates the endpoint
+  if (res.status === 401) throw new ApiError('Unauthorized — token revoked or invalid; run `siftctl pair` again', 401);
+  if (!res.ok) throw new ApiError(`Status failed: ${res.status}`, res.status);
+  const body = (await res.json()) as { groupFingerprint?: string };
+  return { groupFingerprint: typeof body.groupFingerprint === 'string' ? body.groupFingerprint : null };
+}
+
 export async function redeemToken(code: string): Promise<string> {
   const res = await request('/sync/tokens/redeem', {
     method: 'POST',

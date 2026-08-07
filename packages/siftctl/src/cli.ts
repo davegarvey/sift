@@ -3,7 +3,7 @@
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { baseUrl, readToken, writeToken } from './config.js';
-import { ApiError, capabilities, pull, push, redeemToken } from './api.js';
+import { ApiError, capabilities, groupStatus, pull, push, redeemToken } from './api.js';
 import { tokenFingerprint } from './fingerprint.js';
 import { fetchItems } from './items.js';
 
@@ -11,7 +11,7 @@ const USAGE = `siftctl — control your Sift subscriptions
 
 Usage:
   siftctl pair <code>               Redeem an agent pairing code from Sift Settings
-  siftctl status [--json]           Show API status, base URL, and token fingerprint
+  siftctl status [--json]           Show API status, base URL, group code, and token fingerprint
   siftctl feeds [--json]            List subscribed feeds
   siftctl feed add <url>            Subscribe to a feed
   siftctl feed remove <url> --yes   Unsubscribe from a feed
@@ -72,12 +72,20 @@ async function cmdStatus(json: boolean): Promise<void> {
   const cap = await capabilities();
   const token = readToken();
   if (json) {
-    out({ sync: cap.sync, url: baseUrl(), paired: token !== null, fingerprint: token ? await tokenFingerprint(token) : null });
+    out({
+      sync: cap.sync,
+      url: baseUrl(),
+      paired: token !== null,
+      groupFingerprint: token ? (await groupStatus(token)).groupFingerprint : null,
+      fingerprint: token ? await tokenFingerprint(token) : null,
+    });
     return;
   }
   console.log(`Sync: ${cap.sync ? 'available' : 'unavailable'}`);
   console.log(`URL: ${baseUrl()}`);
   if (token) {
+    const group = (await groupStatus(token)).groupFingerprint;
+    if (group) console.log(`Group: ${group}`);
     console.log(`Paired: yes (fingerprint ${await tokenFingerprint(token)})`);
   } else {
     console.log('Paired: no — run `siftctl pair <code>`');
