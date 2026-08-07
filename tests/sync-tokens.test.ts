@@ -4,7 +4,7 @@ import * as esbuild from 'esbuild';
 import path from 'path';
 
 import { isValidSyncKey, KEY_FORMAT_RE } from '../server/sync/auth';
-import { isValidTokenFormat, tokenFingerprint, sha256Hex } from '../server/sync/tokens';
+import { isValidTokenFormat, tokenFingerprint, sha256Hex, syncKeyFingerprint } from '../server/sync/tokens';
 import { fingerprintSyncKey } from '../src/sync/key';
 import { createSyncRoutes } from '../server/sync/routes';
 import { LocalD1Database } from '../server/sync/local-d1';
@@ -78,6 +78,14 @@ describe('agent tokens: format', () => {
     const token = 't0123456789abcdefghijklmn';
     const server = await tokenFingerprint(token);
     const browser = await fingerprintSyncKey(token);
+    expect(server).toBe(browser);
+    expect(server).toMatch(/^[0-9A-Z]{4}$/);
+  });
+
+  it('syncKeyFingerprint matches the browser group-code scheme', async () => {
+    const key = makeSyncKey('grp-fp----');
+    const server = await syncKeyFingerprint(key);
+    const browser = await fingerprintSyncKey(key);
     expect(server).toBe(browser);
     expect(server).toMatch(/^[0-9A-Z]{4}$/);
   });
@@ -217,6 +225,53 @@ describe('agent tokens: lifecycle (D1)', () => {
         body: JSON.stringify({ token_id: 'x' }),
       });
       expect(del.status).toBe(401);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('GET /sync/status returns the group fingerprint for a token', async () => {
+    const mf = await createMf();
+    try {
+      const key = makeSyncKey('grp-status');
+      await register(mf, key);
+      const { code } = await mintCode(mf, key);
+      const token = await redeemCode(mf, code);
+
+      const res = await mf.dispatchFetch('http://localhost/sync/status', {
+        headers: { 'X-Sync-Key': token },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { groupFingerprint: string };
+      expect(body.groupFingerprint).toBe(await fingerprintSyncKey(key));
+      expect(body.groupFingerprint).toMatch(/^[0-9A-Z]{4}$/);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('GET /sync/status accepts a master key', async () => {
+    const mf = await createMf();
+    try {
+      const key = makeSyncKey('grp-master-');
+      await register(mf, key);
+
+      const res = await mf.dispatchFetch('http://localhost/sync/status', {
+        headers: { 'X-Sync-Key': key },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { groupFingerprint: string };
+      expect(body.groupFingerprint).toBe(await fingerprintSyncKey(key));
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('GET /sync/status rejects unauthenticated requests', async () => {
+    const mf = await createMf();
+    try {
+      const res = await mf.dispatchFetch('http://localhost/sync/status');
+      expect(res.status).toBe(401);
     } finally {
       await mf.dispose();
     }

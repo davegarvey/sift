@@ -38,12 +38,12 @@ export async function sha256Hex(input: string): Promise<string> {
 }
 
 /**
- * Display fingerprint for a token: SHA-256, first 20 bits rendered as
- * 4 uppercase Crockford characters — byte-identical to the browser's
- * `fingerprintSyncKey` scheme so Settings and `siftctl status` agree.
+ * Crockford fingerprint of an arbitrary string: SHA-256, first 20 bits
+ * rendered as 4 uppercase Crockford characters — byte-identical to the
+ * browser's `fingerprintSyncKey` scheme so Settings and `siftctl` agree.
  */
-export async function tokenFingerprint(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+async function crockfordFingerprint(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   const bytes = new Uint8Array(digest);
   const value = ((bytes[0] << 16) | (bytes[1] << 8) | bytes[2]) & 0xFFFFF;
   return (
@@ -52,4 +52,14 @@ export async function tokenFingerprint(token: string): Promise<string> {
     CROCKFORD[(value >> 5) & 31] +
     CROCKFORD[value & 31]
   );
+}
+
+/** Display fingerprint for a token — matches the Settings agents list. */
+export async function tokenFingerprint(token: string): Promise<string> {
+  return crockfordFingerprint(token);
+}
+
+/** Display fingerprint for a sync key — the group code shown in Settings. */
+export async function syncKeyFingerprint(syncKey: string): Promise<string> {
+  return crockfordFingerprint(syncKey);
 }

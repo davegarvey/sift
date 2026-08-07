@@ -25,7 +25,7 @@ import { nextMonotonicTime, currentMonotonicTime } from './monotonic';
 import { ensureSchema } from './schema';
 import { assertNoKeyLog, assertNoUserDataLog, assertNoUrlLog } from '../log';
 import { decodeItemId } from '../../src/sync/itemId';
-import { generateToken, generateTokenId, sha256Hex, tokenFingerprint } from './tokens';
+import { generateToken, generateTokenId, sha256Hex, tokenFingerprint, syncKeyFingerprint } from './tokens';
 
 const PAIRING_TTL_SECONDS = 5 * 60;
 const MAX_USERS = 100_000;
@@ -254,6 +254,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
   app.use('/sync/otp', masterAuth);
   app.use('/sync/push', auth);
   app.use('/sync/pull', pullAuth);
+  app.use('/sync/status', auth);
   app.use('/sync/tokens', masterAuth);
   app.use('/sync/rotate', masterAuth);
 
@@ -516,6 +517,14 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       .bind(tokenId, syncKey)
       .run();
     return c.body(null, 204);
+  });
+
+  // GET /sync/status — authenticated; returns the group fingerprint so
+  // `siftctl status` can show the same short code as Settings. Works with
+  // master keys and agent tokens (mounted with `auth` above).
+  app.get('/sync/status', async (c) => {
+    const { syncKey } = getSyncKeyContext(c);
+    return c.json({ groupFingerprint: await syncKeyFingerprint(syncKey) });
   });
 
   // POST /sync/push — apply PATCH semantics to feeds and flags.
