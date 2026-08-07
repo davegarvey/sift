@@ -130,7 +130,7 @@ Reference: ${origin}/openapi.json`,
         </Show>
         <Show when={code() && !expired()}>
           <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
-            Paste this prompt into a chat tool or coding agent.
+            Copy the prompt and paste it into a chat tool or coding agent.
           </div>
         </Show>
         <Show when={!code() && !error()}>
