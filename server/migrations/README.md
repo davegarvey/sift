@@ -14,6 +14,10 @@ Migrations are applied as part of the deploy pipeline, immediately before
   Builds → Deploy command. The build's API token must include D1 edit
   permission (the auto-generated token does not — use your own token with
   D1 edit).
+- **Previews (non-production branches):** the non-production branch deploy
+  command stays at the default `npx wrangler versions upload` — previews
+  deliberately do NOT run migrations. Schema changes apply only when a
+  migration lands on main and the production deploy runs.
 - **Manual deploys:** `npm run deploy` runs the same apply-then-deploy
   sequence.
 
