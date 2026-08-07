@@ -103,8 +103,12 @@ async function resolveHost(hostname: string): Promise<string[] | null> {
       const results: string[] = [];
       for (const res of [a, aaaa]) {
         if (!res.ok) return null;
-        const data = (await res.json()) as { Answer?: { data?: string }[] };
+        const data = (await res.json()) as { Answer?: { type?: number; data?: string }[] };
         for (const ans of data.Answer ?? []) {
+          // Only terminal A (1) and AAAA (28) records are IPs. CNAME (5)
+          // and other record types carry hostnames, not addresses, and must
+          // not be fed into the deny-range check.
+          if (ans.type !== 1 && ans.type !== 28) continue;
           if (typeof ans.data === 'string') results.push(ans.data);
         }
       }
