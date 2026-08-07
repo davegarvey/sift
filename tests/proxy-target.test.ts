@@ -7,13 +7,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getUpstreamUrl } from '../server/fetch';
 
-function stubDoh(answers: Record<string, string[]>): void {
+function stubDoh(answers: Record<string, Array<string | { data: string; type: number }>>): void {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     const name = url.searchParams.get('name') ?? '';
     const type = url.searchParams.get('type') ?? '';
     const data = answers[`${name}:${type}`] ?? [];
-    return new Response(JSON.stringify({ Answer: data.map((d) => ({ data: d })) }), {
+    const answer = data.map((d) =>
+      typeof d === 'string' ? { data: d, type: type === 'AAAA' ? 28 : 1 } : d,
+    );
+    return new Response(JSON.stringify({ Answer: answer }), {
       status: 200,
       headers: { 'content-type': 'application/dns-json' },
     });
@@ -80,6 +83,22 @@ describe('getUpstreamUrl: resolved DNS records', () => {
     });
     expect(await getUpstreamUrl(reqUrl('http://example.com/feed.xml'))).toBe(
       'http://example.com/feed.xml',
+    );
+  });
+
+  it('accepts a hostname whose DoH answer includes a CNAME record', async () => {
+    // SMBC: www.smbc-comics.com is a CNAME to smbc-comics.com, so the
+    // type-A DoH response contains the CNAME record plus the terminal A
+    // record. The CNAME target string must not be treated as an IP.
+    stubDoh({
+      'www.smbc-comics.com:A': [
+        { type: 5, data: 'smbc-comics.com.' },
+        { type: 1, data: '34.110.190.161' },
+      ],
+      'www.smbc-comics.com:AAAA': [],
+    });
+    expect(await getUpstreamUrl(reqUrl('https://www.smbc-comics.com/rss.php'))).toBe(
+      'https://www.smbc-comics.com/rss.php',
     );
   });
 
