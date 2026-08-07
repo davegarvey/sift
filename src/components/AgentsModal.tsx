@@ -230,8 +230,7 @@ Reference: ${origin}/openapi.json`,
           </Show>
         </div>
       </div>
-      <div class="modal-footer" style="justify-content: space-between">
-        <span style="font-size: 12px; color: var(--subtext)">You can revoke an agent at any time. Agents can read your feeds and propose additions.</span>
+      <div class="modal-footer">
         <button class="btn primary" onClick={() => ctx.closeModal()}>Close</button>
       </div>
     </div>
