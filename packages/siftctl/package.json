@@ -1,26 +1,26 @@
 {
-  "name": "siftctl",
-  "version": "0.1.0",
-  "description": "Control your Sift RSS subscriptions from the command line or an AI agent",
-  "type": "module",
   "bin": {
     "siftctl": "dist/cli.js"
   },
-  "files": [
-    "dist"
-  ],
-  "engines": {
-    "node": ">=20"
-  },
-  "license": "MIT",
   "dependencies": {
     "@extractus/feed-extractor": "^7.2.1"
   },
+  "description": "Control your Sift RSS subscriptions from the command line or an AI agent",
   "devDependencies": {
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3"
   },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "name": "siftctl",
   "scripts": {
     "build": "tsc -p tsconfig.json"
-  }
+  },
+  "type": "module",
+  "version": "0.52.0"
 }
