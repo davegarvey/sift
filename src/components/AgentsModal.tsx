@@ -123,9 +123,16 @@ Reference: ${origin}/openapi.json`,
     <div class="modal modal-center">
       <div class="modal-header">Agents</div>
       <div class="modal-body">
-        <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
-          Paste this prompt into a chat tool or coding agent. The agent can read your feeds and propose additions.
-        </div>
+        <Show when={!code()}>
+          <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+            Give a chat tool or coding agent access to read your feeds and propose additions.
+          </div>
+        </Show>
+        <Show when={code() && !expired()}>
+          <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+            Paste this prompt into a chat tool or coding agent.
+          </div>
+        </Show>
         <Show when={!code() && !error()}>
           <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
         </Show>
