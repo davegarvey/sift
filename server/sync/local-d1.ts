@@ -1,5 +1,5 @@
 /**
- * Minimal in-memory D1 shim for local development.
+ * Minimal D1 shim for local development.
  *
  * Supports the SQL subset used by server/sync/routes.ts:
  * - CREATE TABLE IF NOT EXISTS
@@ -12,7 +12,14 @@
  *
  * Does NOT support: JOINs, subqueries, GROUP BY, etc.
  * For production-like testing, use `wrangler dev`.
+ *
+ * When constructed with a `persistPath`, the tables are loaded from that
+ * file at startup and written back (debounced) on every mutation, so sync
+ * state survives dev-server restarts — matching production D1.
  */
+
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 class LocalD1Stmt {
   private params: unknown[] = [];
@@ -53,6 +60,15 @@ class LocalD1Stmt {
     const trimmed = this.sql.trim();
     const upper = trimmed.toUpperCase();
 
+    const mutating =
+      upper.startsWith('CREATE TABLE') ||
+      upper.startsWith('INSERT') ||
+      upper.startsWith('UPDATE') ||
+      upper.startsWith('DELETE') ||
+      upper.startsWith('DROP TABLE') ||
+      upper.startsWith('ALTER TABLE');
+    if (mutating) this.db.schedulePersist();
+
     if (upper.startsWith('CREATE TABLE')) return this.db._createTable(trimmed);
     if (upper.startsWith('CREATE INDEX')) return [];
     if (upper.startsWith('INSERT')) return this.db._insert(trimmed, this.params);
@@ -66,10 +82,73 @@ class LocalD1Stmt {
   }
 }
 
+export interface LocalD1Options {
+  /** Optional JSON file to persist tables across restarts. */
+  persistPath?: string;
+}
+
 export class LocalD1Database {
   private tables = new Map<string, Map<string, Record<string, unknown>>>();
   /** Column defaults added via ALTER TABLE ... ADD COLUMN ... DEFAULT x. */
   private tableDefaults = new Map<string, Map<string, unknown>>();
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persisted = false;
+
+  constructor(private options: LocalD1Options = {}) {
+    if (options.persistPath) {
+      this.loadFromDisk();
+      process.once('beforeExit', () => {
+        if (this.persisted && this.persistTimer) {
+          clearTimeout(this.persistTimer);
+          this.writeToDisk();
+        }
+      });
+    }
+  }
+
+  private loadFromDisk(): void {
+    try {
+      const data = JSON.parse(readFileSync(this.options.persistPath!, 'utf8')) as {
+        tables?: Record<string, Record<string, Record<string, unknown>>>;
+        defaults?: Record<string, Record<string, unknown>>;
+      };
+      for (const [name, rows] of Object.entries(data.tables ?? {})) {
+        this.tables.set(name, new Map(Object.entries(rows)));
+      }
+      for (const [name, cols] of Object.entries(data.defaults ?? {})) {
+        this.tableDefaults.set(name, new Map(Object.entries(cols)));
+      }
+    } catch {
+      // Missing or corrupt file — start with an empty database.
+    }
+  }
+
+  private writeToDisk(): void {
+    const path = this.options.persistPath!;
+    const data = {
+      tables: Object.fromEntries(
+        [...this.tables].map(([name, rows]) => [name, Object.fromEntries(rows)]),
+      ),
+      defaults: Object.fromEntries(
+        [...this.tableDefaults].map(([name, cols]) => [name, Object.fromEntries(cols)]),
+      ),
+    };
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, JSON.stringify(data));
+    renameSync(tmp, path);
+  }
+
+  /** Mark the persisted copy dirty; the next debounce flush writes it. */
+  schedulePersist(): void {
+    if (!this.options.persistPath) return;
+    this.persisted = true;
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.writeToDisk();
+    }, 100);
+  }
 
   prepare(sql: string): any {
     return new LocalD1Stmt(this, sql);

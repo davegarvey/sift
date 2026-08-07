@@ -17,7 +17,10 @@ function honoDevMiddleware() {
     configureServer(server: ViteDevServer) {
       const mcpEnabled = process.env.MCP_ENABLED === 'true';
       const relay = mcpEnabled ? new Relay() : undefined;
-      const db = new LocalD1Database() as any; // why: LocalD1Database is a partial D1 shim, not the full interface
+      const db = new LocalD1Database({
+        // Persist dev sync state across restarts (matches production D1).
+        persistPath: 'node_modules/.cache/sift-local-d1.json',
+      }) as any; // why: LocalD1Database is a partial D1 shim, not the full interface
       const devApp = createApp({ relay, db });
       server.middlewares.use(
         async (
