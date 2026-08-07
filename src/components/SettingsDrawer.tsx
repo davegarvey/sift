@@ -273,6 +273,12 @@ function SyncSection() {
             Sync keeps your subscriptions and reading progress in step across your devices. There is no account. If you lose your key, the data on the server is gone.
           </p>
         </Show>
+        <Show when={!enabled()}>
+          <div class="row">
+            <label>Join an existing sync</label>
+            <button class="btn" onClick={() => ctx.openModal({ kind: 'pair-device' })}>Join</button>
+          </div>
+        </Show>
         <Show when={syncError()}>
           <p class="error">{syncError()}</p>
         </Show>

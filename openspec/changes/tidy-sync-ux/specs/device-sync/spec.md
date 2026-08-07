@@ -41,33 +41,44 @@ When the user enables device sync, the system SHALL generate a 128-bit cryptogra
 
 ### Requirement: Unified pairing modal
 
-The system SHALL provide a single pairing modal that exposes both pairing directions in one view: a source half that issues an 8-character server-generated OTP code and renders a QR code for the other device, and a target half that accepts an 8-character code or a 22-character sync key and offers camera-based QR scanning. The system SHALL NOT detect the device type or conditionally hide either half; the user picks the half that fits their situation. The modal SHALL be reachable from a single "Pair another device" row in the Settings Sync section.
+The system SHALL provide a single pairing modal that serves both pairing directions, driven by this device's state: a device with a stored sync key opens it in source mode (showing an 8-character server-generated OTP code and a QR code), and a device without a stored key opens it in receiving mode (accepting an 8-character code or a 22-character sync key, plus camera scanning). The two directions SHALL NOT be presented as parallel options; the receiving direction SHALL remain reachable from source mode via a secondary link. The system SHALL NOT detect the device type.
 
 #### Scenario: Source device shows all three flows
 - **WHEN** a user with sync enabled opens the pairing modal
-- **THEN** the source half SHALL display an 8-character OTP code with a copy button, a QR code, and a 5-minute countdown
+- **THEN** the modal SHALL present the source direction as the primary content: an 8-character OTP code with a copy button, a QR code, a 5-minute countdown, and the instruction to enter the code or scan the QR on the other device
 - **AND** the code SHALL refresh automatically when it expires, resetting the countdown
 - **AND** when a code refresh fails, the modal SHALL display an error with a retry affordance and SHALL NOT silently clear the code
 
 #### Scenario: Target device (no existing key) opens the modal
 - **WHEN** a user without a stored sync key opens the pairing modal
-- **THEN** the target half SHALL display an input that accepts an 8-character code or a 22-character sync key, a "Pair" action, and a "Scan QR" action
+- **THEN** the modal SHALL present the receiving direction as the primary content: an input that accepts an 8-character code or a 22-character sync key, a "Pair" action, and a "Scan QR" action
+- **AND** SHALL NOT display the code or QR half (there is no group to share yet)
 - **AND** submitting an 8-character code SHALL redeem it via the server, store the returned key, trigger a first-time sync, and confirm success
 - **AND** submitting a 22-character base64url key SHALL validate it locally without a server call, store it, trigger a first-time sync, and confirm success
 - **AND** submitting a value that is neither SHALL show an inline validation error without calling the server
 - **AND** submitting the key already in use SHALL show a notice ("Already paired with this key") without re-triggering a sync
 
 #### Scenario: Modal layout on wide and narrow screens
-- **WHEN** the modal is rendered on a wide screen
-- **THEN** the source and target halves SHALL be side by side
-- **WHEN** the modal is rendered on a narrow screen
-- **THEN** the halves SHALL stack vertically with the source half on top
+- **WHEN** the modal is rendered on a wide or narrow screen
+- **THEN** the active direction SHALL be a single primary section with consistent layout across both widths
+- **AND** the alternative direction SHALL be reachable only via a secondary link
 
 #### Scenario: Target scans a QR code
 - **WHEN** the user activates "Scan QR" with a camera available
 - **THEN** the system SHALL open the camera scanner overlay
 - **AND** on a successful scan of a pairing QR for this origin, SHALL redeem the embedded code and pair
 - **AND** when no camera is available, the "Scan QR" action SHALL be disabled with an explanatory tooltip
+
+#### Scenario: Source mode offers the receiving direction
+- **WHEN** a user with sync enabled opens the pairing modal
+- **THEN** the modal SHALL include a secondary link ("Enter a code from another device instead") that switches it to the receiving direction
+- **AND** the receiving direction SHALL include a link back to the source direction
+
+#### Scenario: Codes are grouped for readability
+- **WHEN** the pairing modal displays an 8-character code
+- **THEN** the code SHALL be displayed grouped as four characters, a dash, and four characters (e.g., "abcd-efgh")
+- **AND** the receiving input SHALL accept the code with or without the grouping dash, in any letter case
+- **AND** sync keys SHALL remain case-sensitive and SHALL NOT be case-folded
 
 ### Requirement: Sync status UI in Settings
 
@@ -80,7 +91,7 @@ The Settings panel SHALL include a Sync section, conditionally rendered when the
 
 #### Scenario: Sync-on state displays key and status
 - **WHEN** sync is enabled
-- **THEN** the Settings panel SHALL display, in order: a status line (last sync activity plus the display-only 4-character group fingerprint, with no copy affordance), a "Sync now" action, a "Pair another device" row that opens the unified pairing modal, an "Agent access" row that opens the agents modal, and a separated "Regenerate" row
+- **THEN** the Settings panel SHALL display, in order: a status line (last sync activity plus the display-only 4-character group fingerprint, with no copy affordance), a "Sync now" action, a "Pair another device" row that opens the unified pairing modal in source mode, an "Agent access" row that opens the agents modal, and a separated "Regenerate" row
 - **AND** the group fingerprint SHALL be derived one-way from the sync key and SHALL NOT be used by any pairing flow
 - **AND** the status line SHALL show the last error with its relative time when the last sync failed, the pending change count when changes are waiting, "Never synced" when no sync has ever succeeded, and otherwise the relative time of the last successful sync
 
@@ -91,6 +102,7 @@ The Settings panel SHALL include a Sync section, conditionally rendered when the
 #### Scenario: Sync-off state displays the enable flow
 - **WHEN** sync is disabled
 - **THEN** the Settings panel SHALL display an "Enable sync" toggle that generates a key and expands the Sync section to the sync-on state
+- **AND** SHALL display a "Join an existing sync" row that opens the unified pairing modal in receiving mode
 
 #### Scenario: Disabling sync requires confirmation
 - **WHEN** the user toggles sync off while it is currently enabled

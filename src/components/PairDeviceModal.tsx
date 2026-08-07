@@ -9,6 +9,8 @@ import { expiryLabel } from '../util/time';
 
 export function PairDeviceModal() {
   const ctx = useApp();
+  const enabled = () => Boolean(ctx.syncKey());
+  const [mode, setMode] = createSignal<'show' | 'enter'>(enabled() ? 'show' : 'enter');
   const [code, setCode] = createSignal<string | null>(null);
   const [expiresAt, setExpiresAt] = createSignal<number | null>(null);
   const [copied, setCopied] = createSignal(false);
@@ -77,18 +79,29 @@ export function PairDeviceModal() {
 
   const pairUrl = () => code() ? window.location.origin + '/?pair=' + code()! : '';
 
+  const switchMode = (next: 'show' | 'enter') => {
+    setMode(next);
+    if (next === 'show' && !code()) void generateCode();
+  };
+
   const doPair = async () => {
     const v = pairInput().trim();
     if (!v) return;
-    if (v.length !== 8 && !isValidSyncKey(v)) {
+    let candidate = v;
+    let isCode = false;
+    if (v.length === 9 && v[4] === '-') candidate = v.slice(0, 4) + v.slice(5);
+    if (candidate.length === 8) {
+      isCode = true;
+      candidate = candidate.toLowerCase();
+    } else if (!isValidSyncKey(v)) {
       setPairError('Enter an 8-character code or a 22-character sync key');
       return;
     }
     setPairBusy(true);
     setPairError(null);
     try {
-      if (v.length === 8) {
-        const key = await redeemCode(v);
+      if (isCode) {
+        const key = await redeemCode(candidate);
         await ctx.pairSyncWithKey(key);
       } else {
         if (v === ctx.syncKey()) {
@@ -115,7 +128,7 @@ export function PairDeviceModal() {
   };
 
   onMount(() => {
-    void generateCode();
+    if (mode() === 'show') void generateCode();
   });
 
   onCleanup(() => {
@@ -124,73 +137,88 @@ export function PairDeviceModal() {
     clearInterval(ringTimer);
   });
 
+  const displayCode = () => {
+    const c = code();
+    return c ? c.slice(0, 4) + '-' + c.slice(4) : '…';
+  };
+
   return (
     <div class="modal modal-center">
-      <div class="modal-header">Pair a device</div>
+      <div class="modal-header">{mode() === 'show' ? 'Pair a device' : 'Join an existing sync'}</div>
       <div class="modal-body">
         <Show when={!scanning()}>
-          <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
-            It works one of two ways. Show a code for the other device, or enter a code from it.
-          </div>
-          <div class="sync-grid">
-            <div class="sync-grid__cell">
-              <span class="sync-grid__label">Show a code</span>
-              <span class="sync-grid__code">{code() ?? '…'}</span>
-              <div style="display: flex; gap: 6px; justify-content: center">
-                <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
-                  {copied() ? <Check size={14} /> : <Copy size={14} />}
-                  <span style="font-size: 12px">Copy</span>
-                </button>
-              </div>
-              <div class="sync-grid__qr" innerHTML={pairUrl() ? renderSyncKeyQr(pairUrl()) : ''} />
-              <span class="sync-grid__hint">On your other device, enter this code or scan the QR code.</span>
-              <Show when={shareError()}>
-                <p class="error" style="margin: 4px 0 0; text-align: center">{shareError()}</p>
-                <button class="btn" style="align-self: center" onClick={() => void generateCode()}>Retry</button>
-              </Show>
+          <Show when={mode() === 'show'}>
+            <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+              Open Sift on your other device and enter this code, or scan the QR code.
             </div>
-            <div class="sync-grid__cell">
-              <span class="sync-grid__label">Enter a code</span>
-              <form
-                style="display: flex; gap: 6px; align-items: center"
-                onSubmit={(e) => { e.preventDefault(); void doPair(); }}
-              >
-                <input
-                  type="text"
-                  value={pairInput()}
-                  onInput={(e) => setPairInput(e.currentTarget.value)}
-                  placeholder="8-character code"
-                  aria-label="Pairing code or sync key"
-                  autocomplete="off"
-                  autocorrect="off"
-                  autocapitalize="off"
-                  spellcheck={false}
-                  disabled={pairBusy()}
-                  style={{ width: '160px', 'flex': 'none', 'font-size': '13px', padding: '6px 8px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--hairline)', 'border-radius': '4px' }}
-                />
-                <button
-                  class="btn"
-                  type="submit"
-                  disabled={pairBusy() || !pairInput().trim()}
-                >
-                  {pairBusy() ? 'Pairing…' : 'Pair'}
-                </button>
-              </form>
-              <Show when={pairError()}>
-                <p class="error">{pairError()}</p>
-              </Show>
+            <div class="sync-grid sync-grid--single">
+              <div class="sync-grid__cell">
+                <span class="sync-grid__code">{displayCode()}</span>
+                <div style="display: flex; gap: 6px; justify-content: center">
+                  <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
+                    {copied() ? <Check size={14} /> : <Copy size={14} />}
+                    <span style="font-size: 12px">Copy</span>
+                  </button>
+                </div>
+                <div class="sync-grid__qr" innerHTML={pairUrl() ? renderSyncKeyQr(pairUrl()) : ''} />
+                <Show when={shareError()}>
+                  <p class="error" style="margin: 4px 0 0; text-align: center">{shareError()}</p>
+                  <button class="btn" style="align-self: center" onClick={() => void generateCode()}>Retry</button>
+                </Show>
+              </div>
+            </div>
+          </Show>
+          <Show when={mode() === 'enter'}>
+            <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+              Enter the code shown on your other device.
+            </div>
+            <form
+              style="display: flex; gap: 6px; align-items: center"
+              onSubmit={(e) => { e.preventDefault(); void doPair(); }}
+            >
+              <input
+                type="text"
+                value={pairInput()}
+                onInput={(e) => setPairInput(e.currentTarget.value)}
+                placeholder="abcd-efgh"
+                aria-label="Pairing code or sync key"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck={false}
+                disabled={pairBusy()}
+                style={{ width: '160px', 'flex': 'none', 'font-size': '13px', padding: '6px 8px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--hairline)', 'border-radius': '4px' }}
+              />
               <button
                 class="btn"
-                style="align-self: flex-start"
-                disabled={cameraAvail() === false}
-                onClick={() => setScanning(true)}
-                title={cameraAvail() === false ? 'No camera detected' : 'Scan a pairing QR code'}
+                type="submit"
+                disabled={pairBusy() || !pairInput().trim()}
               >
-                Scan QR
+                {pairBusy() ? 'Pairing…' : 'Pair'}
               </button>
-              <span class="sync-grid__hint">Enter the code shown on your other device.</span>
-            </div>
-          </div>
+            </form>
+            <Show when={pairError()}>
+              <p class="error">{pairError()}</p>
+            </Show>
+            <button
+              class="btn"
+              style="align-self: flex-start"
+              disabled={cameraAvail() === false}
+              onClick={() => setScanning(true)}
+              title={cameraAvail() === false ? 'No camera detected' : 'Scan a pairing QR code'}
+            >
+              Scan QR
+            </button>
+          </Show>
+          <Show when={enabled()}>
+            <button
+              class="sync-grid__copy"
+              style="margin-top: 10px"
+              onClick={() => switchMode(mode() === 'show' ? 'enter' : 'show')}
+            >
+              {mode() === 'show' ? 'Enter a code from another device instead' : 'Show a code for the other device instead'}
+            </button>
+          </Show>
         </Show>
         <Show when={scanning()}>
           <QrScannerOverlay onClose={handleScannerClose} />

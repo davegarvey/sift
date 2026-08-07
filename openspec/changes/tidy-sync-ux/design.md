@@ -33,14 +33,15 @@ Alternative considered: inline expand-in-row confirm (no modal stack issue, but 
 
 **Escape/backdrop edge case**: `App.tsx`'s global Escape handler (line 28) and `Backdrop` click handler (line 222) get one-line additions: when `modal.kind === 'confirm' && modal.returnTo`, close + reopen the origin instead of closing flat. This keeps every dismiss path (Cancel, Escape, backdrop) returning to the origin, not just the Cancel button.
 
-### D2: One `PairDeviceModal` — the existing `sync-grid` two-column layout becomes the two halves
+### D2: One `PairDeviceModal` — role-driven single-section modal
 
-Rather than inventing a new layout, the merged modal uses the existing `.sync-grid` (`1fr 1fr`, collapses to 1 column ≤540px): left cell = source half (OTP code + copy, QR, hint, expiry ring in the footer), right cell = target half (form with code/key input + Pair, Scan QR, inline error). Direction is not detected; both halves always render — per spec.
+The merged modal is mode-driven rather than showing both halves: `PairDeviceModal` derives its initial mode from `ctx.syncKey()` — a device with a key opens in **source mode** (code + QR + copy + expiry), a device without one opens in **receiving mode** (code/key input + Pair + Scan QR). The alternative direction is a secondary link in source mode ("Enter a code from another device instead"), never a parallel choice. This matches RFC 8628's single-instruction pattern and the WhatsApp/Telegram role split, and it resolves the structural flaw that the old two-column modal's receiving half was unreachable from a fresh device (the "Pair another device" row only rendered when sync was enabled).
 
-- `ModalKind` gains `{ kind: 'pair-device' }`; `sync-join`/`sync-share` removed; both components deleted.
-- Target half input: `trim()`; 22-char key matching `KEY_FORMAT_RE` → check `"Already paired with this key"` against current `ctx.syncKey()` then `pairSyncWithKey`; 8-char → `redeemCode` + `pairSyncWithKey`; otherwise inline validation error, no server call. Wrapped in a `<form>` so Enter submits.
+- `ModalKind` keeps `{ kind: 'pair-device' }`; `sync-join`/`sync-share` removed; both components deleted.
+- The disabled Sync section gains a "Join an existing sync" row opening the same modal (it lands in receiving mode) — closing the fresh-device gap.
+- Receiving input normalizes per RFC 8628 §6.1: codes accept an optional grouping dash and any letter case (case-folded before redeem); 22-char keys stay case-sensitive and are validated against `KEY_FORMAT_RE`. The source half displays the code grouped (`abcd-efgh`).
+- A code is minted only when source mode is active (`onMount` if enabled, or when switching to source mode) — a fresh device in receiving mode never mints, so it cannot burn the OTP rate limit or hit the no-key 401.
 - Camera check + `QrScannerOverlay` move from `SyncJoinModal` unchanged; the scan-success path (`closeModal` → `pair-result`) is preserved.
-- Source half keeps `SyncShareModal`'s auto-refresh-on-expiry timers, and adds the missing failure path: a `shareError` signal rendered as an inline error + Retry button instead of silently nulling the code.
 - The `/?pair=` deep-link path (state.tsx:595) is untouched.
 
 ### D3: Drawer sync section restructure
