@@ -148,7 +148,7 @@ export function PairDeviceModal() {
       <div class="modal-body">
         <Show when={!scanning()}>
           <Show when={mode() === 'show'}>
-            <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+            <div style="margin-bottom: 10px; font-size: 14px; color: var(--subtext)">
               Open Sift on your other device and enter this code, or scan the QR code.
             </div>
             <div class="sync-grid sync-grid--single">
@@ -157,7 +157,7 @@ export function PairDeviceModal() {
                 <div style="display: flex; gap: 6px; justify-content: center">
                   <button class="sync-grid__copy" onClick={() => void copyCode()} aria-label="Copy pairing code">
                     {copied() ? <Check size={14} /> : <Copy size={14} />}
-                    <span style="font-size: 12px">Copy</span>
+                    <span>Copy</span>
                   </button>
                 </div>
                 <div class="sync-grid__qr" innerHTML={pairUrl() ? renderSyncKeyQr(pairUrl()) : ''} />
@@ -169,7 +169,7 @@ export function PairDeviceModal() {
             </div>
           </Show>
           <Show when={mode() === 'enter'}>
-            <div style="margin-bottom: 10px; font-size: 13px; color: var(--subtext)">
+            <div style="margin-bottom: 10px; font-size: 14px; color: var(--subtext)">
               Enter the code shown on your other device.
             </div>
             <form
@@ -225,7 +225,7 @@ export function PairDeviceModal() {
         </Show>
       </div>
       <div class="modal-footer" style="justify-content: space-between">
-        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--subtext)">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--subtext)">
           <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
             <circle class="code-timer__bg" cx="12" cy="12" r="10" />
             <circle

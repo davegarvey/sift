@@ -152,7 +152,7 @@ Reference: ${origin}/openapi.json`,
             </div>
             <button
               class="sync-grid__copy"
-              style="margin-bottom: 10px; font-size: 13px"
+              style="margin-bottom: 10px"
               onClick={() => setShowTerminal((v) => !v)}
               aria-expanded={showTerminal()}
             >

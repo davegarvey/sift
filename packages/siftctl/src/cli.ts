@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { baseUrl, readToken, writeToken } from './config.js';
 import { ApiError, capabilities, pull, push, redeemToken } from './api.js';
@@ -237,7 +238,7 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   runCli(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
   });

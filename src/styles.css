@@ -1689,7 +1689,7 @@ a:hover { text-decoration: underline; }
   background: transparent;
   color: var(--subtext);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 .sync-grid__copy:hover {
   color: var(--text);
@@ -1707,7 +1707,7 @@ a:hover { text-decoration: underline; }
   height: 120px;
 }
 .sync-grid__hint {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--subtext);
   line-height: 1.4;
   text-align: center;

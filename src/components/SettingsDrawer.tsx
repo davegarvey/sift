@@ -269,7 +269,7 @@ function SyncSection() {
         />
       </div>
         <Show when={!enabled()}>
-          <p style={{ 'font-size': '13px', color: 'var(--subtext)', margin: '0 0 4px', 'line-height': '1.5' }}>
+          <p style={{ 'font-size': '14px', color: 'var(--subtext)', margin: '0 0 4px', 'line-height': '1.5' }}>
             Sync keeps your subscriptions and reading progress in step across your devices. There is no account. If you lose your key, the data on the server is gone.
           </p>
         </Show>
@@ -287,7 +287,7 @@ function SyncSection() {
             <label classList={{ error: statusLine().error }} title={statusLine().detail ?? undefined}>
               {statusLine().text}
             <Show when={fingerprint()}>
-              <span style={{ 'font-size': '12px', color: 'var(--subtext)' }}> · Group {fingerprint()}</span>
+              <span style={{ 'font-size': '13px', color: 'var(--subtext)' }}> · Group {fingerprint()}</span>
             </Show>
           </label>
           <button class="btn" disabled={syncing()} onClick={() => void syncNow()}>
