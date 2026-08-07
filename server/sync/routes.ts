@@ -495,7 +495,13 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       .prepare('SELECT token_id, fingerprint, scope, created_at, last_seen_at FROM tokens WHERE sync_key = ? ORDER BY created_at ASC')
       .bind(syncKey)
       .all();
-    return c.json({ tokens: res.results });
+    // created_at is stored in epoch seconds (now()); the API reports
+    // epoch milliseconds, matching last_seen_at and the OTP expiresAt.
+    const tokens = (res.results as Array<{ created_at: number }>).map((r) => ({
+      ...r,
+      created_at: r.created_at * 1000,
+    }));
+    return c.json({ tokens });
   });
 
   // DELETE /sync/tokens — revoke a token by id (master key only).
