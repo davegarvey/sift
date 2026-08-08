@@ -4,8 +4,8 @@ const SECTIONS: { title: string; shortcuts: { keys: string[]; label: string }[] 
   {
     title: 'List',
     shortcuts: [
-      { keys: ['j', '↓'], label: 'Next item' },
-      { keys: ['k', '↑'], label: 'Previous item' },
+      { keys: ['j'], label: 'Next item' },
+      { keys: ['k'], label: 'Previous item' },
       { keys: ['Enter'], label: 'Open focused item' },
       { keys: ['/'], label: 'Search' },
       { keys: ['r'], label: 'Refresh all' },
@@ -18,7 +18,6 @@ const SECTIONS: { title: string; shortcuts: { keys: string[]; label: string }[] 
     shortcuts: [
       { keys: ['j'], label: 'Next item' },
       { keys: ['k'], label: 'Previous item' },
-      { keys: ['↑', '↓'], label: 'Scroll article' },
       { keys: ['s'], label: 'Toggle star' },
       { keys: ['o'], label: 'Open original' },
       { keys: ['r'], label: 'Refresh all' },

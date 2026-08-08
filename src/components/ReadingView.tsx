@@ -59,6 +59,7 @@ export function ReadingView() {
   });
 
   onMount(() => {
+    containerRef?.focus({ preventScroll: true });
     if (!titleRef || !containerRef) return;
     const observer = new IntersectionObserver(
       ([e]) => setShowChromeTitle(!e.isIntersecting),
@@ -163,7 +164,7 @@ export function ReadingView() {
   };
 
   return (
-    <main class="reading" ref={containerRef} onPointerDown={onSwipeStart}>
+    <main class="reading" ref={containerRef} tabindex="-1" onPointerDown={onSwipeStart}>
       <div class="reading-chrome">
           <div class="reading-chrome-inner">
             <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)">
