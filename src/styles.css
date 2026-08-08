@@ -345,11 +345,12 @@ a:hover { text-decoration: underline; }
   }
 
   .reading .reading-body {
-    padding: 16px 16px calc(84px + env(safe-area-inset-bottom, 0px));
+    padding: 16px 16px calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
   .reading .reading-chrome-inner {
-    padding: 10px 16px;
+    height: 40px;
+    padding: 0 16px;
   }
 
   /* Drawer + backdrop. */
@@ -995,7 +996,8 @@ a:hover { text-decoration: underline; }
 .reading .reading-chrome-inner {
   max-width: var(--measure);
   margin: 0 auto;
-  padding: 10px 24px;
+  height: 40px;
+  padding: 0 24px;
   width: 100%;
   display: flex;
   align-items: center;
@@ -1083,7 +1085,8 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  height: calc(41px + env(safe-area-inset-bottom, 0px));
+  padding: 0 16px env(safe-area-inset-bottom, 0px);
   background: var(--mantle);
   border-top: 1px solid var(--hairline);
   font-size: 14px;
@@ -1100,7 +1103,7 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: center;
   min-width: 44px;
-  min-height: 44px;
+  min-height: 40px;
   padding: 8px;
   border-radius: 6px;
   color: var(--subtext);
@@ -2023,6 +2026,20 @@ a:hover { text-decoration: underline; }
     justify-content: center;
   }
 
+  /* Match the topbar's coarse-pointer height (44px) so the reading bars
+     stay in line with the list view. */
+  .reading .reading-chrome-inner {
+    height: 44px;
+  }
+
+  .reading .reading-bottom-bar {
+    height: calc(45px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .reading .reading-bottom-bar .bottom-bar-btn {
+    min-height: 44px;
+  }
+
 /* Touch laptops (coarse pointer, desktop width): star/open/help stay in the
    top chrome and keep 44px targets. Scoped to ≥769px so the ≤768px
    `.desktop-only` hide is never overridden. */
@@ -2111,7 +2128,7 @@ a:hover { text-decoration: underline; }
 
   /* Add bottom safe area to reading body — clears the fixed bottom bar. */
   .reading .reading-body {
-    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
   }
 
   /* Add bottom safe area to modal backdrop */
