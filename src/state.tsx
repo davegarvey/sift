@@ -307,7 +307,8 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const openItem = async (item: Item, replace = false) => {
-    setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id });
+    const idx = items().findIndex((i) => i.id === item.id);
+    setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id, focusedIndex: idx });
     if (replace) {
       history.replaceState(null, '', itemUrl(item));
     } else {
