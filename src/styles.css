@@ -1025,6 +1025,8 @@ a:hover { text-decoration: underline; }
   align-items: center;
   min-width: 0;
 }
+
+.reading .reading-chrome .chrome-title {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -2020,7 +2022,6 @@ a:hover { text-decoration: underline; }
     align-items: center;
     justify-content: center;
   }
-}
 
 /* Touch laptops (coarse pointer, desktop width): star/open/help stay in the
    top chrome and keep 44px targets. Scoped to ≥769px so the ≤768px
