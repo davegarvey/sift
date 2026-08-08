@@ -983,6 +983,12 @@ a:hover { text-decoration: underline; }
   touch-action: pan-y;
 }
 
+/* The reading pane is the arrow-key scroll target when entered via keyboard;
+   it is focusable (tabindex=-1) but must never show a focus ring. */
+.reading:focus {
+  outline: none;
+}
+
 .reading .reading-chrome {
   background: var(--mantle);
   border-bottom: 1px solid var(--hairline);
