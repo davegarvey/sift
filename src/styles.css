@@ -345,7 +345,7 @@ a:hover { text-decoration: underline; }
   }
 
   .reading .reading-body {
-    padding: 16px 16px 64px;
+    padding: 16px 16px calc(84px + env(safe-area-inset-bottom, 0px));
   }
 
   .reading .reading-chrome-inner {
@@ -979,6 +979,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   background: var(--base);
+  touch-action: pan-y;
 }
 
 .reading .reading-chrome {
@@ -1024,8 +1025,6 @@ a:hover { text-decoration: underline; }
   align-items: center;
   min-width: 0;
 }
-
-.reading .reading-chrome .chrome-title {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -1047,25 +1046,7 @@ a:hover { text-decoration: underline; }
 
 
 
-.reading .reading-chrome .chrome-chevrons {
-  gap: 4px;
-}
-
-.reading .reading-chrome .chrome-chevron {
-  display: inline-flex;
-  align-items: center;
-  color: var(--subtext);
-  padding: 4px;
-  border-radius: 4px;
-}
-
-.reading .reading-chrome .chrome-chevron:disabled {
-  opacity: 0.2;
-  pointer-events: none;
-}
-
 .reading .reading-chrome .star {
-  display: inline-flex;
   align-items: center;
   color: var(--accent);
   padding: 4px;
@@ -1075,12 +1056,81 @@ a:hover { text-decoration: underline; }
 .reading .reading-chrome .star.dim { color: var(--overlay); }
 
 .reading .reading-chrome .open-original {
-  display: inline-flex;
   align-items: center;
   color: var(--subtext);
   text-decoration: none;
   padding: 4px;
   border-radius: 4px;
+}
+
+/* Embedded media must never overflow the reading column. */
+.reading .reading-body iframe,
+.reading .reading-body video,
+.reading .reading-body embed {
+  max-width: 100%;
+}
+
+/* Mobile bottom action bar — prev (far left), star/open (center), next (far right).
+   Shown ≤768px via the `.mobile-only` toggle. */
+.reading .reading-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--mantle);
+  border-top: 1px solid var(--hairline);
+  font-size: 14px;
+}
+
+.reading .reading-bottom-bar .bottom-bar-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reading .reading-bottom-bar .bottom-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+  border-radius: 6px;
+  color: var(--subtext);
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.reading .reading-bottom-bar .bottom-bar-btn:disabled {
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.reading .reading-bottom-bar .bottom-bar-btn.star {
+  color: var(--accent);
+}
+
+.reading .reading-bottom-bar .bottom-bar-btn.open-original {
+  color: var(--subtext);
+  text-decoration: none;
+}
+
+.reading .reading-bottom-bar .bottom-bar-btn:hover:not(:disabled),
+.reading .reading-bottom-bar .bottom-bar-btn:focus-visible {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.reading .reading-bottom-bar .bottom-bar-btn.star:hover,
+.reading .reading-bottom-bar .bottom-bar-btn.star:focus-visible {
+  background: var(--accent-dim);
+  color: var(--accent-text);
 }
 
 @media (min-width: 769px) {
@@ -1090,13 +1140,19 @@ a:hover { text-decoration: underline; }
     padding: 4px;
     border-radius: 4px;
   }
+
+  /* Star/open stay in the top chrome on desktop only — on mobile they move
+     to the bottom bar, so their display must live here (not at base
+     specificity) or it would override the ≤768px `.desktop-only` hide. */
+  .reading .reading-chrome .star,
+  .reading .reading-chrome .open-original {
+    display: inline-flex;
+  }
 }
 
 /* Reading chrome button hover/focus states. */
 .reading .reading-chrome .back:hover,
 .reading .reading-chrome .back:focus-visible,
-.reading .reading-chrome .chrome-chevron:hover:not(:disabled),
-.reading .reading-chrome .chrome-chevron:focus-visible:not(:disabled),
 .reading .reading-chrome .open-original:hover,
 .reading .reading-chrome .open-original:focus-visible,
 .reading .reading-chrome .desktop-only:hover,
@@ -1953,9 +2009,23 @@ a:hover { text-decoration: underline; }
     inset: 44px env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
 
-  /* Increase reading chrome button targets */
-  .reading .reading-chrome .back,
-  .reading .reading-chrome .chrome-chevron,
+  /* Increase reading chrome back button target (the only chrome action
+     visible on mobile — star/open live in the bottom bar, help is
+     desktop-only). */
+  .reading .reading-chrome .back {
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Touch laptops (coarse pointer, desktop width): star/open/help stay in the
+   top chrome and keep 44px targets. Scoped to ≥769px so the ≤768px
+   `.desktop-only` hide is never overridden. */
+@media (min-width: 769px) and (any-pointer: coarse) {
   .reading .reading-chrome .star,
   .reading .reading-chrome .open-original,
   .reading .reading-chrome .desktop-only {
@@ -1966,6 +2036,7 @@ a:hover { text-decoration: underline; }
     align-items: center;
     justify-content: center;
   }
+}
 
   /* River actions are swipe-only on touch; the reading view provides the button fallback. */
   .river-item .actions {
@@ -2037,9 +2108,9 @@ a:hover { text-decoration: underline; }
     padding: 8px 16px 4px;
   }
 
-  /* Add safe-area bottom padding to reading body */
+  /* Add bottom safe area to reading body — clears the fixed bottom bar. */
   .reading .reading-body {
-    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   }
 
   /* Add bottom safe area to modal backdrop */

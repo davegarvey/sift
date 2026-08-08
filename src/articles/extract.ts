@@ -111,6 +111,7 @@ export async function extractArticle(
   }
 
   let content = rewriteImagesToProxy(article.content, articleUrl);
+  content = fitMediaElements(content);
   const heroUrl = heroFrom(ogUrl ?? undefined, articleUrl) ?? heroFrom(thumbnailUrl) ?? inPageHero;
   if (heroUrl) {
     content = injectHeroImageProxy(content, heroUrl);
@@ -157,6 +158,25 @@ function rewriteImagesToProxy(html: string, baseUrl: string): string {
     } catch {
       // leave invalid URLs as-is
     }
+  }
+  return doc.body.innerHTML;
+}
+
+/**
+ * Constrain embedded media to the reading column width. Each
+ * `iframe`/`video`/`embed` gets `width:100%;height:auto` with an
+ * `aspect-ratio` derived from its `width`/`height` attributes (16/9 fallback
+ * when dimensions are missing or non-numeric), so embeds never overflow the
+ * viewport and keep their intrinsic proportions.
+ */
+export function fitMediaElements(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const media = Array.from(doc.querySelectorAll('iframe, video, embed'));
+  for (const el of media) {
+    const w = dim(el.getAttribute('width'));
+    const h = dim(el.getAttribute('height'));
+    const ratio = w !== null && h !== null && w > 0 && h > 0 ? `${w}/${h}` : '16/9';
+    el.setAttribute('style', `width:100%;height:auto;aspect-ratio:${ratio}`);
   }
   return doc.body.innerHTML;
 }
