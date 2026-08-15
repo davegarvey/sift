@@ -1,4 +1,4 @@
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction, type StoreNames } from 'idb';
 import { DB_NAME, DB_VERSION, type Feed, type Item, type Meta } from './types';
 import type { ItemFlag } from './flags';
 
@@ -36,140 +36,160 @@ interface RssReaderDB extends DBSchema {
 
 let dbPromise: Promise<IDBPDatabase<RssReaderDB>> | null = null;
 
-async function backfillFlags(db: IDBPDatabase<RssReaderDB>): Promise<void> {
-  const meta = await db.get('meta', 'flagsBackfilled');
-  if (meta?.value) return;
-  const itemsTx = db.transaction('items', 'readonly');
-  let cursor = await itemsTx.store.index('by-feed-published').openCursor();
-  const batch: ItemFlag[] = [];
-  while (cursor) {
-    const v = cursor.value;
-    batch.push({ id: v.id, feedId: v.feedId, read: v.read ? 1 : 0, starred: v.starred ? 1 : 0 });
-    if (batch.length >= 10000) {
-      const wtx = db.transaction('itemFlags', 'readwrite');
-      for (const flag of batch) await wtx.store.put(flag);
-      await wtx.done;
-      batch.length = 0;
+/**
+ * Versioned upgrade handler. Runs inside a versionchange transaction —
+ * MUST use `transaction.objectStore(...)` (idb convenience methods open
+ * their own transactions and throw while a versionchange is in flight).
+ * Exported so tests can drive migrations from any old version.
+ */
+export async function upgradeDb(
+  db: IDBPDatabase<RssReaderDB>,
+  _oldVersion: number,
+  _newVersion: number,
+  transaction: IDBPTransaction<RssReaderDB, StoreNames<RssReaderDB>[], 'versionchange'>,
+): Promise<void> {
+  if (!db.objectStoreNames.contains('feeds')) {
+    db.createObjectStore('feeds', { keyPath: 'url' });
+  }
+  if (!db.objectStoreNames.contains('items')) {
+    const items = db.createObjectStore('items', { keyPath: 'id' });
+    items.createIndex('by-feed-published', ['feedUrl', 'publishedAt']);
+    items.createIndex('by-guid', 'guid');
+  }
+  if (!db.objectStoreNames.contains('meta')) {
+    db.createObjectStore('meta', { keyPath: 'key' });
+  }
+  if (_oldVersion < 2) {
+    const store = transaction.objectStore('items');
+    if (!store.indexNames.contains('by-published')) {
+      store.createIndex('by-published', 'publishedAt');
     }
-    cursor = await cursor.continue();
   }
-  if (batch.length > 0) {
-    const wtx = db.transaction('itemFlags', 'readwrite');
-    for (const flag of batch) await wtx.store.put(flag);
-    await wtx.done;
+  if (_oldVersion < 3) {
+    if (!db.objectStoreNames.contains('itemFlags')) {
+      const flags = db.createObjectStore('itemFlags', { keyPath: 'id' });
+      flags.createIndex('by-read', 'read');
+      flags.createIndex('by-starred', 'starred');
+    }
   }
-  await db.put('meta', { key: 'flagsBackfilled', value: true });
+  if (_oldVersion < 5) {
+    const tx = transaction as any; // why: idb Transaction type doesn't include objectStore/cursor from older schema versions
+    const oldFeeds: any[] = [];
+    let fc = await tx.objectStore('feeds').openCursor();
+    while (fc) {
+      oldFeeds.push(fc.value);
+      fc = await fc.continue();
+    }
+
+    const oldItems: any[] = [];
+    let ic = await tx.objectStore('items').openCursor();
+    while (ic) {
+      oldItems.push(ic.value);
+      ic = await ic.continue();
+    }
+
+    const oldFlags: any[] = [];
+    if (db.objectStoreNames.contains('itemFlags')) {
+      let flc = await tx.objectStore('itemFlags').openCursor();
+      while (flc) {
+        oldFlags.push(flc.value);
+        flc = await flc.continue();
+      }
+    }
+
+    const urlToId = new Map<string, string>();
+    for (const f of oldFeeds) {
+      urlToId.set(f.url as string, crypto.randomUUID());
+    }
+
+    db.deleteObjectStore('feeds');
+    db.deleteObjectStore('items');
+    if (db.objectStoreNames.contains('itemFlags')) {
+      db.deleteObjectStore('itemFlags');
+    }
+
+    const feedsStore = db.createObjectStore('feeds', { keyPath: 'id' });
+
+    const itemsStore = db.createObjectStore('items', { keyPath: 'id' });
+    itemsStore.createIndex('by-feed-published', ['feedId', 'publishedAt']);
+    itemsStore.createIndex('by-guid', 'guid');
+    itemsStore.createIndex('by-published', 'publishedAt');
+
+    const flagsStore = db.createObjectStore('itemFlags', { keyPath: 'id' });
+    flagsStore.createIndex('by-read', 'read');
+    flagsStore.createIndex('by-starred', 'starred');
+    flagsStore.createIndex('by-feed-id', 'feedId');
+
+    for (const f of oldFeeds) {
+      await feedsStore.put(Object.assign({}, f, { id: urlToId.get(f.url as string)! }));
+    }
+
+    for (const item of oldItems) {
+      const feedId = urlToId.get(item.feedUrl as string);
+      if (!feedId) continue;
+      const guid = item.guid as string;
+      const { feedUrl: _fu, ...rest } = item;
+      await itemsStore.put(Object.assign({}, rest, { id: `${feedId}::${guid}`, feedId }));
+    }
+
+    for (const flag of oldFlags) {
+      const oldId = flag.id as string;
+      const lastSep = oldId.lastIndexOf('::');
+      if (lastSep === -1) continue;
+      const oldFeedUrl = oldId.slice(0, lastSep);
+      const feedId = urlToId.get(oldFeedUrl);
+      if (!feedId) continue;
+      const guid = oldId.slice(lastSep + 2);
+      await flagsStore.put(Object.assign({}, flag, { id: `${feedId}::${guid}`, feedId }));
+    }
+  }
+  if (_oldVersion < 6) {
+    const store = transaction.objectStore('feeds');
+    if (!store.indexNames.contains('by-url')) {
+      store.createIndex('by-url', 'url', { unique: false });
+    }
+  }
+  if (_oldVersion < 7) {
+    const itemsStore = transaction.objectStore('items');
+    const flagsStore = transaction.objectStore('itemFlags');
+    const metaStore = transaction.objectStore('meta');
+
+    // Repair items with future publish dates: fall back to first-seen time.
+    let cursor = await itemsStore.openCursor();
+    while (cursor) {
+      const item = cursor.value as Item;
+      if (item.publishedAt > Date.now()) {
+        const fallback = Math.min(item.createdAt ?? Date.now(), Date.now());
+        await cursor.update({ ...item, publishedAt: fallback, updatedAt: fallback, dateFallback: true });
+      }
+      cursor = await cursor.continue();
+    }
+
+    // Backfill itemFlags rows for items missing them (only-if-missing).
+    let itemCursor = await itemsStore.openCursor();
+    while (itemCursor) {
+      const item = itemCursor.value as Item;
+      const flag = await flagsStore.get(item.id);
+      if (!flag) {
+        await flagsStore.put({
+          id: item.id,
+          feedId: item.feedId,
+          read: item.read ? 1 : 0,
+          starred: item.starred ? 1 : 0,
+        });
+      }
+      itemCursor = await itemCursor.continue();
+    }
+
+    // Drop the stale backfill marker — the flags backfill is now versioned.
+    await metaStore.delete('flagsBackfilled');
+  }
 }
 
 export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
   if (!dbPromise) {
     dbPromise = openDB<RssReaderDB>(DB_NAME, DB_VERSION, {
-      upgrade: async (db, _oldVersion, _newVersion, transaction) => {
-        if (!db.objectStoreNames.contains('feeds')) {
-          db.createObjectStore('feeds', { keyPath: 'url' });
-        }
-        if (!db.objectStoreNames.contains('items')) {
-          const items = db.createObjectStore('items', { keyPath: 'id' });
-          items.createIndex('by-feed-published', ['feedUrl', 'publishedAt']);
-          items.createIndex('by-guid', 'guid');
-        }
-        if (!db.objectStoreNames.contains('meta')) {
-          db.createObjectStore('meta', { keyPath: 'key' });
-        }
-        if (_oldVersion < 2) {
-          const store = transaction.objectStore('items');
-          if (!store.indexNames.contains('by-published')) {
-            store.createIndex('by-published', 'publishedAt');
-          }
-        }
-        if (_oldVersion < 3) {
-          if (!db.objectStoreNames.contains('itemFlags')) {
-            const flags = db.createObjectStore('itemFlags', { keyPath: 'id' });
-            flags.createIndex('by-read', 'read');
-            flags.createIndex('by-starred', 'starred');
-          }
-        }
-        if (_oldVersion < 5) {
-          const tx = transaction as any; // why: idb Transaction type doesn't include objectStore/cursor from older schema versions
-          const oldFeeds: any[] = [];
-          let fc = await tx.objectStore('feeds').openCursor();
-          while (fc) {
-            oldFeeds.push(fc.value);
-            fc = await fc.continue();
-          }
-
-          const oldItems: any[] = [];
-          let ic = await tx.objectStore('items').openCursor();
-          while (ic) {
-            oldItems.push(ic.value);
-            ic = await ic.continue();
-          }
-
-          const oldFlags: any[] = [];
-          if (db.objectStoreNames.contains('itemFlags')) {
-            let flc = await tx.objectStore('itemFlags').openCursor();
-            while (flc) {
-              oldFlags.push(flc.value);
-              flc = await flc.continue();
-            }
-          }
-
-          const urlToId = new Map<string, string>();
-          for (const f of oldFeeds) {
-            urlToId.set(f.url as string, crypto.randomUUID());
-          }
-
-          db.deleteObjectStore('feeds');
-          db.deleteObjectStore('items');
-          if (db.objectStoreNames.contains('itemFlags')) {
-            db.deleteObjectStore('itemFlags');
-          }
-
-          const feedsStore = db.createObjectStore('feeds', { keyPath: 'id' });
-
-          const itemsStore = db.createObjectStore('items', { keyPath: 'id' });
-          itemsStore.createIndex('by-feed-published', ['feedId', 'publishedAt']);
-          itemsStore.createIndex('by-guid', 'guid');
-          itemsStore.createIndex('by-published', 'publishedAt');
-
-          const flagsStore = db.createObjectStore('itemFlags', { keyPath: 'id' });
-          flagsStore.createIndex('by-read', 'read');
-          flagsStore.createIndex('by-starred', 'starred');
-          flagsStore.createIndex('by-feed-id', 'feedId');
-
-          for (const f of oldFeeds) {
-            await feedsStore.put(Object.assign({}, f, { id: urlToId.get(f.url as string)! }));
-          }
-
-          for (const item of oldItems) {
-            const feedId = urlToId.get(item.feedUrl as string);
-            if (!feedId) continue;
-            const guid = item.guid as string;
-            const { feedUrl: _fu, ...rest } = item;
-            await itemsStore.put(Object.assign({}, rest, { id: `${feedId}::${guid}`, feedId }));
-          }
-
-          for (const flag of oldFlags) {
-            const oldId = flag.id as string;
-            const lastSep = oldId.lastIndexOf('::');
-            if (lastSep === -1) continue;
-            const oldFeedUrl = oldId.slice(0, lastSep);
-            const feedId = urlToId.get(oldFeedUrl);
-            if (!feedId) continue;
-            const guid = oldId.slice(lastSep + 2);
-            await flagsStore.put(Object.assign({}, flag, { id: `${feedId}::${guid}`, feedId }));
-          }
-        }
-        if (_oldVersion < 6) {
-          const store = transaction.objectStore('feeds');
-          if (!store.indexNames.contains('by-url')) {
-            store.createIndex('by-url', 'url', { unique: false });
-          }
-        }
-      },
-    }).then(async (db) => {
-      await backfillFlags(db);
-      return db;
+      upgrade: upgradeDb,
     });
   }
   return dbPromise;

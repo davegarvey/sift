@@ -194,7 +194,6 @@ async function handleGetFeedItems(args: Record<string, unknown>): Promise<CallTo
     publishedAt: i.publishedAt,
     excerpt: i.excerpt.slice(0, 300),
   }));
-
   return textResult(JSON.stringify({ title: parsed.title, items }, null, 2));
 }
 
