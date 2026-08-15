@@ -13,7 +13,7 @@ export interface ParsedItem {
   title: string;
   link?: string;
   author?: string;
-  publishedAt: number;
+  publishedAt: number | null;
   excerpt: string;
   html?: string;
   thumbnail?: string | null;
@@ -178,20 +178,32 @@ function mapEntry(entry: FeedEntry): ParsedItem | null {
   };
 }
 
-function parseDate(value: string | undefined): number {
-  if (!value) return Date.now();
+/**
+ * Parse a feed date into epoch ms, or null when unusable: missing,
+ * unparseable, or in the future. The future check lives here so every
+ * consumer shares one rule — future dates are never trustworthy.
+ */
+function parseDate(value: string | undefined, now = Date.now()): number | null {
+  if (!value) return null;
   const t = Date.parse(value);
-  return Number.isNaN(t) ? Date.now() : t;
+  if (Number.isNaN(t)) return null;
+  return t <= now ? t : null;
 }
 
 /**
  * Convert a ParsedFeed into IndexedDB Item rows. Each item's id is
  * `${feedId}::${guid}`, which gives stable identity across refreshes.
+ *
+ * When the feed's date is unusable (missing, unparseable, future) the item's
+ * `publishedAt` falls back to the first-seen time (`createdAt`) and the item
+ * is flagged `dateFallback`, so refreshes never re-stamp it with a fresh
+ * timestamp.
  */
 export function parsedToItems(parsed: ParsedFeed, feedId: string): Item[] {
   const now = Date.now();
   return parsed.items.map((p) => {
     const id = `${feedId}::${p.guid}`;
+    const fallback = p.publishedAt == null;
     return {
       id,
       feedId,
@@ -199,8 +211,8 @@ export function parsedToItems(parsed: ParsedFeed, feedId: string): Item[] {
       title: p.title,
       author: p.author,
       link: p.link,
-      publishedAt: p.publishedAt,
-      updatedAt: p.publishedAt,
+      publishedAt: p.publishedAt ?? now,
+      updatedAt: p.publishedAt ?? now,
       excerpt: p.excerpt,
       html: p.html,
       thumbnail: p.thumbnail ?? null,
@@ -209,6 +221,7 @@ export function parsedToItems(parsed: ParsedFeed, feedId: string): Item[] {
       read: false,
       starred: false,
       createdAt: now,
+      dateFallback: fallback || undefined,
     } satisfies Item;
   });
 }

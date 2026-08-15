@@ -3,7 +3,7 @@ import { extractFromXml, type FeedEntry } from '@extractus/feed-extractor';
 export interface CliItem {
   title: string;
   link?: string;
-  publishedAt: number;
+  publishedAt: number | null;
   excerpt: string;
   guid: string;
   itemId: string;
@@ -76,8 +76,13 @@ function mapEntry(entry: FeedEntry, feedUrl: string): CliItem | null {
   };
 }
 
-function parseDate(value: string | undefined): number {
-  if (!value) return Date.now();
+/**
+ * Parse a feed date into epoch ms, or null when unusable: missing,
+ * unparseable, or in the future. Mirrors src/feeds/parse.ts.
+ */
+function parseDate(value: string | undefined, now = Date.now()): number | null {
+  if (!value) return null;
   const t = Date.parse(value);
-  return Number.isNaN(t) ? Date.now() : t;
+  if (Number.isNaN(t)) return null;
+  return t <= now ? t : null;
 }

@@ -1,6 +1,7 @@
 /** Format an epoch-ms timestamp as a short relative time ("2h", "5d", "3w"). */
 export function relativeTime(ts: number): string {
   const now = Date.now();
+  if (ts <= 0 || now - ts < 0) return 'unknown';
   const seconds = Math.round((now - ts) / 1000);
   if (seconds < 60) return 'just now';
   const minutes = Math.round(seconds / 60);
@@ -28,7 +29,9 @@ export function expiryLabel(expiresAt: number): string {
  *  "2h ago" → "Wednesday" → "last month" → "Jun 2026" */
 export function humanRelativeTime(date: Date): string {
   const now = Date.now();
-  const diffMs = now - date.getTime();
+  const ts = date.getTime();
+  if (ts <= 0 || now - ts < 0) return 'unknown';
+  const diffMs = now - ts;
   const diffSec = Math.round(diffMs / 1000);
   if (diffSec < 60) return 'just now';
   const diffMin = Math.round(diffSec / 60);

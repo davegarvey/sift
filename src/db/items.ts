@@ -2,11 +2,36 @@ import { getDb } from './open';
 import type { Item } from './types';
 import { readToFlag, starToFlag, READ_UNREAD, STAR_UNSTARRED } from './flags';
 
+/**
+ * Merge an incoming item into an existing stored record. First-seen state
+ * (`createdAt`, and for fallback-dated items `publishedAt`) is preserved so
+ * refreshes never re-stamp dates with the refresh time. `dateFallback` is
+ * managed explicitly: the spread alone cannot clear it (real-date items
+ * carry no key) or keep it across a preserved merge.
+ */
+function mergeItem(existing: Item, incoming: Item): Item {
+  const incomingIsFallback = incoming.dateFallback === true;
+  const existingDateUsable = existing.publishedAt <= Date.now();
+  const preserveDate = incomingIsFallback && existingDateUsable;
+  return {
+    ...existing,
+    ...incoming,
+    read: existing.read,
+    starred: existing.starred,
+    firstOpenedAt: existing.firstOpenedAt,
+    createdAt: existing.createdAt,
+    updatedAt: preserveDate ? existing.updatedAt : incoming.updatedAt,
+    publishedAt: preserveDate ? existing.publishedAt : incoming.publishedAt,
+    dateFallback: preserveDate ? existing.dateFallback : incoming.dateFallback,
+    id: existing.id,
+  };
+}
+
 export async function insertOrUpdateItem(item: Item): Promise<void> {
   const db = await getDb();
   const existing = await db.get('items', item.id);
   if (existing) {
-    const merged = { ...existing, ...item, read: existing.read, starred: existing.starred, firstOpenedAt: existing.firstOpenedAt, id: existing.id };
+    const merged = mergeItem(existing, item);
     if (item.html) merged.extractedHtml = null;
     await db.put('items', merged);
     const flag = await db.get('itemFlags', item.id);
@@ -47,7 +72,7 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
   for (const item of items) {
     const existing = existingByKey.get(item.id);
     if (existing) {
-      const merged = { ...existing, ...item, read: existing.read, starred: existing.starred, firstOpenedAt: existing.firstOpenedAt, id: existing.id };
+      const merged = mergeItem(existing, item);
       if (item.html) merged.extractedHtml = null;
       await itemsStore.put(merged);
       const flag = flagByKey.get(item.id);
@@ -140,19 +165,6 @@ export async function listItems(limit = 500): Promise<Item[]> {
 
 export async function listUnreadAcrossFeeds(limit = 200): Promise<Item[]> {
   const db = await getDb();
-  const backfilled = await db.get('meta', 'flagsBackfilled');
-  if (!backfilled?.value) {
-    const results: Item[] = [];
-    let cursor = await db
-      .transaction('items', 'readonly')
-      .store.index('by-feed-published')
-      .openCursor(null, 'prev');
-    while (cursor && results.length < limit) {
-      if (!cursor.value.read) results.push(cursor.value);
-      cursor = await cursor.continue();
-    }
-    return results;
-  }
   const results: Item[] = [];
   let cursor = await db
     .transaction('itemFlags', 'readonly')
@@ -169,19 +181,6 @@ export async function listUnreadAcrossFeeds(limit = 200): Promise<Item[]> {
 
 export async function listStarred(limit = 200): Promise<Item[]> {
   const db = await getDb();
-  const backfilled = await db.get('meta', 'flagsBackfilled');
-  if (!backfilled?.value) {
-    const results: Item[] = [];
-    let cursor = await db
-      .transaction('items', 'readonly')
-      .store.index('by-feed-published')
-      .openCursor(null, 'prev');
-    while (cursor && results.length < limit) {
-      if (cursor.value.starred) results.push(cursor.value);
-      cursor = await cursor.continue();
-    }
-    return results;
-  }
   const results: Item[] = [];
   let cursor = await db
     .transaction('itemFlags', 'readonly')
