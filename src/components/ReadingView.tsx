@@ -80,9 +80,9 @@ export function ReadingView() {
 
   createEffect(() => {
     const item = currentItem();
-    document.title = item ? `${item.title} — Sift` : 'Sift — RSS Reader';
+    document.title = item ? `${item.title} — Sift` : 'Sift';
   });
-  onCleanup(() => { document.title = 'Sift — RSS Reader'; });
+  onCleanup(() => { document.title = 'Sift'; });
 
   const toggleStarClick = async () => {
     const item = currentItem();
