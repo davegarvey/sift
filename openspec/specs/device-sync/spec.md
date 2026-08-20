@@ -12,7 +12,7 @@ When the user enables device sync, the system SHALL generate a 128-bit cryptogra
 - **THEN** the system SHALL generate 16 random bytes via `crypto.getRandomValues`
 - **AND** SHALL encode the result as base64url
 - **AND** SHALL store the encoded string in the IndexedDB meta store under the sync settings key
-- **AND** SHALL open the pairing modal
+- **AND** SHALL expand the Sync section to the sync-on state (no pairing modal is opened; pairing is available from the "Pair another device" row)
 
 #### Scenario: Sync key persists across app restarts
 - **WHEN** the user closes and reopens the app
@@ -40,24 +40,44 @@ The sync key SHALL be exactly 22 base64url characters (A–Z, a–z, 0–9, `-`,
 
 ### Requirement: Unified pairing modal
 
-The system SHALL provide a single pairing modal that exposes all three pairing flows: QR code, 8-character server-generated OTP code, and direct paste of the sync key. The system SHALL NOT detect the device type or conditionally hide any flow; the user picks the flow that fits their situation.
+The system SHALL provide a single pairing modal that serves both pairing directions, driven by this device's state: a device with a stored sync key opens it in source mode (showing an 8-character server-generated OTP code and a QR code), and a device without a stored key opens it in receiving mode (accepting an 8-character code or a 22-character sync key, plus camera scanning). The two directions SHALL NOT be presented as parallel options; the receiving direction SHALL remain reachable from source mode via a secondary link. The system SHALL NOT detect the device type.
 
 #### Scenario: Source device shows all three flows
 - **WHEN** a user with sync enabled opens the pairing modal
-- **THEN** the modal SHALL display a QR code, an 8-character server-generated OTP code (with a button to issue / re-issue), and the sync key as a copyable string
-- **AND** SHALL include an input field where a target device can paste a code or sync key
+- **THEN** the modal SHALL present the source direction as the primary content: an 8-character OTP code with a copy button, a QR code, a 5-minute countdown, and the instruction to enter the code or scan the QR on the other device
+- **AND** the code SHALL refresh automatically when it expires, resetting the countdown
+- **AND** when a code refresh fails, the modal SHALL display an error with a retry affordance and SHALL NOT silently clear the code
 
 #### Scenario: Target device (no existing key) opens the modal
 - **WHEN** a user without a stored sync key opens the pairing modal
-- **THEN** the modal SHALL display the input field for pasting a code or sync key prominently
-- **AND** SHALL include a "Generate a new sync key" affordance for users starting from scratch
+- **THEN** the modal SHALL present the receiving direction as the primary content: an input that accepts an 8-character code or a 22-character sync key, a "Pair" action, and a "Scan QR" action
+- **AND** SHALL NOT display the code or QR half (there is no group to share yet)
+- **AND** submitting an 8-character code SHALL redeem it via the server, store the returned key, trigger a first-time sync, and confirm success
+- **AND** submitting a 22-character base64url key SHALL validate it locally without a server call, store it, trigger a first-time sync, and confirm success
+- **AND** submitting a value that is neither SHALL show an inline validation error without calling the server
+- **AND** submitting the key already in use SHALL show a notice ("Already paired with this key") without re-triggering a sync
 
 #### Scenario: Modal layout on wide and narrow screens
-- **WHEN** the modal is rendered on a wide screen
-- **THEN** the QR code SHALL be the dominant element on one side
-- **AND** the OTP / paste UI SHALL be on the other side
-- **WHEN** the modal is rendered on a narrow screen
-- **THEN** the elements SHALL stack vertically with the QR code on top
+- **WHEN** the modal is rendered on a wide or narrow screen
+- **THEN** the active direction SHALL be a single primary section with consistent layout across both widths
+- **AND** the alternative direction SHALL be reachable only via a secondary link
+
+#### Scenario: Target scans a QR code
+- **WHEN** the user activates "Scan QR" with a camera available
+- **THEN** the system SHALL open the camera scanner overlay
+- **AND** on a successful scan of a pairing QR for this origin, SHALL redeem the embedded code and pair
+- **AND** when no camera is available, the "Scan QR" action SHALL be disabled with an explanatory tooltip
+
+#### Scenario: Source mode offers the receiving direction
+- **WHEN** a user with sync enabled opens the pairing modal
+- **THEN** the modal SHALL include a secondary link ("Enter a code from another device instead") that switches it to the receiving direction
+- **AND** the receiving direction SHALL include a link back to the source direction
+
+#### Scenario: Codes are grouped for readability
+- **WHEN** the pairing modal displays an 8-character code
+- **THEN** the code SHALL be displayed grouped as four characters, a dash, and four characters (e.g., "abcd-efgh")
+- **AND** the receiving input SHALL accept the code with or without the grouping dash, in any letter case
+- **AND** sync keys SHALL remain case-sensitive and SHALL NOT be case-folded
 
 ### Requirement: Pairing code entropy is sufficient
 
@@ -162,7 +182,7 @@ The server SHALL create a `users` row only when the client explicitly calls `POS
 - **AND** SHALL respond with HTTP 204
 
 #### Scenario: Register is rate-limited per IP
-- **WHEN** many `POST /sync/register` requests come from the same IP within an hour
+- **WHEN** more than 100 `POST /sync/register` requests come from the same IP within an hour
 - **THEN** the server SHALL respond with HTTP 429 and a `Retry-After` header
 - **AND** SHALL NOT create additional `users` rows above the per-IP quota
 
@@ -273,48 +293,50 @@ All server-side timestamps SHALL come from a monotonic wall clock in the `counte
 
 ### Requirement: Push protocol with PATCH semantics
 
-The system SHALL provide a `POST /sync/push` endpoint that accepts a batch of local changes with PATCH semantics: each field in the payload is updated on the server only if its per-field timestamp is newer than the server's existing value, or if the existing field has no timestamp. `row_at` SHALL be stamped with the server's monotonic batch time, so rows are delivered in arrival order and exactly once per batch that touched them.
+The system SHALL provide a `POST /sync/push` endpoint that accepts a batch of local changes with PATCH semantics. Payloads SHALL NOT carry client-supplied timestamps: every field value is stamped by the server with the batch's monotonic time, so the server is the only clock in the system. A payload containing per-field `at` wrappers (the legacy `{ value, at }` shape) SHALL be rejected with HTTP 400. `row_at` SHALL be stamped with the same server batch time as the field stamps, so rows are delivered in arrival order and exactly once per batch that touched them. Because all stamps in a batch are equal, the `deleted` field SHALL use a tie-break rule: a tombstone (`deleted: 1`) SHALL win against an equal stamp, so an in-batch subscribe followed by a delete leaves no live row. Note: several scenarios below retain their legacy names (required by the archive workflow) but their content describes the new bare-value contract.
 
 #### Scenario: Successful push
-- **WHEN** a client posts a push payload containing feeds and flags
-- **THEN** the server SHALL update each row's fields whose payload timestamp is newer than the existing field's timestamp
-- **AND** SHALL leave unchanged fields whose payload timestamp is older
-- **AND** SHALL stamp `row_at` with the server batch time (the same value for every row in the batch, including rows touched by the URL-scoped delete rule), unless the row's `row_at` is already newer
+- **WHEN** a client posts a push payload containing feeds and flags with bare field values (no `at` wrapper)
+- **THEN** the server SHALL stamp every pushed field with the server's monotonic batch time
+- **AND** SHALL update the rows, replacing existing values (a server-stamped write is always newer than any previously stored stamp, except a tie within the same batch)
+- **AND** SHALL stamp `row_at` with the same batch time (the same value for every row in the batch, including rows touched by the URL-scoped delete rule)
 - **AND** SHALL respond with HTTP 204
 
 #### Scenario: New row inserted
 - **WHEN** a client pushes a feed or flag whose `sync_key + feed_url` (or `sync_key + item_id`) does not exist on the server
-- **THEN** the server SHALL insert the row with the pushed fields and timestamps
-- **AND** any fields not in the payload SHALL be NULL with NULL timestamps
+- **THEN** the server SHALL insert the row with the pushed fields, stamped with the batch time
+- **AND** any fields not in the payload SHALL be NULL
 
 #### Scenario: Concurrent change on a different field
-- **WHEN** device A pushes `{ read: { value: 0, at: T3 } }` for an item whose server row has `{ read_at: T1, starred_at: T2, starred: 1 }`
-- **THEN** the server SHALL update only the `read` field (since T3 > T1)
-- **AND** SHALL preserve the `starred` field and its timestamp (T2 is not in the payload, so the server does not touch it)
+- **WHEN** device A pushes `{ read: 0 }` for an item whose server row has `{ read: 1, starred: 1 }`
+- **THEN** the server SHALL update only the `read` field
+- **AND** SHALL preserve the `starred` field (not in the payload, so the server does not touch it)
 
 #### Scenario: Equal timestamps keep the existing value
-- **WHEN** a client pushes a field whose `at` equals the existing field's `at`
-- **THEN** the server SHALL keep the existing value (first-writer wins on ties)
-- **AND** SHALL NOT update the field's timestamp
+- **WHEN** a push batch contains two entries for the same field of the same row (e.g. two entries for one feed's `title`)
+- **THEN** the server SHALL keep the first entry's value (both entries carry the same batch stamp, and ties keep the existing value)
+- **EXCEPT** the `deleted` field, where a tombstone (`deleted: 1`) SHALL win ties (see "Same-batch subscribe then delete leaves no live row")
+- **AND** the client SHALL deduplicate its dirty set before pushing, so in-batch duplicates are the exception, not the rule
 
 #### Scenario: Push payload validation
-- **WHEN** a client posts a malformed payload (missing required fields, wrong types, timestamps not numeric, mismatched `feed_url` for a flag's `item_id`)
+- **WHEN** a client posts a malformed payload (missing required fields, wrong types, mismatched `feed_id` for a flag's `item_id`)
 - **THEN** the server SHALL respond with HTTP 400 with a descriptive error naming the field
 - **AND** SHALL NOT include the user-supplied value in the error body
 
 #### Scenario: Push with at=0 against an existing field
-- **WHEN** a client pushes a field with `at=0`
-- **AND** the server's existing field has `field_at > 0`
-- **THEN** the server SHALL accept the push (return 2xx) but SHALL NOT update the field (the strict `>` comparison keeps the existing value)
+- **WHEN** a client posts a payload using the legacy `{ value, at }` shape with `at=0` for an existing field
+- **THEN** the server SHALL reject the payload with HTTP 400 (timestamps are no longer part of the protocol)
+- **AND** SHALL NOT update the field
 
 #### Scenario: Push with at=0 against a new row
-- **WHEN** a client pushes a field with `at=0` to a row that does not exist
-- **THEN** the server SHALL insert the row with `at=0` for that field (the NULL-or-`>` comparison accepts the value when the existing field is NULL)
+- **WHEN** a client posts a payload using the legacy `{ value, at }` shape with `at=0` for a row that does not exist
+- **THEN** the server SHALL reject the payload with HTTP 400
+- **AND** SHALL NOT insert the row
 
 #### Scenario: Server derives feed_url from item_id
-- **WHEN** a client pushes a flag with `itemId` and `feedUrl`
-- **THEN** the server SHALL derive `feedUrl` from `itemId` by splitting at the last `::` and `decodeURIComponent`ing the prefix
-- **AND** SHALL reject the push with HTTP 400 if the derived value does not match the client-supplied `feedUrl`
+- **WHEN** a client pushes a flag with `itemId` and `feedId`
+- **THEN** the server SHALL derive the feed ID from `itemId` by splitting at the last `::` and `decodeURIComponent`ing the prefix
+- **AND** SHALL reject the push with HTTP 400 if the derived value does not match the client-supplied `feedId`
 
 #### Scenario: Metadata-only push does not clear a tombstone
 - **WHEN** a client pushes a feed payload without the `deleted` field (e.g., only `title`, `tags`, or `feedUrl`) for a row whose server-side `deleted=1`
@@ -322,43 +344,43 @@ The system SHALL provide a `POST /sync/push` endpoint that accepts a batch of lo
 - **AND** SHALL apply only the pushed fields to the tombstoned row
 
 #### Scenario: Delete tombstones every row sharing the feed URL
-- **WHEN** a client pushes `deleted: { value: 1 }` for a feed
+- **WHEN** a client pushes `{ deleted: 1 }` for a feed
 - **THEN** the server SHALL tombstone the targeted row
-- **AND** SHALL apply the same `deleted` stamp to every other row with the same `feed_url` under the sync key, subject to per-row LWW (a row whose own `deleted_at` is newer SHALL keep its value)
-- **AND** SHALL NOT run the tombstone-clear step for a `deleted: { value: 1 }` push (a newer tombstone's `deleted_at` SHALL NOT be regressed by an older delete stamp)
+- **AND** SHALL apply the same delete stamp to every other row with the same `feed_url` under the sync key
+- **AND** SHALL NOT run the tombstone-clear step for a `deleted: 1` push (a newer tombstone SHALL NOT be regressed by an older delete stamp)
 - **AND** SHALL NOT treat the push as an error when the URL matches multiple rows
 - **AND** when the payload omits `feedUrl`, the server SHALL resolve the URL from the stored row for the URL-scoped rule
 
 #### Scenario: Delete after a remote rename tombstones rows under the winning URL
-- **WHEN** a client pushes `deleted: { value: 1 }` for a feed whose URL was renamed on another device (per-field LWW decides the row's URL between the payload URL and the stored URL)
-- **THEN** the server SHALL tombstone every other row sharing the LWW-winning URL (the same URL the per-field PATCH leaves on the targeted row)
+- **WHEN** a client pushes `{ deleted: 1 }` for a feed whose URL was renamed by an earlier push on another device
+- **THEN** the server SHALL tombstone every other row sharing the payload URL (the payload URL's stamp is the newest, so it is the URL the per-field PATCH leaves on the targeted row)
 
 #### Scenario: Delete of a feed unknown to the server still tombstones URL siblings
-- **WHEN** a client pushes `deleted: { value: 1 }` with a `feedUrl` for a `feed_id` that has no server row (e.g., subscribe-then-delete churn coalesced before the first push)
+- **WHEN** a client pushes `{ deleted: 1 }` with a `feedUrl` for a `feed_id` that has no server row (e.g., subscribe-then-delete churn coalesced before the first push)
 - **THEN** the server SHALL create the tombstoned row
 - **AND** SHALL tombstone every other row sharing that URL (per the URL-scoped delete rule)
 - **AND** SHALL NOT deliver the feed back to the deleting device on the next pull
 
 #### Scenario: Subscribe revives a tombstoned row by URL
-- **WHEN** a client pushes a feed payload with `deleted: { value: 0 }` and a `feedUrl`
+- **WHEN** a client pushes a feed payload with `{ deleted: 0 }` and a `feedUrl`
 - **AND** a tombstoned row (`deleted=1`) exists under that URL for the sync key
 - **THEN** the server SHALL revive the oldest tombstoned row under its existing `feed_id` (clear the tombstone and apply the pushed fields) instead of inserting a new row
 - **AND** SHALL accept the payload with HTTP 2xx
 
 #### Scenario: Same-batch delete then subscribe revives the in-batch tombstone
-- **WHEN** a push batch tombstones a feed URL (`deleted: { value: 1 }`) and a later entry in the same batch subscribes to the same URL (`deleted: { value: 0 }` + `feedUrl`)
+- **WHEN** a push batch tombstones a feed URL (`{ deleted: 1 }`) and a later entry in the same batch subscribes to the same URL (`{ deleted: 0 }` + `feedUrl`)
 - **THEN** the subscribe SHALL revive the row tombstoned earlier in the same batch under its existing `feed_id`
 - **AND** SHALL NOT insert a second row for the URL
 
 #### Scenario: Same-batch subscribe then delete leaves no live row
-- **WHEN** a push batch subscribes to a URL (`deleted: { value: 0 }` + `feedUrl`) and a later entry in the same batch tombstones a feed with that URL (`deleted: { value: 1 }`)
-- **THEN** the delete SHALL also tombstone the row the subscribe created (per the URL-scoped delete rule)
+- **WHEN** a push batch subscribes to a URL (`{ deleted: 0 }` + `feedUrl`) and a later entry in the same batch tombstones a feed with that URL (`{ deleted: 1 }`)
+- **THEN** the delete SHALL win the tie on the `deleted` field (tombstone tie-break)
+- **AND** the URL-scoped delete rule SHALL also tombstone the row the subscribe created
 - **AND** after the batch, SHALL NOT leave any live row for the URL
 
 #### Scenario: Legacy client payloads remain valid
-- **WHEN** an older client pushes a feed payload that includes `deleted: { value: 0 }` together with metadata fields
-- **THEN** the server SHALL accept the payload (HTTP 2xx) and apply the pushed fields
-- **AND** tombstone clearing SHALL follow the `deleted`-field rule as for any payload (an older client can therefore clear a tombstone; this stale-client window is documented)
+- **WHEN** a client posts a payload using the legacy `{ value, at }` shape
+- **THEN** the server SHALL reject the payload with HTTP 400 (legacy timestamped payloads are not supported; all clients must use bare field values)
 
 ### Requirement: Push payload size cap and chunking
 
@@ -424,7 +446,7 @@ The server SHALL enforce per-user row caps on feeds and flags. Pushes that would
 The server SHALL rate-limit sync requests using a D1-backed counter. The limits SHALL be per-IP for unauthenticated routes (`/sync/register`, `/sync/redeem`) and per-sync-key for authenticated routes (`/sync/push`, `/sync/pull`, `/sync/otp`).
 
 #### Scenario: Rate limit on register
-- **WHEN** more than 10 `POST /sync/register` requests come from the same IP within an hour
+- **WHEN** more than 100 `POST /sync/register` requests come from the same IP within an hour
 - **THEN** the server SHALL respond with HTTP 429 and a `Retry-After` header
 
 #### Scenario: Rate limit on push
@@ -646,21 +668,81 @@ The Settings panel SHALL include a Sync section, conditionally rendered when the
 
 #### Scenario: Sync-on state displays key and status
 - **WHEN** sync is enabled
-- **THEN** the Settings panel SHALL display a "Pair device" button, a "Last synced" relative time, a "Sync now" button, and a "Regenerate" button
+- **THEN** the Settings panel SHALL display, in order: a status line (last sync activity plus the display-only 4-character group fingerprint, with no copy affordance), a "Sync now" action, a "Pair another device" row that opens the unified pairing modal in source mode, an "Agent access" row that opens the agents modal, and a separated "Regenerate" row
+- **AND** the group fingerprint SHALL be derived one-way from the sync key and SHALL NOT be used by any pairing flow
+- **AND** the status line SHALL show the last error with its relative time when the last sync failed, the pending change count when changes are waiting, "Never synced" when no sync has ever succeeded, and otherwise the relative time of the last successful sync
 
 #### Scenario: Last synced updates while drawer is open
 - **WHEN** the Settings drawer is open
-- **THEN** the "Last synced" string SHALL be recomputed every 30 seconds
+- **THEN** the status line's relative time SHALL be recomputed every 30 seconds
 
 #### Scenario: Sync-off state displays the enable flow
 - **WHEN** sync is disabled
-- **THEN** the Settings panel SHALL display a description of what sync does
-- **AND** an "Enable sync" button that opens the pairing modal in receiving mode
+- **THEN** the Settings panel SHALL display an "Enable sync" toggle that generates a key and expands the Sync section to the sync-on state
+- **AND** SHALL display a "Join an existing sync" row that opens the unified pairing modal in receiving mode
 
 #### Scenario: Disabling sync requires confirmation
 - **WHEN** the user toggles sync off while it is currently enabled
 - **THEN** the system SHALL display a confirm dialog with the text: "Your other devices will stop syncing. Server data is kept until you generate a new key. Continue?"
 - **AND** SHALL only clear the local sync key and the dirty set on explicit confirmation
+
+### Requirement: Enable sync clears state on failure
+If `triggerFirstTime()` (and thus the initial push + pull) fails for any reason during `enableSync()`, the system SHALL call `disableSync()` to clear the local sync key, `lastSyncAt`, and dirty set. This ensures the toggle shows as OFF on failure and a retry generates a fresh key rather than retrying a stale one.
+
+#### Scenario: Enable sync fails and clears key
+- **WHEN** the user enables sync
+- **AND** `triggerFirstTime()` throws (registration rate-limited, network failure, server error)
+- **THEN** the system SHALL call `disableSync()` to clear local sync state
+- **AND** the Settings panel SHALL show the sync toggle in the OFF state
+- **AND** the error SHALL propagate to the caller for UI surfacing
+
+#### Scenario: Enable sync succeeds normally
+- **WHEN** the user enables sync
+- **AND** `triggerFirstTime()` completes without error
+- **THEN** the sync key SHALL remain stored
+- **AND** the Settings panel SHALL show the sync toggle in the ON state
+
+### Requirement: Sync enable errors surfaced in UI
+The Settings drawer SHALL display an inline error message when enabling sync fails. The error SHALL be rendered below the sync toggle with the text "Failed to enable sync" and the error details logged to the browser console.
+
+#### Scenario: Error shown on sync failure
+- **WHEN** the user enables sync
+- **AND** the enable operation fails
+- **THEN** an inline error message SHALL appear below the sync toggle in the Settings drawer
+- **AND** the error details SHALL be logged to the browser console via `console.error`
+
+#### Scenario: Error cleared on next attempt
+- **WHEN** a sync error message is displayed
+- **AND** the user attempts to enable sync again
+- **THEN** the previous error message SHALL be cleared before the new attempt
+
+### Requirement: Agent access management
+
+The Settings Sync section SHALL provide an "Agent access" row that opens a modal listing paired agent tokens and allowing revocation. Revocation SHALL require confirmation.
+
+#### Scenario: Agent tokens are listed
+- **WHEN** the user opens the agents modal
+- **THEN** the modal SHALL list each paired agent token with its fingerprint, scope, creation time, and last-seen time
+- **AND** SHALL show a placeholder when no agents are paired
+
+#### Scenario: Revoking an agent token requires confirmation
+- **WHEN** the user activates revoke for a token
+- **THEN** the system SHALL display a confirmation dialog naming the token's fingerprint
+- **AND** SHALL revoke the token only on explicit confirmation
+- **AND** after the dialog closes, the agents modal SHALL be shown again with the token removed
+
+#### Scenario: Pairing code is minted on demand
+- **WHEN** the user opens the agents modal
+- **THEN** SHALL NOT mint an agent pairing code
+- **WHEN** the user activates "Pair an agent"
+- **THEN** the modal SHALL mint an 8-character code with a 5-minute countdown
+- **AND** SHALL embed the code in a "Copy prompt" action and a secondary terminal-pairing path rather than displaying it
+- **AND** a mint failure SHALL show an inline error and return the modal to the un-minted state
+
+#### Scenario: Expired pairing code offers a new one
+- **WHEN** the displayed agent pairing code reaches its 5-minute expiry
+- **THEN** the modal SHALL show an "Code expired" state with a "Get a new code" action
+- **AND** SHALL hide the "Copy prompt" action and the terminal-pairing path while expired
 
 ### Requirement: Dirty set cleared on toggle off
 
@@ -702,6 +784,11 @@ Regenerating the sync key (without disabling sync) SHALL preserve the local dirt
 - **AND** SHALL retry the original request
 - **AND** this auto-register path SHALL be the only way the client creates server state; it SHALL NOT be triggered for any other failure mode
 - **AND** SHALL be rate-limited by the per-IP and global registration limits as for any other register call
+
+#### Scenario: Auto-register failure logs to console
+- **WHEN** `POST /sync/register` returns a non-2xx response (e.g., 429) during the auto-register flow
+- **THEN** the client SHALL `console.error` the failure with the status code and retry-after value
+- **AND** SHALL NOT retry indefinitely
 
 ### Requirement: IDB-cleared client with key in hand
 
@@ -857,16 +944,16 @@ The local `Feed` record SHALL track a `modifiedAt` field (epoch ms) representing
 
 ### Requirement: Deleted-stamp discipline on client pushes
 
-The client SHALL include the `deleted` field in a feed push payload only for explicit subscription-state events: subscribe/re-subscribe (`deleted: 0`) and unsubscribe (`deleted: 1`). Metadata-only feed pushes (title, tags, URL) SHALL NOT include the `deleted` field.
+The client SHALL include the `deleted` field in a feed push payload only for explicit subscription-state events: subscribe/re-subscribe (`deleted: 0`) and unsubscribe (`deleted: 1`). Metadata-only feed pushes (title, tags, URL) SHALL NOT include the `deleted` field. Push payloads SHALL use bare field values; no timestamps are attached.
 
 #### Scenario: Subscribe stamps deleted 0
 - **WHEN** the user subscribes to a feed and the dirty entry is pushed
-- **THEN** the push payload SHALL include `deleted: { value: 0, at: <subscribe time> }`
+- **THEN** the push payload SHALL include `deleted: 0`
 
 #### Scenario: Unsubscribe stamps deleted 1 and the feed URL
 - **WHEN** the user unsubscribes from a feed and the dirty entry is pushed
-- **THEN** the push payload SHALL include `deleted: { value: 1, at: <unsubscribe time> }`
-- **AND** SHALL include `feedUrl` (the feed's URL at delete time, stamped with the delete time)
+- **THEN** the push payload SHALL include `deleted: 1`
+- **AND** SHALL include `feedUrl` (the feed's URL at delete time)
 
 #### Scenario: Metadata edit omits deleted
 - **WHEN** the user edits a feed's title, tags, or URL and the dirty entry is pushed
@@ -879,7 +966,7 @@ The client SHALL include the `deleted` field in a feed push payload only for exp
 
 ### Requirement: Client server-clock offset normalization
 
-The client SHALL maintain a server-clock offset, measured on every successful pull as `serverTime - Date.now()` at response receipt, and SHALL apply it to the same pull's incoming stamps. Outgoing wire stamps are the local time plus the offset (server frame); incoming remote stamps are converted back to the local frame before comparison or storage. The offset SHALL be cleared when sync is disabled.
+The client SHALL maintain a server-clock offset, measured on every successful pull as `serverTime - Date.now()` at response receipt, and SHALL apply it to incoming remote stamps before comparison with local values (local merge timestamps are in the local frame). Outgoing push payloads SHALL NOT contain timestamps, so no outgoing conversion exists. The offset SHALL be cleared when sync is disabled.
 
 #### Scenario: Offset is measured on every successful pull
 - **WHEN** a pull response is received (including one with an empty feeds/flags payload)
@@ -888,8 +975,8 @@ The client SHALL maintain a server-clock offset, measured on every successful pu
 
 #### Scenario: Outgoing stamps are server-frame
 - **WHEN** the client builds a push payload from queued changes
-- **THEN** every field `at` (feed fields, the delete stamp, and flag fields) SHALL be the queued local-frame stamp plus the stored offset
-- **AND** if no offset is stored yet (no pull has succeeded), SHALL use the local-frame stamp unchanged
+- **THEN** the payload SHALL NOT contain any timestamps or offset-adjusted values
+- **AND** the stored offset SHALL NOT be applied to anything outgoing
 
 #### Scenario: Incoming stamps are local-frame
 - **WHEN** the client applies a pull response to a local feed or flag
@@ -899,4 +986,27 @@ The client SHALL maintain a server-clock offset, measured on every successful pu
 #### Scenario: Offset is cleared with sync state
 - **WHEN** the user disables sync (or regenerates the key)
 - **THEN** the stored offset SHALL be cleared along with `lastSyncAt` and the dirty set
+
+### Requirement: siftctl group code
+
+`siftctl status` SHALL display a short, display-only group identifier derived from the sync key — identical to the web app's `Group XK7B` — so a CLI user can confirm two devices belong to the same sync group. The sync key itself SHALL NOT be exposed.
+
+#### Scenario: status shows the group code when paired
+
+- **WHEN** `siftctl status` runs with a token configured
+- **AND** the server supports `GET /sync/status`
+- **THEN** the output SHALL include a `Group:` line with the group fingerprint (first 20 bits of SHA-256 of the sync key, 4 Crockford base32 characters)
+- **AND** the fingerprint SHALL equal the web app's `fingerprintSyncKey` result for the same sync key
+
+#### Scenario: status is unaffected on older servers
+
+- **WHEN** `siftctl status` runs with a token configured
+- **AND** the server returns 404 for `GET /sync/status` (predates the endpoint)
+- **THEN** the command SHALL still exit 0
+- **AND** the group line SHALL be omitted (text) / `groupFingerprint` SHALL be null (`--json`)
+
+#### Scenario: status requires a valid credential
+
+- **WHEN** `GET /sync/status` is called without a valid master key or agent token
+- **THEN** the server SHALL return 401
 
