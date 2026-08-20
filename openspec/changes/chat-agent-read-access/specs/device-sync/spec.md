@@ -72,6 +72,11 @@ Regenerating the sync key (without disabling sync) SHALL preserve the local dirt
 - **AND** SHALL surface the sync failure in the Settings UI
 - **AND** recovery SHALL require explicit pairing or regeneration — a rotated key must stay dead, so a 401 is final
 
+#### Scenario: Auto-register failure logs to console
+- **WHEN** `POST /sync/register` returns a non-2xx response (e.g., 429) during the auto-register flow
+- **THEN** the client SHALL `console.error` the failure with the status code and retry-after value
+- **AND** SHALL NOT retry indefinitely
+
 #### Scenario: Old key is dead after rotation
 
 - **WHEN** a client requests any sync route with a key whose users row is marked rotated
