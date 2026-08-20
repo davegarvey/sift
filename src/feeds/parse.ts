@@ -19,6 +19,39 @@ export interface ParsedItem {
   thumbnail?: string | null;
 }
 
+const PARTIAL_CONTENT_LINK = /^(?:continue reading|full story|read more|read (?:the )?full article)$/i;
+
+export function isPartialFeedContent(html: string, articleUrl?: string): boolean {
+  const anchors = html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi);
+  for (const anchor of anchors) {
+    const label = anchor[1]
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;|&#160;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!PARTIAL_CONTENT_LINK.test(label)) continue;
+    if (articleUrl) {
+      const href = anchor[0].match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      const linkedUrl = href?.[1] ?? href?.[2] ?? href?.[3];
+      if (linkedUrl && !sameArticleUrl(linkedUrl, articleUrl)) continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function sameArticleUrl(href: string, articleUrl: string): boolean {
+  try {
+    const linked = new URL(href.replace(/&amp;/gi, '&'), articleUrl);
+    const article = new URL(articleUrl);
+    linked.hash = '';
+    article.hash = '';
+    return linked.href === article.href;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Parse a feed XML body (RSS 2.0, Atom 1.0, or RDF/RSS 1.0) into a normalized
  * shape that maps cleanly to our IndexedDB records.
@@ -40,13 +73,14 @@ export function parseFeed(xml: string, baseUrl?: string): ParsedFeed | null {
         const content = unwrapText(entry['content']);
         const html = content && content.length > 0 ? content : '';
         const finalHtml = typeof contentEncoded === 'string' ? contentEncoded : html;
+        const link = typeof entry['link'] === 'string' ? entry['link'] : undefined;
+        const fullHtml = finalHtml && !isPartialFeedContent(finalHtml, link) ? finalHtml : undefined;
         const author = pickAuthor(entry);
         // The library auto-generates ids when `guid`/`id` is missing, but
         // those ids are NOT stable across parses (random+timestamp) which
         // breaks dedup across refreshes. We compute our own stable guid from
         // link+publishedAt here so mapEntry can use it instead.
         const rawGuid = entry['guid'] ?? entry['id'];
-        const link = typeof entry['link'] === 'string' ? entry['link'] : undefined;
         const published = entry['pubDate'] ?? entry['published'] ?? entry['updated'];
         let stableGuid: string | undefined;
         if (typeof rawGuid === 'string' && rawGuid.length > 0) {
@@ -70,7 +104,7 @@ export function parseFeed(xml: string, baseUrl?: string): ParsedFeed | null {
           }
         }
         const result: Record<string, unknown> = {};
-        if (finalHtml) result['_html'] = finalHtml;
+        if (fullHtml) result['_html'] = fullHtml;
         if (author) result['_author'] = author;
         if (stableGuid) result['_guid'] = stableGuid;
         if (thumbnail) result['_thumbnail'] = thumbnail;
