@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFeed, firstImgSrc } from '../src/feeds/parse';
+import { isPartialFeedContent, parseFeed, firstImgSrc } from '../src/feeds/parse';
 import { findAlternateFeeds } from '../src/feeds/discover';
 
 const RSS_SAMPLE = `<?xml version="1.0"?>
@@ -60,6 +60,25 @@ const MALFORMED_SAMPLE = `<?xml version="1.0"?>
     <title>Broken</title>
 `;
 
+const ARS_PARTIAL_SAMPLE = `<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Ars Technica</title>
+    <item>
+      <title>Example story</title>
+      <link>https://arstechnica.com/tech/2026/08/example-story/</link>
+      <guid>ars-1</guid>
+      <description>A short standfirst.</description>
+      <content:encoded><![CDATA[
+        <p>The opening paragraph.</p>
+        <p>The second paragraph.</p>
+        <p><a href="https://arstechnica.com/tech/2026/08/example-story/">Read full article</a></p>
+        <p><a href="https://arstechnica.com/tech/2026/08/example-story/#comments">Comments</a></p>
+      ]]></content:encoded>
+    </item>
+  </channel>
+</rss>`;
+
 describe('parseFeed', () => {
   it('parses RSS 2.0 with content:encoded', () => {
     const parsed = parseFeed(RSS_SAMPLE);
@@ -95,6 +114,25 @@ describe('parseFeed', () => {
   it('returns null for malformed feed', () => {
     const parsed = parseFeed(MALFORMED_SAMPLE);
     expect(parsed).toBeNull();
+  });
+
+  it('does not store feed content that ends with a full-article CTA', () => {
+    const parsed = parseFeed(ARS_PARTIAL_SAMPLE);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.items[0].html).toBeUndefined();
+    expect(parsed!.items[0].excerpt).toBe('A short standfirst.');
+  });
+});
+
+describe('isPartialFeedContent', () => {
+  it('recognizes common full-article CTAs', () => {
+    expect(isPartialFeedContent('<p>Intro</p><a href="/story">Read full article</a>')).toBe(true);
+    expect(isPartialFeedContent('<p>Intro</p><a href="/story">Continue reading</a>')).toBe(true);
+  });
+
+  it('does not reject ordinary full feed content', () => {
+    expect(isPartialFeedContent('<p>Full body</p><a href="/related">Related story</a>')).toBe(false);
+    expect(isPartialFeedContent('<p>Full body</p><a href="/related">Read more</a>', 'https://example.com/story')).toBe(false);
   });
 });
 

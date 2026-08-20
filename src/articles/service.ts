@@ -1,5 +1,6 @@
 import type { Item } from '../db/types';
 import { getItem, updateItem } from '../db/items';
+import { isPartialFeedContent } from '../feeds/parse';
 import { extractArticle } from './extract';
 import { runEviction } from './eviction';
 
@@ -69,7 +70,7 @@ export async function openItemForReading(
   // Path 1: feed included full content — prefer the feed's own HTML over
   // a cached Readability extraction (which may have been extracted from the
   // linked URL when the feed didn't provide full content at parse time).
-  if (item.html && item.html.length > 0) {
+  if (item.html && item.html.length > 0 && !isPartialFeedContent(item.html, item.link)) {
     return { bodyHtml: processLinks(item.html, item.link), extracted: true, extractionFailed: false };
   }
 
