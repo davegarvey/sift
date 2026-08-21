@@ -6,14 +6,21 @@ import { listItems, listItemsByFeed, listStarred, markRead, toggleStar as dbTogg
 import type { Feed, Item } from './db/types';
 import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
 import { getMeta, setMeta } from './db/meta';
-import { DEFAULT_SETTINGS } from './db/types';
+import { DEFAULT_SETTINGS, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
 import type { AppSettings, ThemePreference } from './db/types';
 
 const SETTINGS_KEY = 'settings';
 
 async function getSettings(): Promise<AppSettings> {
   const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
-  return { ...DEFAULT_SETTINGS, ...stored };
+  const sidebarWidth = typeof stored.sidebarWidth === 'number' && Number.isFinite(stored.sidebarWidth)
+    ? stored.sidebarWidth
+    : SIDEBAR_WIDTH_DEFAULT;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    sidebarWidth: Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, sidebarWidth)),
+  };
 }
 
 async function saveSettings(settings: AppSettings): Promise<void> {
@@ -53,6 +60,7 @@ export interface AppState {
   currentItem: Item | null;
   sidebarOpen: boolean;
   sidebarHiddenDesktop: boolean;
+  sidebarWidth?: number;
   focusedIndex: number;
   /** When true, only starred items are shown. Orthogonal to riverScope/activeTags. */
   starredOnly: boolean;
@@ -123,6 +131,7 @@ export const AppProvider: ParentComponent = (props) => {
     currentItem: null,
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
+    sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
     focusedIndex: -1,
     starredOnly: false,
     modal: { kind: 'none' },
@@ -550,7 +559,7 @@ export const AppProvider: ParentComponent = (props) => {
     await reloadFeeds();
     const matchingFeed = s.lastFeedUrl ? feeds().find((f) => f.url === s.lastFeedUrl) : undefined;
     const validFeedId = matchingFeed?.id ?? null;
-    setState({ riverScope: validFeedId });
+    setState({ riverScope: validFeedId, sidebarWidth: s.sidebarWidth });
     await reloadItems();
     const hash = parseItemIdFromUrl();
     if (hash) {
