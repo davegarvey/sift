@@ -418,6 +418,12 @@ a:hover { text-decoration: underline; }
   pointer-events: none;
 }
 
+@media (max-width: 768px) {
+  .app-shell .sidebar-resizer {
+    display: none;
+  }
+}
+
 /* Sidebar header — wordmark left, collapse button right. */
 .sidebar-header {
   display: flex;
