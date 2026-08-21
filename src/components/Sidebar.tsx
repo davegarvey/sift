@@ -1,7 +1,8 @@
 import { For, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
-import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, MoreHorizontal } from 'lucide-solid';
+import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, MoreHorizontal, GripVertical } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
+import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../db/types';
 import type { Feed } from '../db/types';
 import { normalizeTag } from '../util/tags';
 
@@ -38,6 +39,43 @@ export function Sidebar(props: { onNavigate?: () => void }) {
 
   const refreshing = () => ctx.fetching() > 0;
   const collapsed = () => ctx.state.sidebarHiddenDesktop;
+  const sidebarWidth = () => ctx.state.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT;
+  let resizing = false;
+  let resizeStartX = 0;
+  let resizeStartWidth = 0;
+
+  const clampWidth = (width: number) => Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, width));
+  const saveWidth = () => void ctx.saveSettingsPatch({ sidebarWidth: sidebarWidth() });
+  const startResize = (e: PointerEvent) => {
+    e.preventDefault();
+    resizing = true;
+    resizeStartX = e.clientX;
+    resizeStartWidth = sidebarWidth();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const resize = (e: PointerEvent) => {
+    if (!resizing) return;
+    ctx.setState({ sidebarWidth: clampWidth(resizeStartWidth + e.clientX - resizeStartX) });
+  };
+  const finishResize = (e: PointerEvent) => {
+    if (!resizing) return;
+    resizing = false;
+    const handle = e.currentTarget as HTMLElement;
+    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+    saveWidth();
+  };
+  const resizeWithKeyboard = (e: KeyboardEvent) => {
+    const step = e.shiftKey ? 32 : 8;
+    let width = sidebarWidth();
+    if (e.key === 'ArrowLeft') width -= step;
+    else if (e.key === 'ArrowRight') width += step;
+    else if (e.key === 'Home') width = SIDEBAR_WIDTH_MIN;
+    else if (e.key === 'End') width = SIDEBAR_WIDTH_MAX;
+    else return;
+    e.preventDefault();
+    ctx.setState({ sidebarWidth: clampWidth(width) });
+    saveWidth();
+  };
 
   return (
     <nav class="sidebar" aria-label="Feeds" data-collapsed={String(collapsed())}>
@@ -155,6 +193,26 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             <HelpIcon />
             <span>Shortcuts</span>
           </button>
+        </div>
+      </Show>
+
+      <Show when={!collapsed()}>
+        <div
+          class="sidebar-resizer desktop-only"
+          role="separator"
+          aria-label="Resize feeds sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_WIDTH_MIN}
+          aria-valuemax={SIDEBAR_WIDTH_MAX}
+          aria-valuenow={sidebarWidth()}
+          tabIndex={0}
+          onPointerDown={startResize}
+          onPointerMove={resize}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
+          onKeyDown={resizeWithKeyboard}
+        >
+          <GripVertical size={14} aria-hidden="true" />
         </div>
       </Show>
 

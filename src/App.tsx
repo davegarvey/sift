@@ -14,6 +14,7 @@ import { AgentsModal } from './components/AgentsModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { ConfirmModal } from './components/ConfirmModal';
 import { FeedEditorModal } from './components/FeedEditorModal';
+import { SIDEBAR_WIDTH_DEFAULT } from './db/types';
 import './styles.css';
 
 function Shell() {
@@ -166,6 +167,7 @@ function Shell() {
   return (
     <div
       class="app-shell"
+      style={{ '--sidebar-width': `${ctx.state.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT}px` }}
       data-reading={String(reading())}
       data-sidebar-hidden={sidebarHiddenAttr()}
       data-sidebar-open={sidebarOpenAttr()}
