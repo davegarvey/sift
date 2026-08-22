@@ -1,8 +1,10 @@
 # Sift
 
-A simple, browser-first RSS reader. All logic runs in the browser tab;
-the server proxies network requests (CORS-safe), serves the static app shell,
-and optionally provides multi-device sync and AI agent integration.
+A simple, browser-first RSS reader. Feed parsing, item storage, and reading
+state run in the browser tab; the server proxies network requests (CORS-safe),
+uses a short-lived feed response cache to reduce duplicate upstream requests,
+serves the static app shell, and optionally provides multi-device sync and AI
+agent integration.
 
 - **Local-only**: subscriptions, items, read/starred state live in IndexedDB.
 - **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based).
@@ -68,8 +70,13 @@ Copy `.env.example` to `.env` and set:
 ## Privacy
 
 The `/feed`, `/article`, and `/img` proxy endpoints forward your request to
-the upstream URL and return the body. The proxy DOES NOT log upstream URLs
-anywhere persistent.
+the upstream URL and return the body. Successful `/feed` responses may be
+held in a bounded cache for up to 15 minutes, keyed by the complete upstream
+URL. Node/Bun use process-local memory; Cloudflare Workers also use the
+Workers Cache API when available, with data-center-local, best-effort reuse.
+The cache is not part of sync or persistent storage. Worker cache hits still
+count as Worker requests against the account plan limits. The proxy DOES NOT
+log upstream URLs anywhere persistent.
 
 The `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged
