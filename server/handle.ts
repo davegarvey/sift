@@ -2,6 +2,7 @@ import { Hono, type Env } from 'hono';
 import {
   getUpstreamUrl,
   fetchUpstream,
+  fetchFeedCached,
   badRequest,
   badGateway,
 } from './fetch';
@@ -38,18 +39,20 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     if (!upstream) return badRequest('Missing or invalid `url` query parameter');
     assertNoUrlLog(upstream);
 
-    const reqHeaders = new Headers();
     const inm = c.req.header('If-None-Match');
-    if (inm) reqHeaders.set('If-None-Match', inm);
     const ims = c.req.header('If-Modified-Since');
-    if (ims) reqHeaders.set('If-Modified-Since', ims);
 
-    let upstreamRes: Response;
+    let feedResult: Awaited<ReturnType<typeof fetchFeedCached>>;
     try {
-      upstreamRes = await fetchUpstream(upstream, { headers: reqHeaders });
+      feedResult = await fetchFeedCached(upstream, {
+        etag: inm ?? undefined,
+        lastModified: ims ?? undefined,
+      });
     } catch {
       return badGateway('Failed to fetch upstream feed');
     }
+
+    const upstreamRes = feedResult.response;
 
     // Pass through 304 with no body.
     if (upstreamRes.status === 304) {
@@ -58,6 +61,8 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
         headers: {
           ETag: upstreamRes.headers.get('ETag') ?? '',
           'Last-Modified': upstreamRes.headers.get('Last-Modified') ?? '',
+          Age: upstreamRes.headers.get('Age') ?? '0',
+          'X-Sift-Cache': upstreamRes.headers.get('X-Sift-Cache') ?? feedResult.state,
         },
       });
     }
@@ -73,6 +78,8 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     const headers = new Headers();
     headers.set('Content-Type', 'application/xml; charset=utf-8');
     headers.set('Cache-Control', 'no-cache, no-store');
+    headers.set('Age', upstreamRes.headers.get('Age') ?? '0');
+    headers.set('X-Sift-Cache', upstreamRes.headers.get('X-Sift-Cache') ?? feedResult.state);
     const etagHeader = upstreamRes.headers.get('ETag');
     if (etagHeader) headers.set('ETag', etagHeader);
     const lastModified = upstreamRes.headers.get('Last-Modified');
