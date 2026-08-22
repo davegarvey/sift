@@ -26,5 +26,5 @@
     "build": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "version": "0.58.2"
+  "version": "0.59.0"
 }
