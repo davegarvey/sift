@@ -31,6 +31,7 @@ Sift — a simple, slick, browser-first RSS reader.
 - **Use Lucide icons.** Every icon should come from `lucide-solid`. No raw SVG, no Unicode/emoji glyphs, no plain-text `+` or similar — always use the corresponding Lucide component with the `size` prop for consistent visual weight.
 - **README freshness.** If your change adds, removes, or modifies a feature the README describes (deploy targets, architecture, scripts, known limitations, configuration, etc.), update the README in the same PR. Search README for keywords related to your change to find stale text.
 - **Version bumps are automated.** The release workflow handles version bumps, release branch creation, and tag pushes. Never run `grubble` locally or ask an AI agent to bump the version. Doing so will collide with the automated pipeline and create duplicate commits/PRs.
+- **Release refs are protected.** GitHub rulesets protect `release/v*` branches and `v*.*.*` tags; only the release workflow's `RELEASE_PAT` identity may create or update them.
 
 ## Git workflow
 

@@ -23,6 +23,9 @@ The aborted search's promise MUST NOT call `setResults()` after a newer search h
 - **THEN** the in-flight search SHALL be aborted and results SHALL be cleared
 
 ### Requirement: Query shorter than 2 characters is ignored
+The command palette SHALL NOT dispatch a search for queries shorter than 2 characters.
+
+#### Scenario: Single-character query is ignored
 - **WHEN** the query is a single character
 - **THEN** no search SHALL be dispatched
 

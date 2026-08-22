@@ -28,6 +28,21 @@
 - **AND** the status SHALL persist across app reloads until the next successful or failed attempt replaces it
 - **AND** a later successful pull SHALL NOT clear the error while the failing operation (push or pull) has not succeeded since
 
+#### Scenario: Sync section is hidden when server has no D1 binding
+- **WHEN** `GET /sync/capabilities` returns 404 or a body lacking `sync: true`
+- **THEN** the Sync section SHALL NOT be rendered in Settings
+- **AND** the capability check SHALL be performed on each page load (not cached across reloads)
+
+#### Scenario: Sync-off state displays the enable flow
+- **WHEN** sync is disabled
+- **THEN** the Settings panel SHALL display a description of what sync does
+- **AND** an "Enable sync" button that opens the pairing modal in receiving mode
+
+#### Scenario: Disabling sync requires confirmation
+- **WHEN** the user toggles sync off while it is currently enabled
+- **THEN** the system SHALL display a confirm dialog with the text: "Your other devices will stop syncing. Server data is kept until you generate a new key. Continue?"
+- **AND** SHALL only clear the local sync key and the dirty set on explicit confirmation
+
 ## ADDED Requirements
 
 ### Requirement: Group fingerprint display

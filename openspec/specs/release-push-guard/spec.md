@@ -1,8 +1,11 @@
-## ADDED Requirements
+# release-push-guard Specification
 
+## Purpose
+TBD - created by archiving change guard-release-process. Update Purpose after archive.
+## Requirements
 ### Requirement: Tag creation restricted to workflow actors
 
-The system SHALL block creation of `v*.*.*` tags from all actors except `RELEASE_PAT` and GitHub Actions.
+The system SHALL block creation of `v*.*.*` tags from all actors except the identity used by `RELEASE_PAT` in the release workflow. GitHub Actions jobs that create protected refs SHALL use that token because GitHub does not permit the Actions integration as a bypass actor for this user-owned repository.
 
 #### Scenario: Workflow pushes tag successfully
 - **WHEN** the `push-tag` job in `release.yml` runs `git push origin "v${VERSION}"`
@@ -43,3 +46,4 @@ The `AGENTS.md` file SHALL contain an entry documenting that version bumps are a
 #### Scenario: Agent reads AGENTS.md before acting
 - **WHEN** an AI agent reads `AGENTS.md`
 - **THEN** the entry SHALL clearly state that version bumps are automated and manual/agent-initiated bumps should not be performed
+
