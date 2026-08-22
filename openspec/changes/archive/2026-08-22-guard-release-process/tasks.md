@@ -5,7 +5,7 @@
 ## 2. Create GitHub rulesets
 
 - [x] 2.1 Create a "Release tags" ruleset targeting `v*.*.*` tags that restricts creation to `RELEASE_PAT` and GitHub Actions only
-- [ ] 2.2 Create a "Release branches" ruleset targeting `release/v*` branches — deferred, tag-only protection deemed sufficient for now
+- [x] 2.2 Create a "Release branches" ruleset targeting `release/v*` branches with creation, update, and deletion restricted to the release workflow token
 
 ## 3. Update AGENTS.md
 
@@ -20,3 +20,4 @@
 ## 5. Workflow alignment
 
 - [x] 5.1 Update `push-tag` job to use `RELEASE_PAT` for checkout auth, so tag pushes bypass the ruleset
+- [x] 5.2 Update `create-release` checkout to use `RELEASE_PAT`, so release branch pushes bypass the ruleset on the user-owned repository

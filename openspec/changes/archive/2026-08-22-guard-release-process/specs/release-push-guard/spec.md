@@ -2,7 +2,7 @@
 
 ### Requirement: Tag creation restricted to workflow actors
 
-The system SHALL block creation of `v*.*.*` tags from all actors except `RELEASE_PAT` and GitHub Actions.
+The system SHALL block creation of `v*.*.*` tags from all actors except the identity used by `RELEASE_PAT` in the release workflow. GitHub Actions jobs that create protected refs SHALL use that token because GitHub does not permit the Actions integration as a bypass actor for this user-owned repository.
 
 #### Scenario: Workflow pushes tag successfully
 - **WHEN** the `push-tag` job in `release.yml` runs `git push origin "v${VERSION}"`
@@ -18,7 +18,7 @@ The system SHALL block creation of `v*.*.*` tags from all actors except `RELEASE
 
 ### Requirement: Release branch pushes restricted
 
-The system SHALL block pushes to `release/v*` branches from all actors except `RELEASE_PAT` and GitHub Actions. Pull requests from these branches SHALL still be creatable.
+The system SHALL block pushes to `release/v*` branches from all actors except the identity used by `RELEASE_PAT` in the release workflow. Pull requests from these branches SHALL still be creatable.
 
 #### Scenario: Workflow pushes release branch successfully
 - **WHEN** the `create-release` job in `release.yml` runs `git push --set-upstream origin "release/v${VERSION}"`

@@ -2,9 +2,7 @@
 
 ## Purpose
 TBD - created by archiving change feed-loading-ux. Update Purpose after archive.
-
 ## Requirements
-
 ### Requirement: Empty state is shown without hiding the app
 
 When no items match the current view, the river SHALL display a contextual empty state OR a loading state. The loading state takes priority when a feed fetch is in progress or while the app is hydrating feeds/items from IndexedDB on startup. The app SHALL NOT hide navigation or chrome in any empty or loading state.
@@ -201,3 +199,22 @@ On touch devices, a horizontal swipe in the reading view SHALL navigate between 
 
 - **WHEN** the filtered results contain only one article
 - **THEN** no swipe navigation is active
+
+### Requirement: River swipe does not engage during vertical scroll
+On touch devices, the river swipe-to-reveal gesture SHALL NOT engage as a result of vertical scrolling. The touched row SHALL remain at its resting position while the user scrolls the list, and the swipe-reveal CTA SHALL NOT become visible.
+
+#### Scenario: Vertical scroll does not shift a row
+- **WHEN** the user scrolls the river vertically on a touch device
+- **THEN** the touched row is not translated horizontally
+- **AND** the swipe-reveal CTA is not revealed
+
+#### Scenario: Cancelled gesture leaves no stale state
+- **WHEN** the browser takes over a vertical pan and dispatches `pointercancel`
+- **THEN** the row's inline transform is cleared
+- **AND** the `.swiping` class is removed
+- **AND** no portion of the colored swipe-reveal CTA remains visible
+
+#### Scenario: Intentional horizontal swipe still works
+- **WHEN** the user begins a gesture with horizontal motion exceeding the swipe dead zone
+- **THEN** the row follows the finger horizontally
+- **AND** releasing past the trigger displacement still commits the mark-read or star action

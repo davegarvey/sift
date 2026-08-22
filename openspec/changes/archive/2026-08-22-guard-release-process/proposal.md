@@ -4,7 +4,7 @@ The automated release workflow (`release.yml`) creates `release/vX.Y.Z` branches
 
 ## What Changes
 
-- Add a GitHub branch ruleset that blocks tag creation (`v*.*.*`) from all actors except the `RELEASE_PAT` / GitHub Actions.
+- Add GitHub rulesets that block release ref creation (`release/v*` branches and `v*.*.*` tags) from all actors except the release workflow's `RELEASE_PAT` identity.
 - Add a policy entry to `AGENTS.md` stating version bumps are automated and local `grubble` runs must not happen.
 - Remove the `grubble-bot` identity from `.git/config` to prevent local commits from masquerading as automated workflow commits.
 
@@ -18,6 +18,6 @@ The automated release workflow (`release.yml`) creates `release/vX.Y.Z` branches
 
 ## Impact
 
-- `.github/` — branch ruleset configured via GitHub UI/CLI
+- `.github/` — branch ruleset configured via GitHub UI/CLI and release workflow checkout auth
 - `AGENTS.md` — new policy entry
 - `.git/config` — remove `grubble-bot` identity
