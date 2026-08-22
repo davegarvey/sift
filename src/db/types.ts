@@ -111,6 +111,10 @@ export const EVICTION_CHUNK_SIZE = 500;
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
+export const SIDEBAR_WIDTH_MIN = 180;
+export const SIDEBAR_WIDTH_MAX = 420;
+export const SIDEBAR_WIDTH_DEFAULT = 240;
+
 export interface AppSettings {
   theme: ThemePreference;
   highContrast: boolean;
@@ -119,6 +123,7 @@ export interface AppSettings {
   /** @deprecated No longer used. Kept for backward compat with persisted settings. */
   readFilter?: 'unread' | 'all';
   mcpEnabled: boolean;
+  sidebarWidth?: number;
   /** 128-bit sync key as base64url (22 chars). Null = sync not enabled. */
   syncKey?: string | null;
   /** Monotonic server timestamp of the last successful pull. */
@@ -133,6 +138,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastRefreshRunAt: null,
   lastFeedUrl: null,
   mcpEnabled: false,
+  sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   syncKey: null,
   lastSyncAt: null,
   serverOffset: null,

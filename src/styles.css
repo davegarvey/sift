@@ -118,7 +118,7 @@ a:hover { text-decoration: underline; }
   display: grid;
   grid-template-areas: "sidebar main";
   grid-template-rows: 1fr;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: var(--sidebar-width, 240px) 1fr;
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -382,11 +382,46 @@ a:hover { text-decoration: underline; }
 /* Sidebar. */
 .sidebar {
   grid-area: sidebar;
+  position: relative;
   background: var(--mantle);
   border-right: 1px solid var(--hairline);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  color: var(--overlay);
+  opacity: 0.55;
+  touch-action: none;
+  user-select: none;
+  z-index: 5;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer:focus-visible {
+  background: var(--hairline);
+  opacity: 1;
+  outline: none;
+}
+
+.sidebar-resizer svg {
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .app-shell .sidebar-resizer {
+    display: none;
+  }
 }
 
 /* Sidebar header — wordmark left, collapse button right. */
@@ -469,6 +504,12 @@ a:hover { text-decoration: underline; }
 .sidebar .feed-list {
   flex: 1;
   overflow-y: auto;
+}
+
+@media (min-width: 769px) {
+  .sidebar .feed-list {
+    margin-right: 16px;
+  }
 }
 
 .sidebar .feed-list-empty {
@@ -2142,4 +2183,3 @@ a:hover { text-decoration: underline; }
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 }
-

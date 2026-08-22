@@ -1,5 +1,10 @@
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 export const READER_USER_AGENT = 'sift/0.0 (+https://github.com/dave/sift)';
+export const FEED_CACHE_TTL_MS = 15 * 60_000;
+export const FEED_CACHE_MAX_ENTRIES = 256;
+export const FEED_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
+export const FEED_RETRY_FALLBACK_MS = 30 * 60_000;
+export const FEED_RETRY_MAX_MS = 24 * 60 * 60_000;
 
 const DENY_HOST_SUFFIXES = ['.localhost', '.localdomain', '.local', '.internal'];
 const DOH_URL = 'https://cloudflare-dns.com/dns-query';
@@ -7,6 +12,47 @@ const DOH_TIMEOUT_MS = 5_000;
 const TARGET_CACHE_TTL_MS = 5 * 60_000;
 
 const targetCache = new Map<string, { decision: boolean; at: number }>();
+
+interface CachedFeed {
+  body: Uint8Array;
+  etag: string | null;
+  lastModified: string | null;
+  fetchedAt: number;
+}
+
+interface FeedRepresentationStore {
+  get(upstream: string): Promise<CachedFeed | undefined>;
+  put(upstream: string, entry: CachedFeed): Promise<void>;
+}
+
+interface CacheApiLike {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
+}
+
+interface CacheStorageLike {
+  default?: CacheApiLike;
+}
+
+interface FeedConditionalHeaders {
+  etag?: string;
+  lastModified?: string;
+}
+
+interface FeedCacheResult {
+  response: Response;
+  state: 'hit' | 'miss' | 'revalidated' | 'cooldown' | 'bypass';
+  ageSeconds?: number;
+}
+
+type RevalidationResult =
+  | { kind: 'cached'; entry: CachedFeed; state: 'miss' | 'revalidated' }
+  | { kind: 'response'; response: Response; state: 'bypass' };
+
+const WORKER_FETCHED_AT_HEADER = 'X-Sift-Cache-Fetched-At';
+const feedCache = new Map<string, CachedFeed>();
+const feedRevalidations = new Map<string, Promise<RevalidationResult>>();
+const feedRetries = new Map<string, number>();
 
 function isDeniedHostname(hostname: string): boolean {
   const h = hostname.replace(/\.$/, '');
@@ -180,6 +226,287 @@ export async function fetchUpstream(upstream: string, init: RequestInit = {}): P
   } finally {
     clearTimeout(timer);
   }
+}
+
+function parseRetryAfter(header: string | null): number | undefined {
+  if (header == null) return undefined;
+  if (/^\d+$/.test(header.trim())) {
+    const seconds = Number.parseInt(header, 10);
+    return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+  }
+  const dateMs = Date.parse(header);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : undefined;
+}
+
+function retryDelayMs(response: Response): number {
+  const parsed = parseRetryAfter(response.headers.get('Retry-After'));
+  return Math.min(parsed ?? FEED_RETRY_FALLBACK_MS, FEED_RETRY_MAX_MS);
+}
+
+function normalizeEtag(value: string): string {
+  return value.trim().replace(/^W\//i, '');
+}
+
+function matchesEtag(header: string, etag: string | null): boolean {
+  if (!etag) return false;
+  return header.split(',').some((candidate) => {
+    const trimmed = candidate.trim();
+    return trimmed === '*' || normalizeEtag(trimmed) === normalizeEtag(etag);
+  });
+}
+
+function isNotModified(entry: CachedFeed, conditional: FeedConditionalHeaders): boolean {
+  if (conditional.etag) return matchesEtag(conditional.etag, entry.etag);
+  if (!conditional.lastModified || !entry.lastModified) return false;
+  const requestedAt = Date.parse(conditional.lastModified);
+  const modifiedAt = Date.parse(entry.lastModified);
+  return Number.isFinite(requestedAt) && Number.isFinite(modifiedAt) && modifiedAt <= requestedAt;
+}
+
+function responseHeaders(entry: CachedFeed, ageSeconds: number, state: FeedCacheResult['state']): Headers {
+  const headers = new Headers({
+    'Content-Type': 'application/xml; charset=utf-8',
+    'Cache-Control': 'no-cache, no-store',
+    Age: String(ageSeconds),
+    'X-Sift-Cache': state,
+  });
+  if (entry.etag) headers.set('ETag', entry.etag);
+  if (entry.lastModified) headers.set('Last-Modified', entry.lastModified);
+  return headers;
+}
+
+function responseFromEntry(
+  entry: CachedFeed,
+  conditional: FeedConditionalHeaders,
+  state: FeedCacheResult['state'],
+): FeedCacheResult {
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - entry.fetchedAt) / 1000));
+  const headers = responseHeaders(entry, ageSeconds, state);
+  if (isNotModified(entry, conditional)) {
+    return { response: new Response(null, { status: 304, headers }), state, ageSeconds };
+  }
+  return {
+    response: new Response(entry.body.slice(), { status: 200, headers }),
+    state,
+    ageSeconds,
+  };
+}
+
+const memoryFeedStore: FeedRepresentationStore = {
+  async get(upstream) {
+    const entry = feedCache.get(upstream);
+    if (entry) touchFeedCache(upstream, entry);
+    return entry;
+  },
+  async put(upstream, entry) {
+    touchFeedCache(upstream, entry);
+  },
+};
+
+function getWorkerCache(): CacheApiLike | null {
+  const cacheStorage = (globalThis as typeof globalThis & { caches?: CacheStorageLike }).caches;
+  return cacheStorage?.default ?? null;
+}
+
+function workerCacheKey(upstream: string): Request {
+  return new Request(upstream, { method: 'GET' });
+}
+
+function workerCacheResponse(entry: CachedFeed): Response {
+  const headers = new Headers({
+    'Content-Type': 'application/xml; charset=utf-8',
+    'Cache-Control': `public, max-age=${Math.floor(FEED_CACHE_TTL_MS / 1000)}`,
+    [WORKER_FETCHED_AT_HEADER]: String(entry.fetchedAt),
+  });
+  if (entry.etag) headers.set('ETag', entry.etag);
+  if (entry.lastModified) headers.set('Last-Modified', entry.lastModified);
+  return new Response(entry.body.slice(), { status: 200, headers });
+}
+
+function workerFeedStore(cache: CacheApiLike): FeedRepresentationStore {
+  return {
+    async get(upstream) {
+      try {
+        const response = await cache.match(workerCacheKey(upstream));
+        if (!response || response.status !== 200) return undefined;
+        const fetchedAt = Number(response.headers.get(WORKER_FETCHED_AT_HEADER));
+        if (!Number.isFinite(fetchedAt) || fetchedAt < 0) return undefined;
+        if (Date.now() - fetchedAt >= FEED_CACHE_TTL_MS) return undefined;
+        const body = new Uint8Array(await response.arrayBuffer());
+        if (body.byteLength > FEED_CACHE_MAX_BODY_BYTES) return undefined;
+        return {
+          body,
+          etag: response.headers.get('ETag'),
+          lastModified: response.headers.get('Last-Modified'),
+          fetchedAt,
+        };
+      } catch {
+        return undefined;
+      }
+    },
+    async put(upstream, entry) {
+      try {
+        await cache.put(workerCacheKey(upstream), workerCacheResponse(entry));
+      } catch {
+      }
+    },
+  };
+}
+
+async function getCachedFeed(upstream: string): Promise<CachedFeed | undefined> {
+  const cache = getWorkerCache();
+  if (cache) {
+    const entry = await workerFeedStore(cache).get(upstream);
+    if (entry) {
+      await memoryFeedStore.put(upstream, entry);
+      return entry;
+    }
+  }
+  return memoryFeedStore.get(upstream);
+}
+
+async function storeCachedFeed(upstream: string, entry: CachedFeed): Promise<void> {
+  await memoryFeedStore.put(upstream, entry);
+  const cache = getWorkerCache();
+  if (cache) await workerFeedStore(cache).put(upstream, entry);
+}
+
+function touchFeedCache(upstream: string, entry: CachedFeed): void {
+  feedCache.delete(upstream);
+  feedCache.set(upstream, entry);
+  while (feedCache.size > FEED_CACHE_MAX_ENTRIES) {
+    const oldest = feedCache.keys().next().value;
+    if (oldest === undefined) break;
+    feedCache.delete(oldest);
+  }
+}
+
+function recordFeedRetry(upstream: string, delayMs: number): void {
+  feedRetries.delete(upstream);
+  feedRetries.set(upstream, Date.now() + delayMs);
+  while (feedRetries.size > FEED_CACHE_MAX_ENTRIES) {
+    const oldest = feedRetries.keys().next().value;
+    if (oldest === undefined) break;
+    feedRetries.delete(oldest);
+  }
+}
+
+function cooldownResponse(upstream: string): FeedCacheResult {
+  const retryAt = feedRetries.get(upstream) ?? Date.now();
+  const retryAfter = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
+  return {
+    response: new Response(null, {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfter),
+        'Cache-Control': 'no-store',
+        'X-Sift-Cache': 'cooldown',
+      },
+    }),
+    state: 'cooldown',
+  };
+}
+
+async function revalidateFeed(upstream: string, previous: CachedFeed | undefined): Promise<RevalidationResult> {
+  const headers = new Headers();
+  if (previous?.etag) headers.set('If-None-Match', previous.etag);
+  if (previous?.lastModified) headers.set('If-Modified-Since', previous.lastModified);
+
+  const response = await fetchUpstream(upstream, { headers });
+  if (response.status === 304 && previous) {
+    const entry: CachedFeed = {
+      ...previous,
+      etag: response.headers.get('ETag') ?? previous.etag,
+      lastModified: response.headers.get('Last-Modified') ?? previous.lastModified,
+      fetchedAt: Date.now(),
+    };
+    await storeCachedFeed(upstream, entry);
+    feedRetries.delete(upstream);
+    return { kind: 'cached', entry, state: 'revalidated' };
+  }
+
+  if (response.status === 429) {
+    const delayMs = retryDelayMs(response);
+    recordFeedRetry(upstream, delayMs);
+    const headers = new Headers(response.headers);
+    if (!headers.has('Retry-After')) headers.set('Retry-After', String(Math.ceil(delayMs / 1000)));
+    return {
+      kind: 'response',
+      response: new Response(response.body, { status: response.status, headers }),
+      state: 'bypass',
+    };
+  }
+
+  if (response.status !== 200) {
+    return { kind: 'response', response, state: 'bypass' };
+  }
+
+  const contentLength = Number(response.headers.get('Content-Length') ?? '');
+  if (
+    response.headers.has('Set-Cookie') ||
+    response.headers.get('Vary')?.trim() === '*' ||
+    (Number.isFinite(contentLength) && contentLength > FEED_CACHE_MAX_BODY_BYTES)
+  ) {
+    return { kind: 'response', response, state: 'bypass' };
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > FEED_CACHE_MAX_BODY_BYTES) {
+    return {
+      kind: 'response',
+      response: new Response(bytes, { status: response.status, headers: response.headers }),
+      state: 'bypass',
+    };
+  }
+
+  const entry: CachedFeed = {
+    body: bytes,
+    etag: response.headers.get('ETag'),
+    lastModified: response.headers.get('Last-Modified'),
+    fetchedAt: Date.now(),
+  };
+  await storeCachedFeed(upstream, entry);
+  feedRetries.delete(upstream);
+  return { kind: 'cached', entry, state: previous ? 'revalidated' : 'miss' };
+}
+
+export async function fetchFeedCached(
+  upstream: string,
+  conditional: FeedConditionalHeaders = {},
+): Promise<FeedCacheResult> {
+  const now = Date.now();
+  const cached = await getCachedFeed(upstream);
+  if (cached && now - cached.fetchedAt < FEED_CACHE_TTL_MS) {
+    touchFeedCache(upstream, cached);
+    return responseFromEntry(cached, conditional, 'hit');
+  }
+
+  const retryAt = feedRetries.get(upstream);
+  if (retryAt !== undefined) {
+    if (retryAt > now) return cooldownResponse(upstream);
+    feedRetries.delete(upstream);
+  }
+
+  let revalidation = feedRevalidations.get(upstream);
+  if (!revalidation) {
+    revalidation = revalidateFeed(upstream, cached);
+    feedRevalidations.set(upstream, revalidation);
+  }
+
+  try {
+    const result = await revalidation;
+    if (result.kind === 'response') {
+      return { response: result.response, state: result.state };
+    }
+    return responseFromEntry(result.entry, conditional, result.state);
+  } finally {
+    if (feedRevalidations.get(upstream) === revalidation) feedRevalidations.delete(upstream);
+  }
+}
+
+export function clearFeedCacheForTests(): void {
+  feedCache.clear();
+  feedRetries.clear();
 }
 
 export function badRequest(message: string): Response {
