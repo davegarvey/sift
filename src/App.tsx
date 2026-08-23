@@ -51,7 +51,7 @@ function Shell() {
         btn?.click();
       } else if (e.key === 'r') {
         e.preventDefault();
-        void ctx.refreshAll();
+        void ctx.refreshSelected();
       } else if (e.key === 'j') {
         e.preventDefault();
         ctx.jumpTo(1);
@@ -86,7 +86,7 @@ function Shell() {
     }
     if (e.key === 'r') {
       e.preventDefault();
-      void ctx.refreshAll();
+      void ctx.refreshSelected();
       return;
     }
     if (e.key === '?' || (e.shiftKey && e.key === '/')) {

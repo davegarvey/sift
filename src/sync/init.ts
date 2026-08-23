@@ -16,6 +16,23 @@ import { getStoredSyncKey, getStoredLastSyncAt } from './key';
 import { loadStatus, refreshPending } from './status';
 
 let lastPullAt = 0;
+let pullInFlight: Promise<void> | null = null;
+
+async function pullShared(): Promise<void> {
+  if (pullInFlight) return pullInFlight;
+  const operation = (async () => {
+    const key = await getStoredSyncKey();
+    if (!key) return;
+    await runPull();
+    lastPullAt = Date.now();
+  })();
+  pullInFlight = operation;
+  try {
+    await operation;
+  } finally {
+    if (pullInFlight === operation) pullInFlight = null;
+  }
+}
 
 export async function bootSync(): Promise<void> {
   await loadStatus();
@@ -47,17 +64,11 @@ export async function bootSync(): Promise<void> {
 
 export async function pullIfStale(thresholdMs: number): Promise<void> {
   if (Date.now() - lastPullAt < thresholdMs) return;
-  const key = await getStoredSyncKey();
-  if (!key) return;
-  await runPull();
-  lastPullAt = Date.now();
+  await pullShared();
 }
 
 export async function pullNow(): Promise<void> {
-  const key = await getStoredSyncKey();
-  if (!key) return;
-  await runPull();
-  lastPullAt = Date.now();
+  await pullShared();
 }
 
 /**

@@ -4,7 +4,7 @@ import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star,
 import { HelpIcon, RefreshIcon } from './Icons';
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../db/types';
 import type { Feed } from '../db/types';
-import { normalizeTag } from '../util/tags';
+import { feedsMatchingTags, refreshActionLabel } from '../feeds/scope';
 
 export function Sidebar(props: { onNavigate?: () => void }) {
   const ctx = useApp();
@@ -30,14 +30,11 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   const visibleFeeds = createMemo(() => {
     const tags = ctx.state.activeTags;
     if (tags.length === 0) return ctx.feeds();
-    const tagSet = new Set(tags);
-    return ctx.feeds().filter((f) => f.tags?.some((t) => {
-      const normalized = normalizeTag(t);
-      return normalized !== null && tagSet.has(normalized);
-    }));
+    return feedsMatchingTags(ctx.feeds(), tags);
   });
 
   const refreshing = () => ctx.fetching() > 0;
+  const refreshLabel = () => refreshActionLabel(ctx.state.riverScope, ctx.state.activeTags);
   const collapsed = () => ctx.state.sidebarHiddenDesktop;
   const sidebarWidth = () => ctx.state.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT;
   let resizing = false;
@@ -105,10 +102,10 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             <Show when={ctx.feeds().length > 0}>
               <button
                 class="heading-action"
-                title={refreshing() ? 'Refreshing…' : 'Refresh all feeds'}
-                onClick={() => void ctx.refreshAll()}
+                title={refreshing() ? 'Refreshing…' : refreshLabel()}
+                onClick={() => void ctx.refreshSelected()}
                 disabled={refreshing()}
-                aria-label={refreshing() ? 'Refreshing feeds' : 'Refresh all feeds'}
+                aria-label={refreshing() ? 'Refreshing feeds' : refreshLabel()}
               >
                 <RefreshIcon spinning={refreshing()} />
               </button>
@@ -228,15 +225,17 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             <button class="collapsed-action" title="Add feed" onClick={() => ctx.openModal({ kind: 'add-feed' })}>
               <Plus size={14} />
             </button>
-            <button
-              class="collapsed-action"
-              title={refreshing() ? 'Refreshing…' : 'Refresh all feeds'}
-              onClick={() => void ctx.refreshAll()}
-              disabled={refreshing()}
-              aria-label={refreshing() ? 'Refreshing feeds' : 'Refresh all feeds'}
-            >
-              <RefreshIcon spinning={refreshing()} />
-            </button>
+            <Show when={ctx.feeds().length > 0}>
+              <button
+                class="collapsed-action"
+                title={refreshing() ? 'Refreshing…' : refreshLabel()}
+                onClick={() => void ctx.refreshSelected()}
+                disabled={refreshing()}
+                aria-label={refreshing() ? 'Refreshing feeds' : refreshLabel()}
+              >
+                <RefreshIcon spinning={refreshing()} />
+              </button>
+            </Show>
           </div>
           <div class="collapsed-actions-bottom" onClick={(e) => e.stopPropagation()}>
             <button

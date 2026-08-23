@@ -2,13 +2,8 @@ import { Search } from 'lucide-solid';
 import { createSignal, For, Show, onMount, createMemo } from 'solid-js';
 import { useApp } from '../state';
 import { searchItems } from '../db/items';
-import { refreshStaleFeeds } from '../feeds/scheduler';
+import { refreshActionLabel } from '../feeds/scope';
 import type { Item } from '../db/types';
-
-const ACTIONS = [
-  { id: 'add-feed', label: 'Add feed…' },
-  { id: 'refresh-all', label: 'Refresh all' },
-] as const;
 
 export function CommandPalette() {
   const ctx = useApp();
@@ -59,9 +54,9 @@ export function CommandPalette() {
       ctx.openModal({ kind: 'add-feed' });
       return;
     }
-    if (id === 'refresh-all') {
+    if (id === 'refresh-selected') {
       ctx.closeModal();
-      void ctx.refreshAll();
+      void ctx.refreshSelected();
       return;
     }
   };
@@ -72,7 +67,11 @@ export function CommandPalette() {
 
   const rows = createMemo(() => {
     const label = query().trim().toLowerCase();
-    return ACTIONS.filter((a) => label.length === 0 || a.label.toLowerCase().includes(label));
+    const actions = [
+      { id: 'add-feed', label: 'Add feed…' },
+      { id: 'refresh-selected', label: refreshActionLabel(ctx.state.riverScope, ctx.state.activeTags) },
+    ];
+    return actions.filter((a) => label.length === 0 || a.label.toLowerCase().includes(label));
   });
 
   const totalRows = createMemo(() => results().length + rows().length);

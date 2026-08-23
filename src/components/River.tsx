@@ -3,7 +3,7 @@ import { useApp } from '../state';
 import { markRead } from '../db/items';
 import type { Item } from '../db/types';
 import { relativeTime } from '../util/time';
-import { normalizeTag } from '../util/tags';
+import { feedsMatchingTags } from '../feeds/scope';
 import { Star, CircleCheck } from 'lucide-solid';
 import { CircleIcon, CircleCheckIcon } from './Icons';
 
@@ -15,14 +15,10 @@ export function River() {
     let items = ctx.items();
     const tags = ctx.state.activeTags;
     if (tags.length > 0) {
-      const tagSet = new Set(tags);
       const matchingFeeds = new Set(
-        ctx.feeds().filter((f) => f.tags?.some((t) => {
-          const normalized = normalizeTag(t);
-          return normalized !== null && tagSet.has(normalized);
-        })).map((f) => f.id)
+        feedsMatchingTags(ctx.feeds(), tags).map((f) => f.id),
       );
-      if (matchingFeeds.size > 0) items = items.filter((i) => matchingFeeds.has(i.feedId));
+      items = items.filter((i) => matchingFeeds.has(i.feedId));
     } else if (ctx.state.riverScope != null) {
       items = items.filter((i) => i.feedId === ctx.state.riverScope);
     }
@@ -286,7 +282,13 @@ function EmptyState() {
   return (
     <div class="empty-state">
       <div class="headline">No items yet.</div>
-      <a class="link" onClick={() => void ctx.refreshAll()}>Check for new items</a>
+      <a
+        class="link"
+        href="/"
+        onClick={(e) => { e.preventDefault(); void ctx.refreshSelected(); }}
+      >
+        Check for new items
+      </a>
     </div>
   );
 }

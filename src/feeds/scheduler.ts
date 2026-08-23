@@ -4,6 +4,7 @@ import { bulkUpsertItems } from '../db/items';
 import { runEviction } from '../articles/eviction';
 import { fetchFeed } from './fetch';
 import { parseFeed, parsedToItems } from './parse';
+import type { RefreshTarget } from './scope';
 import type { Feed, FeedRefreshError } from '../db/types';
 import {
   DEFAULT_LEARNED_INTERVAL_MS,
@@ -19,6 +20,7 @@ const TICK_MS = 5 * 60 * 1000;
 const [inFlight, setInFlight] = createSignal(0);
 const [feedErrors, setFeedErrors] = createSignal<Record<string, string>>({});
 const [fetchingFeeds, setFetchingFeeds] = createSignal<Set<string>>(new Set());
+const feedRefreshes = new Map<string, Promise<void>>();
 
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let onRefresh: (() => void) | null = null;
@@ -48,11 +50,19 @@ export const fetchingState = {
   fetchingFeeds,
 };
 
-export async function refreshStaleFeeds(forceAll = false): Promise<void> {
+export interface RefreshOptions {
+  forceAll?: boolean;
+  target?: RefreshTarget;
+}
+
+export async function refreshStaleFeeds(options: RefreshOptions = {}): Promise<void> {
+  const forceAll = options.forceAll ?? false;
+  const target = options.target;
   const feeds = await listFeeds();
   const now = Date.now();
   const stale = feeds.filter((f) => {
     if (!f.url) return false;
+    if (target !== undefined && !target.has(f.id)) return false;
     if (forceAll) return true;
     if (f.refreshError) return f.refreshError.retryAt <= now;
     if (f.lastFetched == null) return true;
@@ -112,7 +122,19 @@ function clearFeedError(feed: Feed): void {
   });
 }
 
-export async function refreshFeed(feed: Feed): Promise<void> {
+export function refreshFeed(feed: Feed): Promise<void> {
+  const existing = feedRefreshes.get(feed.id);
+  if (existing) return existing;
+
+  const operation = refreshFeedOnce(feed);
+  const tracked = operation.finally(() => {
+    if (feedRefreshes.get(feed.id) === tracked) feedRefreshes.delete(feed.id);
+  });
+  feedRefreshes.set(feed.id, tracked);
+  return tracked;
+}
+
+async function refreshFeedOnce(feed: Feed): Promise<void> {
   setInFlight((n) => n + 1);
   setFetchingFeeds((prev) => new Set(prev).add(feed.id));
   try {
