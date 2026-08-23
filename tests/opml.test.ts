@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { serializeOpml } from '../src/opml/serialize';
 import { parseOpml } from '../src/opml/parse';
-import { buildMergePreview } from '../src/opml/merge';
+import { applyMerge, buildMergePreview } from '../src/opml/merge';
 
 import { listFeeds, upsertFeed } from '../src/db/feeds';
 import { getDb } from '../src/db/open';
@@ -63,6 +63,25 @@ describe('OPML round-trip', () => {
 });
 
 describe('OPML merge', () => {
+  it('returns IDs for each imported subscription', async () => {
+    await reset();
+    const importedIds = await applyMerge({
+      newSubscriptions: [
+        { xmlUrl: 'https://imported.example/feed', title: 'Imported', htmlUrl: undefined, folderPath: [] },
+      ],
+      skipped: 0,
+      total: 1,
+    });
+
+    expect(importedIds).toHaveLength(1);
+    expect((await listFeeds()).map((feed) => feed.id)).toEqual(importedIds);
+  });
+
+  it('returns no IDs for an empty import', async () => {
+    await reset();
+    await expect(applyMerge({ newSubscriptions: [], skipped: 1, total: 1 })).resolves.toEqual([]);
+  });
+
   it('skip feeds whose normalized URL matches an existing subscription', async () => {
     await reset();
     await upsertFeed({

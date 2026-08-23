@@ -40,13 +40,16 @@ export async function buildMergePreview(
   return { newSubscriptions: newSubs, skipped, total: parsed.length };
 }
 
-export async function applyMerge(preview: MergePreview): Promise<void> {
+export async function applyMerge(preview: MergePreview): Promise<string[]> {
+  const importedIds: string[] = [];
   for (const p of preview.newSubscriptions) {
-    await subscribeFeed({
+    const id = await subscribeFeed({
       url: p.xmlUrl,
       title: p.title || p.xmlUrl,
       htmlUrl: p.htmlUrl,
       folder: p.folderPath.length > 0 ? p.folderPath : undefined,
     });
+    importedIds.push(id);
   }
+  return importedIds;
 }

@@ -12,7 +12,7 @@ export interface SubscribeInput {
   tags?: string[];
 }
 
-export async function subscribeFeed(input: SubscribeInput): Promise<void> {
+export async function subscribeFeed(input: SubscribeInput): Promise<string> {
   const now = Date.now();
   const id = crypto.randomUUID();
   await upsertFeed({
@@ -45,6 +45,7 @@ export async function subscribeFeed(input: SubscribeInput): Promise<void> {
     deletedAt: now,
   });
   scheduleFlush();
+  return id;
 }
 
 export async function updateFeedMeta(

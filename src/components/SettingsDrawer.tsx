@@ -51,11 +51,11 @@ export function SettingsDrawer() {
       confirmLabel: 'Import',
       returnTo: { kind: 'settings' },
       onConfirm: async () => {
-        await applyMerge(preview);
-        await ctx.reloadFeeds();
-        void ctx.mcpNotifySync();
-        void ctx.refreshAll();
-      },
+          const importedFeedIds = await applyMerge(preview);
+          await ctx.reloadFeeds();
+          void ctx.mcpNotifySync();
+          if (importedFeedIds.length > 0) await ctx.refreshFeeds(importedFeedIds);
+        },
     });
     input.value = '';
   };

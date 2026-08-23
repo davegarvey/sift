@@ -34,6 +34,7 @@ import { setOnSync } from './sync/merge';
 import { getStoredSyncKey, isValidSyncKey, generateSyncKey, setStoredSyncKey } from './sync/key';
 import { redeemCode, register, rotateSyncKey } from './sync/client';
 import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, updateFeedMeta, changeFeedUrl, type SubscribeInput } from './feeds/service';
+import { refreshTargetForSelection } from './feeds/scope';
 import { isIdle, onCatchup, clearActivityOnHide } from './util/idle';
 
 type ViewKind = 'river' | 'reading';
@@ -95,7 +96,8 @@ export interface AppContext {
   openModal: (modal: ModalKind) => void;
   closeModal: () => void;
   jumpTo: (offset: number) => void;
-  refreshAll: () => Promise<void>;
+  refreshSelected: () => Promise<void>;
+  refreshFeeds: (feedIds: readonly string[]) => Promise<void>;
   saveSettingsPatch: (patch: Partial<AppSettings>) => Promise<void>;
   mcpAvailable: () => boolean;
   mcpConnected: () => boolean;
@@ -141,6 +143,7 @@ export const AppProvider: ParentComponent = (props) => {
   const setState = (patch: Partial<AppState>) => setStateInternal(patch as Partial<AppState>);
 
   const [feeds, setFeeds] = createSignal<Feed[]>([]);
+  const [manualFetching, setManualFetching] = createSignal(0);
   const feedMap = createMemo(() => new Map(feeds().map((f) => [f.id, f])));
   const allTags = createMemo(() => {
     const seen = new Set<string>();
@@ -270,11 +273,10 @@ export const AppProvider: ParentComponent = (props) => {
 
   const reloadFeeds = async () => setFeeds(await listFeeds());
 
-  let reloadingItems = false;
+  let reloadItemsPromise: Promise<void> | null = null;
   const reloadItems = async () => {
-    if (reloadingItems) return;
-    reloadingItems = true;
-    try {
+    if (reloadItemsPromise) return reloadItemsPromise;
+    const reload = (async () => {
       if (state.starredOnly && state.riverScope == null && state.activeTags.length === 0) {
         setItems(await listStarred(500));
       } else if (state.riverScope != null) {
@@ -282,8 +284,12 @@ export const AppProvider: ParentComponent = (props) => {
       } else {
         setItems(await listItems(500));
       }
+    })();
+    reloadItemsPromise = reload;
+    try {
+      await reload;
     } finally {
-      reloadingItems = false;
+      if (reloadItemsPromise === reload) reloadItemsPromise = null;
     }
   };
 
@@ -369,21 +375,72 @@ export const AppProvider: ParentComponent = (props) => {
     setState({ focusedIndex: next });
   };
 
-  const refreshAll = async () => {
-    fetchingState.setInFlight(n => n + 1);
+  let manualRefreshTail = Promise.resolve();
+  let activeManualRefresh: Promise<void> | null = null;
+  let manualRefreshDepth = 0;
+
+  const performManualRefresh = async (target: ReadonlySet<string>, syncFirst: boolean): Promise<void> => {
+    setManualFetching((n) => n + 1);
+    manualRefreshDepth++;
+    let refreshError: unknown = null;
+    let reloadError: unknown = null;
+    let refreshFailed = false;
+    let reloadFailed = false;
     try {
-      try {
-        await pullNow();
-      } catch {
-        // Sync server unreachable — continue with local feeds only.
+      if (syncFirst) {
+        try {
+          await pullNow();
+        } catch {
+          // Sync server unreachable — continue with local feeds only.
+        }
       }
-      await refreshStaleFeeds(true);
+      try {
+        await refreshStaleFeeds({ forceAll: true, target });
+      } catch (error) {
+        refreshError = error;
+        refreshFailed = true;
+      }
+      try {
+        await reloadFeeds();
+      } catch (error) {
+        reloadError = error;
+        reloadFailed = true;
+      }
+      try {
+        await reloadItems();
+      } catch (error) {
+        if (!reloadFailed) {
+          reloadError = error;
+          reloadFailed = true;
+        }
+      }
+      if (refreshFailed) throw refreshError;
+      if (reloadFailed) throw reloadError;
     } finally {
-      fetchingState.setInFlight(n => Math.max(0, n - 1));
+      manualRefreshDepth = Math.max(0, manualRefreshDepth - 1);
+      setManualFetching((n) => Math.max(0, n - 1));
     }
-    await reloadFeeds();
-    await reloadItems();
   };
+
+  const enqueueManualRefresh = (target: ReadonlySet<string>, syncFirst: boolean, coalesce: boolean): Promise<void> => {
+    if (coalesce && activeManualRefresh) return activeManualRefresh;
+    const operation = manualRefreshTail.then(() => performManualRefresh(target, syncFirst));
+    manualRefreshTail = operation.catch(() => {});
+    activeManualRefresh = operation;
+    void operation.then(
+      () => { if (activeManualRefresh === operation) activeManualRefresh = null; },
+      () => { if (activeManualRefresh === operation) activeManualRefresh = null; },
+    );
+    return operation;
+  };
+
+  const refreshSelected = () => enqueueManualRefresh(
+    refreshTargetForSelection(feeds(), state.riverScope, state.activeTags),
+    true,
+    true,
+  );
+
+  const refreshFeeds = (feedIds: readonly string[]) => enqueueManualRefresh(new Set(feedIds), false, false);
 
   const reloadBoth = () => { void reloadFeeds(); void reloadItems(); };
 
@@ -500,7 +557,7 @@ export const AppProvider: ParentComponent = (props) => {
     allTags,
     activeTagSet,
     settings,
-    fetching: fetchingState.inFlight,
+    fetching: manualFetching,
     feedErrors: fetchingState.feedErrors,
     fetchingFeeds: fetchingState.fetchingFeeds,
     hydrated,
@@ -517,7 +574,8 @@ export const AppProvider: ParentComponent = (props) => {
     openModal,
     closeModal,
     jumpTo,
-    refreshAll,
+    refreshSelected,
+    refreshFeeds,
     saveSettingsPatch,
     mcpAvailable,
     mcpConnected,
@@ -572,8 +630,8 @@ export const AppProvider: ParentComponent = (props) => {
       }
     }
     startScheduler();
-    setOnRefresh(reloadBoth);
-    setOnSync(() => { if (!isIdle()) reloadBoth(); });
+    setOnRefresh(() => { if (manualRefreshDepth === 0 && !isIdle()) reloadBoth(); });
+    setOnSync(() => { if (manualRefreshDepth === 0 && !isIdle()) reloadBoth(); });
     onCatchup(() => { void pullIfStale(30_000); void reloadItems(); });
 
     let hiddenAt = 0;

@@ -35,6 +35,103 @@ function stubFetch(status: number, body: string, headers?: Record<string, string
 }
 
 describe('refreshFeed', () => {
+  it('force-refreshes only the explicit target IDs', async () => {
+    const { refreshStaleFeeds } = await import('../src/feeds/scheduler');
+    await upsertFeed({
+      id: 'target-feed',
+      url: 'https://target.example/feed.xml',
+      title: 'Target',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: Date.now(),
+    });
+    await upsertFeed({
+      id: 'other-feed',
+      url: 'https://other.example/feed.xml',
+      title: 'Other',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: Date.now(),
+    });
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(null, { status: 304 });
+    }) as unknown as typeof globalThis.fetch;
+
+    await refreshStaleFeeds({ forceAll: true, target: new Set(['target-feed']) });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain(encodeURIComponent('https://target.example/feed.xml'));
+  });
+
+  it('does not fetch when the explicit target is empty', async () => {
+    const { refreshStaleFeeds } = await import('../src/feeds/scheduler');
+    await upsertFeed({
+      id: 'empty-target-feed',
+      url: 'https://empty-target.example/feed.xml',
+      title: 'Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return new Response(null, { status: 304 });
+    }) as unknown as typeof globalThis.fetch;
+
+    await refreshStaleFeeds({ forceAll: true, target: new Set() });
+
+    expect(calls).toBe(0);
+  });
+
+  it('coalesces concurrent refreshes for the same feed', async () => {
+    const { refreshFeed } = await import('../src/feeds/scheduler');
+    const id = 'coalesced-feed';
+    await upsertFeed({
+      id,
+      url: 'https://coalesced.example/feed.xml',
+      title: 'Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    let calls = 0;
+    let release: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    globalThis.fetch = (async () => {
+      calls++;
+      await blocked;
+      return new Response(null, { status: 304 });
+    }) as unknown as typeof globalThis.fetch;
+
+    const feed = (await getFeed(id))!;
+    const first = refreshFeed(feed);
+    const second = refreshFeed(feed);
+    release!();
+    await Promise.all([first, second]);
+
+    expect(calls).toBe(1);
+  });
+
+  it('does not invoke the background callback for a forced targeted refresh', async () => {
+    const { refreshStaleFeeds, setOnRefresh } = await import('../src/feeds/scheduler');
+    await upsertFeed({
+      id: 'forced-callback',
+      url: 'https://forced.example/feed.xml',
+      title: 'Forced',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    stubFetch(304, '');
+    const callback = vi.fn();
+    setOnRefresh(callback);
+    try {
+      await refreshStaleFeeds({ forceAll: true, target: new Set(['forced-callback']) });
+    } finally {
+      setOnRefresh(null);
+    }
+
+    expect(callback).not.toHaveBeenCalled();
+  });
+
   it('does not stamp modifiedAt or urlAt on a 304 not-modified', async () => {
     const { refreshFeed } = await import('../src/feeds/scheduler');
     const id = 'feed-id';
@@ -246,4 +343,5 @@ describe('refreshFeed', () => {
     expect(feed.lastError).toBe('Failed to parse feed');
     expect(feed.learnedIntervalMs).toBe(3_600_000);
   });
+
 });
