@@ -112,13 +112,20 @@ npm i -g siftctl        # or: npx siftctl
 siftctl pair <code>     # code from Settings → Sync → Agents
 siftctl feeds
 siftctl feed add https://example.com/feed.xml
+siftctl feed edit https://example.com/feed.xml --title "Example" --tags "tech, reading"
+siftctl feed remove https://example.com/feed.xml --yes
 siftctl items https://example.com/feed.xml
+siftctl mark read '<feed-id>::<guid>'
 ```
 
 Environment: `SIFTCTL_TOKEN` (overrides the token file at
 `~/.config/siftctl/token`), `SIFTCTL_URL` (defaults to the hosted deployment),
-`SIFTCTL_HOME`. Exit codes: 0 success, 1 runtime/API error, 2 usage. All data
-commands support `--json` for machine consumption.
+`SIFTCTL_HOME`. Exit codes: 0 success, 1 runtime/API error, 2 usage. `feed add`
+discovers the feed title and HTML URL when available, while `feed edit` updates
+the title or comma-separated tags. Tags are trimmed, lowercased, whitespace-
+normalized, deduplicated, and limited to 64 characters. All data commands and
+mutations support `--json` for machine consumption. Mutation results use stable
+objects such as `{ "ok": true, "operation": "edit", "feedId": "...", "url": "...", "title": "...", "tags": ["..."] }`.
 
 ### Via the OpenAPI document
 
