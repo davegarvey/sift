@@ -9,17 +9,20 @@ export interface CliItem {
   itemId: string;
 }
 
-/**
- * Fetch and parse a feed, mirroring the Sift browser's item identity rules
- * (src/feeds/parse.ts) so item IDs produced here match the flags the
- * browser writes: guid ?? id, else `${link}|${published}`, else link.
- */
-export async function fetchItems(feedUrl: string, limit: number): Promise<CliItem[]> {
+export interface FeedMetadata {
+  title?: string;
+  htmlUrl?: string;
+}
+
+type ExtractedFeed = Awaited<ReturnType<typeof extractFromXml>>;
+
+async function readFeed(feedUrl: string): Promise<ExtractedFeed> {
   let res: Response;
   try {
     res = await fetch(feedUrl, {
       headers: { 'User-Agent': 'siftctl/0.1' },
       redirect: 'follow',
+      signal: AbortSignal.timeout(10_000),
     });
   } catch {
     throw new Error(`Failed to fetch feed: ${feedUrl}`);
@@ -27,9 +30,8 @@ export async function fetchItems(feedUrl: string, limit: number): Promise<CliIte
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching feed: ${feedUrl}`);
   const xml = await res.text();
 
-  let data: Awaited<ReturnType<typeof extractFromXml>>;
   try {
-    data = extractFromXml(xml, {
+    const data = extractFromXml(xml, {
       descriptionMaxLen: 0,
       getExtraEntryFields: (raw) => {
         const entry = raw as Record<string, unknown>;
@@ -49,13 +51,34 @@ export async function fetchItems(feedUrl: string, limit: number): Promise<CliIte
         return result;
       },
     });
+    if (!data) throw new Error('empty feed');
+    return data;
   } catch {
     throw new Error(`Failed to parse feed XML: ${feedUrl}`);
   }
-  if (!data) throw new Error(`Failed to parse feed XML: ${feedUrl}`);
+}
 
+export async function fetchFeedMetadata(feedUrl: string): Promise<FeedMetadata | null> {
+  try {
+    const data = await readFeed(feedUrl);
+    return {
+      title: typeof data.title === 'string' && data.title.trim() ? data.title : undefined,
+      htmlUrl: typeof data.link === 'string' && data.link.trim() ? data.link : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch and parse a feed, mirroring the Sift browser's item identity rules
+ * (src/feeds/parse.ts) so item IDs produced here match the flags the
+ * browser writes: guid ?? id, else `${link}|${published}`, else link.
+ */
+export async function fetchItems(feedUrl: string, limit: number, feedId = feedUrl): Promise<CliItem[]> {
+  const data = await readFeed(feedUrl);
   return (data['entries'] ?? [])
-    .map((entry) => mapEntry(entry, feedUrl))
+    .map((entry) => mapEntry(entry, feedId))
     .filter((i): i is CliItem => i !== null)
     .slice(0, limit);
 }

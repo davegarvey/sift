@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { runCli } from '../packages/siftctl/src/cli';
 import { tokenFingerprint } from '../packages/siftctl/src/fingerprint';
-import { fetchItems } from '../packages/siftctl/src/items';
+import { fetchFeedMetadata, fetchItems } from '../packages/siftctl/src/items';
 
 const BASE = 'https://sift.example';
 let home: string;
@@ -57,6 +57,11 @@ function jsonRes(body: unknown, status = 200): Response {
 }
 
 const TOKEN = 't' + 'A'.repeat(22);
+const FEED_XML = `<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Example Feed</title><link>https://x.com/</link>
+  <item><title>One</title><link>https://x.com/1</link><guid>guid-1</guid><pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate><description>d</description></item>
+</channel></rss>`;
 
 describe('siftctl: pair', () => {
   it('redeems a code and writes the token file with 0600 permissions', async () => {
@@ -98,6 +103,19 @@ describe('siftctl: tokenFingerprint', () => {
 
   it('matches the documented Crockford fingerprint scheme', async () => {
     expect(await tokenFingerprint('test-token')).toBe('RQE9');
+  });
+});
+
+describe('siftctl: feed metadata discovery', () => {
+  it('reads the feed title and HTML URL', async () => {
+    mockFetch(async (url) => {
+      expect(url).toBe('https://x.com/feed.xml');
+      return new Response(FEED_XML, { status: 200, headers: { 'Content-Type': 'application/xml' } });
+    });
+    await expect(fetchFeedMetadata('https://x.com/feed.xml')).resolves.toEqual({
+      title: 'Example Feed',
+      htmlUrl: 'https://x.com/',
+    });
   });
 });
 
@@ -228,6 +246,131 @@ describe('siftctl: feed mutations', () => {
     expect(code).toBe(0);
   });
 
+  it('feed add includes discovered metadata and supports JSON output', async () => {
+    setTokenFile(TOKEN);
+    const calls: Array<{ url: string; body?: string }> = [];
+    mockFetch(async (url, init) => {
+      calls.push({ url, body: String(init?.body) });
+      if (url === `${BASE}/sync/pull?since=0`) return jsonRes({ serverTime: 1, feeds: [], flags: [] });
+      if (url === 'https://x.com/new') return new Response(FEED_XML, { status: 200 });
+      if (url === `${BASE}/sync/push`) return new Response(null, { status: 204 });
+      return jsonRes({}, 404);
+    });
+    const code = await runCli(['feed', 'add', 'https://x.com/new', '--json']);
+    expect(code).toBe(0);
+    const push = calls.find((call) => call.url === `${BASE}/sync/push`)!;
+    expect(JSON.parse(push.body!)).toEqual({
+      feeds: [{
+        feedId: 'https://x.com/new',
+        feedUrl: 'https://x.com/new',
+        htmlUrl: 'https://x.com/',
+        title: 'Example Feed',
+        deleted: 0,
+      }],
+    });
+    expect(JSON.parse(stdout)).toMatchObject({
+      ok: true,
+      operation: 'add',
+      feedId: 'https://x.com/new',
+      title: 'Example Feed',
+    });
+  });
+
+  it('feed add gives explicit metadata precedence and normalizes tags', async () => {
+    setTokenFile(TOKEN);
+    const calls: Array<{ url: string; body?: string }> = [];
+    mockFetch(async (url, init) => {
+      calls.push({ url, body: String(init?.body) });
+      if (url === `${BASE}/sync/pull?since=0`) return jsonRes({ serverTime: 1, feeds: [], flags: [] });
+      if (url === 'https://x.com/new') return new Response(FEED_XML, { status: 200 });
+      if (url === `${BASE}/sync/push`) return new Response(null, { status: 204 });
+      return jsonRes({}, 404);
+    });
+    const code = await runCli(['feed', 'add', 'https://x.com/new', '--title', 'Custom', '--tags', 'AI, ai, Research Notes']);
+    expect(code).toBe(0);
+    const push = calls.find((call) => call.url === `${BASE}/sync/push`)!;
+    expect(JSON.parse(push.body!)).toEqual({
+      feeds: [{
+        feedId: 'https://x.com/new',
+        feedUrl: 'https://x.com/new',
+        htmlUrl: 'https://x.com/',
+        title: 'Custom',
+        tags: ['ai', 'research notes'],
+        deleted: 0,
+      }],
+    });
+  });
+
+  it('feed edit updates only requested metadata fields', async () => {
+    setTokenFile(TOKEN);
+    let pushed: unknown = null;
+    mockFetch(async (url, init) => {
+      if (url === `${BASE}/sync/pull?since=0`) {
+        return jsonRes({
+          serverTime: 1,
+          feeds: [{ feed_id: 'uuid-1', feed_url: 'https://x.com/a', html_url: 'https://x.com', title: 'Old', tags: '["old"]', deleted: 0, row_at: 1 }],
+          flags: [],
+        });
+      }
+      if (url === `${BASE}/sync/push`) {
+        pushed = JSON.parse(String(init?.body));
+        return new Response(null, { status: 204 });
+      }
+      return jsonRes({}, 404);
+    });
+    const code = await runCli(['feed', 'edit', 'https://x.com/a', '--title', 'New', '--tags', 'AI, News', '--json']);
+    expect(code).toBe(0);
+    expect(pushed).toEqual({ feeds: [{ feedId: 'uuid-1', title: 'New', tags: ['ai', 'news'] }] });
+    expect(JSON.parse(stdout)).toMatchObject({ ok: true, operation: 'edit', feedId: 'uuid-1', title: 'New', tags: ['ai', 'news'] });
+  });
+
+  it('feed edit can clear title and tags', async () => {
+    setTokenFile(TOKEN);
+    let pushed: unknown = null;
+    mockFetch(async (url, init) => {
+      if (url === `${BASE}/sync/pull?since=0`) {
+        return jsonRes({
+          serverTime: 1,
+          feeds: [{ feed_id: 'uuid-1', feed_url: 'https://x.com/a', title: 'Old', tags: '["old"]', deleted: 0, row_at: 1 }],
+          flags: [],
+        });
+      }
+      if (url === `${BASE}/sync/push`) {
+        pushed = JSON.parse(String(init?.body));
+        return new Response(null, { status: 204 });
+      }
+      return jsonRes({}, 404);
+    });
+    const code = await runCli(['feed', 'edit', 'https://x.com/a', '--title', '', '--tags', '']);
+    expect(code).toBe(0);
+    expect(pushed).toEqual({ feeds: [{ feedId: 'uuid-1', title: '', tags: [] }] });
+  });
+
+  it('feed remove does not tombstone an unknown URL', async () => {
+    setTokenFile(TOKEN);
+    let pushed = false;
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/pull?since=0`) return jsonRes({ serverTime: 1, feeds: [], flags: [] });
+      if (url === `${BASE}/sync/push`) pushed = true;
+      return new Response(null, { status: 204 });
+    });
+    const code = await runCli(['feed', 'remove', 'https://x.com/missing', '--yes']);
+    expect(code).toBe(1);
+    expect(pushed).toBe(false);
+    expect(stderr).toContain('Not subscribed');
+  });
+
+  it('rejects invalid feed URLs before contacting the server', async () => {
+    let called = false;
+    mockFetch(async () => {
+      called = true;
+      return jsonRes({}, 500);
+    });
+    const code = await runCli(['feed', 'add', 'ftp://x.com/feed']);
+    expect(code).toBe(2);
+    expect(called).toBe(false);
+  });
+
   it('feed remove requires --yes and does not contact the server without it', async () => {
     setTokenFile(TOKEN);
     let called = false;
@@ -285,6 +428,24 @@ describe('siftctl: items and mark read', () => {
     expect(items[1].guid).toBe(`https://x.com/2|Mon, 02 Jan 2024 00:00:00 GMT`);
   });
 
+  it('uses the synchronized feed ID for paired item output', async () => {
+    setTokenFile(TOKEN);
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/pull?since=0`) {
+        return jsonRes({
+          serverTime: 1,
+          feeds: [{ feed_id: 'uuid-1', feed_url: 'https://x.com/feed.xml', title: 'X', deleted: 0, row_at: 1 }],
+          flags: [],
+        });
+      }
+      if (url === 'https://x.com/feed.xml') return new Response(FEED_XML, { status: 200 });
+      return jsonRes({}, 404);
+    });
+    const code = await runCli(['items', 'https://x.com/feed.xml', '--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)[0].itemId).toBe('uuid-1::guid-1');
+  });
+
   it('mark read pushes a read flag', async () => {
     setTokenFile(TOKEN);
     const itemId = `${encodeURIComponent('https://x.com/f')}::g`;
@@ -299,6 +460,29 @@ describe('siftctl: items and mark read', () => {
     const code = await runCli(['mark', 'read', itemId]);
     expect(code).toBe(0);
     expect(pushed).toEqual({ flags: [{ itemId, feedId: 'https://x.com/f', read: 1 }] });
+  });
+
+  it('mark read supports JSON output', async () => {
+    setTokenFile(TOKEN);
+    const itemId = `${encodeURIComponent('https://x.com/f')}::g`;
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/push`) return new Response(null, { status: 204 });
+      return jsonRes({}, 404);
+    });
+    const code = await runCli(['mark', '--json', 'read', itemId]);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ ok: true, operation: 'mark-read', itemId, read: true });
+  });
+
+  it('rejects unexpected mutation arguments without contacting the server', async () => {
+    let called = false;
+    mockFetch(async () => {
+      called = true;
+      return jsonRes({}, 500);
+    });
+    const code = await runCli(['feed', 'edit', 'https://x.com/f', '--title', 'X', 'extra']);
+    expect(code).toBe(2);
+    expect(called).toBe(false);
   });
 
   it('mark read rejects malformed item ids with a usage error', async () => {
