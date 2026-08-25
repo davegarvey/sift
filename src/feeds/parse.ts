@@ -19,7 +19,7 @@ export interface ParsedItem {
   thumbnail?: string | null;
 }
 
-const PARTIAL_CONTENT_LINK = /^(?:continue reading|full story|read more|read (?:the )?full article)$/i;
+const PARTIAL_CONTENT_LINK = /^(?:continue reading|full story|read more|read (?:the )?full article|source)$/i;
 
 export function isPartialFeedContent(html: string, articleUrl?: string): boolean {
   const anchors = html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi);
