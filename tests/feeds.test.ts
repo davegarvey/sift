@@ -79,6 +79,23 @@ const ARS_PARTIAL_SAMPLE = `<?xml version="1.0"?>
   </channel>
 </rss>`;
 
+const QUANTA_PARTIAL_SAMPLE = `<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Quanta Magazine</title>
+    <item>
+      <title>Example science story</title>
+      <link>https://quanta.example/story</link>
+      <guid>quanta-1</guid>
+      <description>A short standfirst.</description>
+      <content:encoded><![CDATA[
+        <p>The opening paragraph.</p>
+        <p><a href="https://quanta.example/story">Source</a></p>
+      ]]></content:encoded>
+    </item>
+  </channel>
+</rss>`;
+
 describe('parseFeed', () => {
   it('parses RSS 2.0 with content:encoded', () => {
     const parsed = parseFeed(RSS_SAMPLE);
@@ -122,6 +139,13 @@ describe('parseFeed', () => {
     expect(parsed!.items[0].html).toBeUndefined();
     expect(parsed!.items[0].excerpt).toBe('A short standfirst.');
   });
+
+  it('does not store Quanta-style content that ends with a self-referential source link', () => {
+    const parsed = parseFeed(QUANTA_PARTIAL_SAMPLE);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.items[0].html).toBeUndefined();
+    expect(parsed!.items[0].excerpt).toBe('A short standfirst.');
+  });
 });
 
 describe('isPartialFeedContent', () => {
@@ -133,6 +157,7 @@ describe('isPartialFeedContent', () => {
   it('does not reject ordinary full feed content', () => {
     expect(isPartialFeedContent('<p>Full body</p><a href="/related">Related story</a>')).toBe(false);
     expect(isPartialFeedContent('<p>Full body</p><a href="/related">Read more</a>', 'https://example.com/story')).toBe(false);
+    expect(isPartialFeedContent('<p>Full body</p><a href="https://example.com/source">Source</a>', 'https://example.com/story')).toBe(false);
   });
 });
 
