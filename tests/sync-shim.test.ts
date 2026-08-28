@@ -53,6 +53,14 @@ describe('sync routes on the local-d1 shim', () => {
     return body.feeds;
   }
 
+  async function pushStats(key: string, body: unknown): Promise<Response> {
+    return app.request('/sync/stats/push', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
   function feed(feedId: string, url: string): Record<string, unknown> {
     return {
       feedId,
@@ -156,6 +164,41 @@ describe('sync routes on the local-d1 shim', () => {
     expect(redeemRes.status).toBe(200);
     const body = (await redeemRes.json()) as { syncKey: string };
     expect(body.syncKey).toBe(key);
+  });
+
+  it('shim: reading statistics deduplicate markers and merge volume by max', async () => {
+    const key = makeSyncKey('shim-stats-');
+    await register(key);
+    const feedId = 'shim-stats-feed';
+    const itemId = `${encodeURIComponent(feedId)}::article-1`;
+    const first = await pushStats(key, {
+      stats: [{ feedId, totalSeen: 10 }],
+      markers: [{ itemId, feedId }],
+    });
+    expect(first.status).toBe(200);
+    const second = await pushStats(key, {
+      stats: [{ feedId, totalSeen: 5 }],
+      markers: [{ itemId, feedId }],
+    });
+    expect(second.status).toBe(200);
+    const body = await second.json() as { stats: Array<Record<string, unknown>> };
+    expect(body.stats[0].total_seen).toBe(10);
+    expect(body.stats[0].read_once).toBe(1);
+  });
+
+  it('shim: feed tombstone cleanup retains aggregate statistics', async () => {
+    const key = makeSyncKey('shim-retain-');
+    await register(key);
+    const feedId = 'shim-retained-feed';
+    await push(key, { feeds: [feed(feedId, 'https://ex.com/retained')] });
+    await pushStats(key, { stats: [{ feedId, totalSeen: 12 }] });
+    await push(key, { feeds: [{ feedId, feedUrl: 'https://ex.com/retained', deleted: 1 }] });
+    const { runSyncCron } = await import('../server/sync/cron');
+    await runSyncCron(db as unknown as Parameters<typeof createSyncRoutes>[0], Date.now() + 31 * 24 * 60 * 60 * 1000);
+    const statsRes = await app.request('/sync/stats/pull?since=0', { headers: { 'X-Sync-Key': key } });
+    expect(statsRes.status).toBe(200);
+    const body = await statsRes.json() as { stats: Array<Record<string, unknown>> };
+    expect(body.stats.find((row) => row.feed_id === feedId)?.total_seen).toBe(12);
   });
 });
 

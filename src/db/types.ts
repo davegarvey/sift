@@ -81,6 +81,21 @@ export interface Item {
   dateFallback?: boolean;
 }
 
+export interface FeedStats {
+  feedId: string;
+  totalSeen: number;
+  readOnce: number;
+  serverReadOnce: number;
+  title: string;
+  url: string;
+}
+
+export interface ReadMarker {
+  id: string;
+  feedId: string;
+  acknowledged: 0 | 1;
+}
+
 export interface Meta {
   key: string;
   value: unknown;
@@ -90,10 +105,12 @@ export interface DBSchema {
   feeds: Feed;
   items: Item;
   meta: Meta;
+  feedStats: FeedStats;
+  readMarkers: ReadMarker;
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 7;
+export const DB_VERSION = 8;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;
@@ -128,6 +145,8 @@ export interface AppSettings {
   syncKey?: string | null;
   /** Monotonic server timestamp of the last successful pull. */
   lastSyncAt?: number | null;
+  /** Monotonic server timestamp of the last successful statistics pull. */
+  lastStatsSyncAt?: number | null;
   /** Server-clock offset (serverTime - Date.now()) measured at the last successful pull. */
   serverOffset?: number | null;
 }
@@ -141,5 +160,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   syncKey: null,
   lastSyncAt: null,
+  lastStatsSyncAt: null,
   serverOffset: null,
 };

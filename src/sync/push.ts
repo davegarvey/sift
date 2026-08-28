@@ -1,7 +1,10 @@
-import { pushChunk, SyncClientError, MAX_DIRTY_PER_PUSH } from './client';
+import { pushChunk, pushStatsChunk, SyncClientError, MAX_DIRTY_PER_PUSH } from './client';
 import { getDirty, clearEntries, type DirtyEntry } from './queue';
-import { encodeItemId } from './itemId';
+import { decodeItemId, encodeItemId } from './itemId';
 import { markPushSuccess, markError, refreshPending } from './status';
+import { getStoredSyncKey } from './key';
+import { isStatsSyncAvailable } from './capabilities';
+import { applyRemoteStatistics, type RemoteStatsRow } from '../db/stats';
 
 const DEBOUNCE_MS = 1000;
 
@@ -50,7 +53,7 @@ function chunkToBody(chunk: DirtyEntry[]): { feeds?: unknown[]; flags?: unknown[
       feedPayload.feedUrl = e.feedUrl.value;
       feedPayload.deleted = 1;
       feeds.push(feedPayload);
-    } else {
+    } else if (e.kind === 'flag-update') {
       const lastSep = e.itemId.lastIndexOf('::');
       const feedId = e.feedId;
       const guid = lastSep >= 0 ? e.itemId.slice(lastSep + 2) : e.itemId;
@@ -65,6 +68,49 @@ function chunkToBody(chunk: DirtyEntry[]): { feeds?: unknown[]; flags?: unknown[
   if (feeds.length) body.feeds = feeds;
   if (flags.length) body.flags = flags;
   return body;
+}
+
+function statsChunkToBody(chunk: DirtyEntry[]): { stats?: unknown[]; markers?: unknown[] } {
+  const statsByFeed = new Map<string, DirtyEntry & { kind: 'stats-update' }>();
+  const markersByItem = new Map<string, DirtyEntry & { kind: 'read-marker' }>();
+  for (const entry of chunk) {
+    if (entry.kind === 'stats-update') statsByFeed.set(entry.feedId, entry);
+    if (entry.kind === 'read-marker') markersByItem.set(entry.itemId, entry);
+  }
+  const stats = [...statsByFeed.values()].map((entry) => ({
+    feedId: entry.feedId,
+    totalSeen: entry.totalSeen,
+    feedUrl: entry.feedUrl,
+    title: entry.title,
+  }));
+  const markers = [...markersByItem.values()].map((entry) => ({
+    itemId: encodeItemId(entry.feedId, entry.itemId.slice(entry.itemId.lastIndexOf('::') + 2)),
+    feedId: entry.feedId,
+  }));
+  const body: { stats?: unknown[]; markers?: unknown[] } = {};
+  if (stats.length > 0) body.stats = stats;
+  if (markers.length > 0) body.markers = markers;
+  return body;
+}
+
+function toRemoteStatsRows(values: unknown[]): RemoteStatsRow[] {
+  return values.flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const row = value as Record<string, unknown>;
+    if (typeof row.feed_id !== 'string') return [];
+    return [{
+      feedId: row.feed_id,
+      totalSeen: typeof row.total_seen === 'number' ? row.total_seen : 0,
+      readOnce: typeof row.read_once === 'number' ? row.read_once : 0,
+      feedUrl: typeof row.feed_url === 'string' ? row.feed_url : null,
+      title: typeof row.title === 'string' ? row.title : null,
+    }];
+  });
+}
+
+function toRawMarkerId(id: string): string {
+  const parsed = decodeItemId(id);
+  return parsed ? `${parsed.feedId}::${parsed.guid}` : id;
 }
 
 async function pushChunkWithSplit(entries: DirtyEntry[]): Promise<void> {
@@ -84,6 +130,28 @@ async function pushChunkWithSplit(entries: DirtyEntry[]): Promise<void> {
   }
 }
 
+async function pushStatsChunkWithSplit(entries: DirtyEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  try {
+    const response = await pushStatsChunk(statsChunkToBody(entries));
+    const acknowledged = Array.isArray(response.acknowledged)
+      ? response.acknowledged.filter((id): id is string => typeof id === 'string')
+      : [];
+    const rawAcknowledged = acknowledged.map(toRawMarkerId);
+    await applyRemoteStatistics(toRemoteStatsRows(response.stats ?? []), [], rawAcknowledged);
+    const acknowledgedSet = new Set(rawAcknowledged);
+    clearEntries(entries.filter((entry) => entry.kind === 'stats-update' || (entry.kind === 'read-marker' && acknowledgedSet.has(entry.itemId))));
+  } catch (err) {
+    if (err instanceof SyncClientError && err.status === 413 && entries.length > 1) {
+      const half = Math.floor(entries.length / 2);
+      await pushStatsChunkWithSplit(entries.slice(0, half));
+      await pushStatsChunkWithSplit(entries.slice(half));
+      return;
+    }
+    throw err;
+  }
+}
+
 export function scheduleFlush(): void {
   if (pendingTimer) clearTimeout(pendingTimer);
   pendingTimer = setTimeout(() => {
@@ -95,14 +163,28 @@ export function scheduleFlush(): void {
 export async function flushNow(): Promise<void> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
+    if (!await getStoredSyncKey()) {
+      refreshPending();
+      return;
+    }
     const dirty = getDirty();
     if (dirty.length === 0) {
       refreshPending();
       return;
     }
-    const chunks = splitChunk(dirty, MAX_DIRTY_PER_PUSH);
+    const ordinary = dirty.filter((entry) => entry.kind === 'feed-upsert' || entry.kind === 'feed-delete' || entry.kind === 'flag-update');
+    const stats = dirty.filter((entry) => entry.kind === 'stats-update' || entry.kind === 'read-marker');
+    const chunks = splitChunk(ordinary, MAX_DIRTY_PER_PUSH);
     for (const chunk of chunks) {
+      if (chunk.length === 0) continue;
       await pushChunkWithSplit(chunk);
+    }
+    if (stats.length > 0 && await isStatsSyncAvailable()) {
+      const statsChunks = splitChunk(stats, MAX_DIRTY_PER_PUSH);
+      for (const chunk of statsChunks) {
+        if (chunk.length === 0) continue;
+        await pushStatsChunkWithSplit(chunk);
+      }
     }
     markPushSuccess(Date.now());
   })();

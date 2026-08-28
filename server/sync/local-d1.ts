@@ -69,13 +69,22 @@ class LocalD1Stmt {
       upper.startsWith('ALTER TABLE');
     if (mutating) this.db.schedulePersist();
 
-    if (upper.startsWith('CREATE TABLE')) return this.db._createTable(trimmed);
+    if (upper.startsWith('CREATE TABLE')) {
+      this.db.lastChanges = 0;
+      return this.db._createTable(trimmed);
+    }
     if (upper.startsWith('CREATE INDEX')) return [];
     if (upper.startsWith('INSERT')) return this.db._insert(trimmed, this.params);
     if (upper.startsWith('UPDATE')) return this.db._update(trimmed, this.params);
     if (upper.startsWith('DELETE')) return this.db._delete(trimmed, this.params);
-    if (upper.startsWith('DROP TABLE')) return this.db._dropTable(trimmed);
-    if (upper.startsWith('ALTER TABLE')) return this.db._alterTable(trimmed, this.params);
+    if (upper.startsWith('DROP TABLE')) {
+      this.db.lastChanges = 0;
+      return this.db._dropTable(trimmed);
+    }
+    if (upper.startsWith('ALTER TABLE')) {
+      this.db.lastChanges = 0;
+      return this.db._alterTable(trimmed, this.params);
+    }
     if (upper.startsWith('SELECT')) return this.db._select(trimmed, this.params);
 
     throw new Error(`local-d1: unsupported SQL: ${trimmed.slice(0, 80)}`);
@@ -93,6 +102,8 @@ export class LocalD1Database {
   private tableDefaults = new Map<string, Map<string, unknown>>();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private persisted = false;
+  lastChanges = 0;
+  changesForWhere = 0;
 
   constructor(private options: LocalD1Options = {}) {
     if (options.persistPath) {
@@ -185,6 +196,7 @@ export class LocalD1Database {
   }
 
   _insert(sql: string, params: unknown[]): Record<string, unknown>[] {
+    this.lastChanges = 0;
     const m = sql.match(/INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(\w+)/i);
     if (!m) return [];
     const tableName = m[1];
@@ -279,11 +291,13 @@ export class LocalD1Database {
         if (row[col] !== undefined) merged[col] = row[col];
       }
       table.set(key, merged);
+      this.lastChanges = 1;
     } else if (isIgnore && table.has(key)) {
       // INSERT OR IGNORE — skip if exists
       return [];
     } else {
       table.set(key, row);
+      this.lastChanges = 1;
     }
 
     if (returningCol) {
@@ -295,6 +309,8 @@ export class LocalD1Database {
   }
 
   _update(sql: string, params: unknown[]): Record<string, unknown>[] {
+    this.changesForWhere = this.lastChanges;
+    this.lastChanges = 0;
     const m = sql.match(/UPDATE\s+(\w+)/i);
     if (!m) return [];
     const tableName = m[1];
@@ -338,9 +354,44 @@ export class LocalD1Database {
         updated.push(row);
       }
       if (returningMatch) {
+        this.lastChanges = updated.length;
         return updated.length > 0 ? [updated[updated.length - 1]] : [];
       }
+      this.lastChanges = updated.length;
       return updated;
+    }
+
+    if (tableName === 'feed_stats' && /total_seen\s*=\s*CASE\s+WHEN\s+total_seen\s*<\s*\?/i.test(assignments)) {
+      const incoming = params[0] as number;
+      const rowAt = params[3] as number;
+      for (const [, row] of table) {
+        if (!this._matchesWhere(row, whereClause, params, setParamCount)) continue;
+        if (Number(row.total_seen) < incoming) {
+          row.total_seen = incoming;
+          row.row_at = rowAt;
+        }
+        updated.push(row);
+      }
+      this.lastChanges = updated.length;
+      return returningMatch
+        ? (updated.length > 0 ? [updated[updated.length - 1]] : [])
+        : updated;
+    }
+
+    if (tableName === 'feed_stats' && /read_once\s*=\s*read_once\s*\+\s*1/i.test(assignments)) {
+      const rowAt = params[0] as number;
+      for (const [, row] of table) {
+        if (!this._matchesWhere(row, whereClause, params, setParamCount)) continue;
+        const readOnce = Number(row.read_once) || 0;
+        row.read_once = readOnce + 1;
+        row.total_seen = Math.max(Number(row.total_seen) || 0, row.read_once as number);
+        row.row_at = rowAt;
+        updated.push(row);
+      }
+      this.lastChanges = updated.length;
+      return returningMatch
+        ? (updated.length > 0 ? [updated[updated.length - 1]] : [])
+        : updated;
     }
 
     for (const [, row] of table) {
@@ -416,12 +467,15 @@ export class LocalD1Database {
     }
 
     if (returningCol) {
+      this.lastChanges = updated.length;
       return updated.length > 0 ? [updated[updated.length - 1]] : [];
     }
+    this.lastChanges = updated.length;
     return updated;
   }
 
   _delete(sql: string, _params: unknown[]): Record<string, unknown>[] {
+    this.lastChanges = 0;
     const m = sql.match(/DELETE\s+FROM\s+(\w+)/i);
     if (!m) return [];
     const tableName = m[1];
@@ -438,6 +492,7 @@ export class LocalD1Database {
     for (const [k, row] of Array.from(table.entries())) {
       if (this._matchesWhere(row, whereClause, _params)) {
         table.delete(k);
+        this.lastChanges += 1;
       }
     }
     return [];
@@ -504,6 +559,11 @@ export class LocalD1Database {
     _params: unknown[],
     offset: number,
   ): { matches: boolean; nextOffset: number } {
+    const changesMatch = trimmed.match(/^changes\(\)\s*=\s*(\d+)$/i);
+    if (changesMatch) {
+      return { matches: this.changesForWhere === parseInt(changesMatch[1], 10), nextOffset: offset };
+    }
+
     // column = ?
     const eqMatch = trimmed.match(/^(\w+)\s*=\s*\?$/);
     if (eqMatch) {
@@ -523,6 +583,13 @@ export class LocalD1Database {
     if (gtMatch) {
       const col = gtMatch[1];
       return { matches: (row[col] as number) > (_params[offset] as number), nextOffset: offset + 1 };
+    }
+
+    // column >= ?
+    const gteMatch = trimmed.match(/^(\w+)\s*>=\s*\?$/);
+    if (gteMatch) {
+      const col = gteMatch[1];
+      return { matches: (row[col] as number) >= (_params[offset] as number), nextOffset: offset + 1 };
     }
 
     // column < ?
@@ -619,6 +686,8 @@ export class LocalD1Database {
         return ['sync_key', 'feed_id'];
       case 'flags':
         return ['sync_key', 'item_id'];
+      case 'feed_stats':
+        return ['sync_key', 'feed_id'];
       case 'pairing_codes':
         return ['code'];
       case 'tokens':

@@ -10,12 +10,14 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
 import { listFeeds } from '../src/db/feeds';
-import { getDirty, enqueueFeed, enqueueFlag } from '../src/sync/queue';
+import { getDirty, enqueueFeed, enqueueFlag, enqueueReadMarker, enqueueStats } from '../src/sync/queue';
 import { subscribeFeed, unsubscribeFeed, updateFeedMeta } from '../src/feeds/service';
 
 beforeEach(async () => {
   const db = await getDb();
   await db.clear('feeds');
+  await db.clear('feedStats');
+  await db.clear('readMarkers');
   await db.clear('meta');
   const { clearAllDirty } = await import('../src/sync/queue');
   clearAllDirty();
@@ -188,5 +190,49 @@ describe('push payload contract', () => {
       deleted: 0,
     });
     expect(JSON.stringify(captured)).not.toContain('"at"');
+  });
+
+  it('sends statistics through the separate endpoint and acknowledges markers', async () => {
+    const { flushNow } = await import('../src/sync/push');
+    const { resetSyncCapabilityCache } = await import('../src/sync/capabilities');
+    const db = await getDb();
+    resetSyncCapabilityCache();
+    await db.put('readMarkers', { id: 'stats-feed::article-1', feedId: 'stats-feed', acknowledged: 0 });
+    enqueueStats({ feedId: 'stats-feed', totalSeen: 4, feedUrl: 'https://example.com/stats', title: 'Stats' });
+    enqueueReadMarker({ itemId: 'stats-feed::article-1', feedId: 'stats-feed' });
+    let capturedUrl = '';
+    let captured: Record<string, unknown> = {};
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(input);
+      if (capturedUrl.endsWith('/sync/capabilities')) return new Response(JSON.stringify({ sync: true, stats: true }), { status: 200 });
+      captured = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        acknowledged: ['stats-feed::article-1'],
+        stats: [{ feed_id: 'stats-feed', total_seen: 4, read_once: 1 }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as unknown as typeof globalThis.fetch;
+    await flushNow();
+    expect(capturedUrl).toContain('/sync/stats/push');
+    expect(captured.stats).toEqual([{ feedId: 'stats-feed', totalSeen: 4, feedUrl: 'https://example.com/stats', title: 'Stats' }]);
+    expect(captured.markers).toEqual([{ itemId: `${encodeURIComponent('stats-feed')}::article-1`, feedId: 'stats-feed' }]);
+    expect(getDirty().filter((entry) => entry.kind === 'read-marker')).toHaveLength(0);
+    expect((await db.get('readMarkers', 'stats-feed::article-1'))?.acknowledged).toBe(1);
+  });
+
+  it('does not contact the network for local-only statistics', async () => {
+    const { flushNow } = await import('../src/sync/push');
+    const { setMeta } = await import('../src/db/meta');
+    const { resetSyncCapabilityCache } = await import('../src/sync/capabilities');
+    resetSyncCapabilityCache();
+    await setMeta('settings', { syncKey: null });
+    enqueueStats({ feedId: 'local-feed', totalSeen: 7 });
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      throw new Error('network should not be used');
+    }) as unknown as typeof globalThis.fetch;
+    await flushNow();
+    expect(calls).toBe(0);
+    expect(getDirty()).toContainEqual(expect.objectContaining({ kind: 'stats-update', feedId: 'local-feed' }));
   });
 });

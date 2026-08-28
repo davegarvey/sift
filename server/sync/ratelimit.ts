@@ -59,6 +59,8 @@ export const RATE_LIMITS = {
   tokensMint: { windowSeconds: 3600, limit: 20 },
   tokensRedeem: { windowSeconds: 60, limit: 10 },
   rotate: { windowSeconds: 3600, limit: 20 },
+  statsPush: { windowSeconds: 60, limit: 60 },
+  statsPull: { windowSeconds: 60, limit: 60 },
 } as const;
 
 /**

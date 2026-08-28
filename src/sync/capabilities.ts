@@ -4,23 +4,37 @@
  * next page reload.
  */
 
-let cached: boolean | null = null;
+export interface SyncCapabilities {
+  sync: boolean;
+  stats: boolean;
+}
 
-export async function isSyncAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+let cached: SyncCapabilities | null = null;
+
+export async function getSyncCapabilities(fetchImpl: typeof fetch = fetch): Promise<SyncCapabilities> {
   if (cached !== null) return cached;
   try {
     const res = await fetchImpl('/sync/capabilities', { method: 'GET' });
     if (!res.ok) {
-      cached = false;
-      return false;
+      cached = { sync: false, stats: false };
+      return cached;
     }
-    const body = (await res.json()) as { sync?: boolean };
-    cached = body.sync === true;
+    const body = (await res.json()) as { sync?: boolean; stats?: boolean };
+    cached = { sync: body.sync === true, stats: body.stats === true };
     return cached;
   } catch {
-    cached = false;
-    return false;
+    cached = { sync: false, stats: false };
+    return cached;
   }
+}
+
+export async function isSyncAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  return (await getSyncCapabilities(fetchImpl)).sync;
+}
+
+export async function isStatsSyncAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  const capabilities = await getSyncCapabilities(fetchImpl);
+  return capabilities.sync && capabilities.stats;
 }
 
 export function resetSyncCapabilityCache(): void {

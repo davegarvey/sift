@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
-import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, MoreHorizontal, GripVertical } from 'lucide-solid';
+import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, MoreHorizontal, GripVertical, ChartNoAxesCombined } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../db/types';
 import type { Feed } from '../db/types';
@@ -167,6 +167,15 @@ export function Sidebar(props: { onNavigate?: () => void }) {
 
         <div class="sidebar-actions-bottom">
           <button
+            class={`sidebar-action ${ctx.state.view === 'stats' ? 'active' : ''}`}
+            title="Reading statistics"
+            aria-current={ctx.state.view === 'stats' ? 'page' : undefined}
+            onClick={() => { ctx.openStats(); props.onNavigate?.(); }}
+          >
+            <ChartNoAxesCombined size={14} />
+            <span>Stats</span>
+          </button>
+          <button
             class="sidebar-action"
             title="Search / Command palette"
             onClick={() => ctx.openModal({ kind: 'palette' })}
@@ -249,6 +258,16 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             </button>
             <button class="collapsed-action" title="Search / Command palette" onClick={() => ctx.openModal({ kind: 'palette' })}>
               <Search size={14} />
+            </button>
+            <button
+              class="collapsed-action"
+              classList={{ active: ctx.state.view === 'stats' }}
+              title="Reading statistics"
+              aria-label="Reading statistics"
+              aria-current={ctx.state.view === 'stats' ? 'page' : undefined}
+              onClick={() => ctx.openStats()}
+            >
+              <ChartNoAxesCombined size={14} />
             </button>
             <button class="collapsed-action" title="Settings" onClick={() => ctx.openModal({ kind: 'settings' })}>
             <Settings size={14} />

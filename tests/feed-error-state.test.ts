@@ -23,6 +23,8 @@ beforeEach(async () => {
   await db.clear('feeds');
   await db.clear('items');
   await db.clear('itemFlags');
+  await db.clear('feedStats');
+  await db.clear('readMarkers');
 });
 
 describe('refreshError lifecycle', () => {

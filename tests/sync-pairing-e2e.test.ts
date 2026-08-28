@@ -5,6 +5,8 @@ import * as esbuild from 'esbuild';
 import path from 'path';
 import { getDb } from '../src/db/open';
 import { upsertFeed, listFeeds, getFeedByUrl } from '../src/db/feeds';
+import { insertOrUpdateItem, markRead } from '../src/db/items';
+import { getFeedStats, getReadMarker } from '../src/db/stats';
 import { setFlag } from '../src/db/flags';
 import { setStoredSyncKey, setStoredLastSyncAt, clearStoredSyncKey } from '../src/sync/key';
 import { triggerFirstTime } from '../src/sync/init';
@@ -40,9 +42,10 @@ beforeEach(async () => {
   const d1 = await mf.getD1Database('DB');
   await d1.prepare('DROP TABLE IF EXISTS feeds').run();
   await d1.prepare('DROP TABLE IF EXISTS flags').run();
+  await d1.prepare('DROP TABLE IF EXISTS feed_stats').run();
 
   const db = await getDb();
-  for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+  for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
     if (db.objectStoreNames.contains(store)) {
       await db.clear(store);
     }
@@ -81,6 +84,48 @@ async function withMfFetch<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 describe('sync pairing first-time setup', () => {
+  it('bootstraps local-only reading statistics onto a new device', async () => {
+    const key = makeSyncKey('stats-pair--');
+    const feedId = crypto.randomUUID();
+    const itemId = `${feedId}::article-1`;
+    await upsertFeed({
+      id: feedId,
+      url: 'https://ex.com/stats-pair',
+      title: 'Stats Pair Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await insertOrUpdateItem({
+      id: itemId,
+      feedId,
+      guid: 'article-1',
+      title: 'Article',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await markRead(itemId, true);
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await withMfFetch(() => triggerFirstTime());
+
+    const db = await getDb();
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
+      if (db.objectStoreNames.contains(store)) await db.clear(store);
+    }
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await withMfFetch(() => triggerFirstTime());
+
+    const stats = await getFeedStats(feedId);
+    expect(stats?.totalSeen).toBe(1);
+    expect(stats?.readOnce).toBe(1);
+    expect((await getReadMarker(itemId))?.acknowledged).toBe(1);
+  });
+
   it('pushes pre-existing feeds when enabling sync', async () => {
     const key = makeSyncKey('test-1---');
 
@@ -245,7 +290,7 @@ describe('sync pairing first-time setup', () => {
 
     // --- "Mobile" device: fresh local state, has a different feed ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -318,7 +363,7 @@ describe('sync pairing first-time setup', () => {
 
     // --- "Mobile" device: fresh local state with the SAME feed URL but different UUID ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -399,7 +444,7 @@ describe('sync pairing first-time setup', () => {
     expect(mobileKey).toBe(key);
 
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -476,7 +521,7 @@ describe('sync pairing first-time setup', () => {
 
     // --- Mobile: restored backup still has X locally ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -541,7 +586,7 @@ describe('sync pairing first-time setup', () => {
 
     // --- Mobile: stale backup with the OLD URL U1 ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -600,7 +645,7 @@ describe('sync pairing first-time setup', () => {
 
     // --- Mobile: restored backup marks the same item read locally ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -750,7 +795,7 @@ describe('sync pairing first-time setup', () => {
     // --- Mobile: same feed (same id), but the user re-tagged it locally
     //     with a NEWER timestamp than the server's ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -817,7 +862,7 @@ describe('sync pairing first-time setup', () => {
 
     // --- Device A: subscribes (pulls both rows, dedupes to idA locally) ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -844,7 +889,7 @@ describe('sync pairing first-time setup', () => {
     expect(delRes.status).toBe(204);
 
     // --- Device B: still has the feed (idB) ---
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -928,7 +973,7 @@ describe('sync pairing first-time setup', () => {
 
     // --- Device A pulls: the feed returns as a fresh subscription ---
     const db = await getDb();
-    for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
       if (db.objectStoreNames.contains(store)) {
         await db.clear(store);
       }
@@ -988,7 +1033,7 @@ describe('sync pairing first-time setup', () => {
 
       // --- Device B (clock -3s): pulls, sees the rename ---
       const db = await getDb();
-      for (const store of ['feeds', 'items', 'itemFlags', 'meta'] as const) {
+      for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
         if (db.objectStoreNames.contains(store)) {
           await db.clear(store);
         }

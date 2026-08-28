@@ -25,6 +25,7 @@ Sift — a simple, slick, browser-first RSS reader.
 ## Conventions
 
 - Strict TypeScript everywhere. No `any` without a comment explaining why.
+- This is a forward-facing PWA: clients update automatically, so do not add legacy-client compatibility paths unless required by persisted data, shipped behavior, or an external consumer. Prefer moving current data forward over supporting obsolete clients.
 - Code style: no comments unless asked. Match existing patterns in the file you're editing.
 - Test files live alongside source where appropriate (`*.test.ts`) or under `tests/` for integration tests.
 - The `LICENSE` is MIT. Do not introduce third-party code that is incompatible.

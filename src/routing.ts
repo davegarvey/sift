@@ -27,3 +27,7 @@ export function parseItemIdFromUrl(): string | null {
   const match = window.location.pathname.match(/^\/i\/([a-z0-9]+)/);
   return match?.[1] ?? null;
 }
+
+export function isStatsPath(pathname: string): boolean {
+  return pathname === '/stats' || pathname === '/stats/';
+}

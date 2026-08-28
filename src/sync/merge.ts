@@ -1,14 +1,16 @@
 import { listFeeds, upsertFeed, unsubscribeFeed } from '../db/feeds';
 import { listItems } from '../db/items';
 import { getItemFlags, bulkSetFlags, type ItemFlag } from '../db/flags';
-import { enqueueFeed, enqueueFlag, clearAllDirty } from './queue';
+import { listFeedStats, listPendingReadMarkers, applyRemoteStatistics } from '../db/stats';
+import { enqueueFeed, enqueueFlag, enqueueStats, enqueueReadMarker, clearAllDirty } from './queue';
 import { flushNow, scheduleFlush } from './push';
-import { pullSince, register, type PullPayload } from './client';
+import { pullSince, pullStatsSince, register, type PullPayload, type StatsPullPayload } from './client';
 import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
-import { getStoredLastSyncAt, setStoredLastSyncAt, setStoredServerOffset } from './key';
+import { getStoredLastStatsSyncAt, getStoredLastSyncAt, setStoredLastStatsSyncAt, setStoredLastSyncAt, setStoredServerOffset } from './key';
 import { decodeItemId } from './itemId';
 import { markPullSuccess, markError } from './status';
 import type { Feed, Item } from '../db/types';
+import { isStatsSyncAvailable } from './capabilities';
 
 let onSync: (() => void) | null = null;
 
@@ -22,6 +24,48 @@ function toRemotePayload(p: PullPayload): RemotePayload {
     feeds: p.feeds as unknown as RemoteFeed[], // why: PullPayload.feeds arrives as unknown[] from JSON parse
     flags: p.flags as unknown as RemoteFlag[], // why: same — runtime shape matches RemoteFlag after JSON parse
   };
+}
+
+function toRemoteStats(p: StatsPullPayload): { rows: Parameters<typeof applyRemoteStatistics>[0]; markers: Parameters<typeof applyRemoteStatistics>[1] } {
+  const rows = p.stats.flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const row = value as Record<string, unknown>;
+    if (typeof row.feed_id !== 'string') return [];
+    return [{
+      feedId: row.feed_id,
+      totalSeen: typeof row.total_seen === 'number' ? row.total_seen : 0,
+      readOnce: typeof row.read_once === 'number' ? row.read_once : 0,
+      feedUrl: typeof row.feed_url === 'string' ? row.feed_url : null,
+      title: typeof row.title === 'string' ? row.title : null,
+    }];
+  });
+  const markers = p.markers.flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const row = value as Record<string, unknown>;
+    if (typeof row.item_id !== 'string' || typeof row.feed_id !== 'string') return [];
+    const parsed = decodeItemId(row.item_id);
+    return [{ id: parsed ? `${parsed.feedId}::${parsed.guid}` : row.item_id, feedId: row.feed_id }];
+  });
+  return { rows, markers };
+}
+
+async function enqueueAllLocalStats(): Promise<void> {
+  const [feeds, statsRows, markers] = await Promise.all([listFeeds(), listFeedStats(), listPendingReadMarkers()]);
+  const statsByFeed = new Map(statsRows.map((row) => [row.feedId, row]));
+  const now = Date.now();
+  for (const feed of feeds) {
+    const stats = statsByFeed.get(feed.id);
+    enqueueStats({
+      feedId: feed.id,
+      totalSeen: stats?.totalSeen ?? 0,
+      feedUrl: feed.url,
+      title: feed.title,
+      at: now,
+    });
+  }
+  for (const marker of markers) {
+    enqueueReadMarker({ itemId: marker.id, feedId: marker.feedId, at: now });
+  }
 }
 
 export interface LocalSnapshot {
@@ -44,6 +88,21 @@ export async function snapshotLocal(): Promise<LocalSnapshot> {
 export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: RemotePayload, serverOffset = 0): Promise<void> {
   await applyRemoteState(payload, serverOffset);
   onSync?.();
+}
+
+async function applyStatsPayload(payload: StatsPullPayload): Promise<void> {
+  const stats = toRemoteStats(payload);
+  await applyRemoteStatistics(stats.rows, stats.markers);
+}
+
+export async function runStatsPull(sinceOverride?: number): Promise<number | null> {
+  if (!await isStatsSyncAvailable()) return null;
+  const since = sinceOverride ?? (await getStoredLastStatsSyncAt()) ?? 0;
+  const pull = await pullStatsSince(since);
+  await applyStatsPayload(pull);
+  const next = Math.max(since, pull.serverTime);
+  await setStoredLastStatsSyncAt(next);
+  return next;
 }
 
 function toRawFlagId(itemId: string): string {
@@ -125,10 +184,21 @@ export async function runFirstTimeSetup(): Promise<number> {
   await clearAllDirty();
 
   try {
+    const statsSupported = await isStatsSyncAvailable();
+    if (statsSupported) {
+      const statsPull = await pullStatsSince(0);
+      await applyStatsPayload(statsPull);
+      await setStoredLastStatsSyncAt(statsPull.serverTime);
+    }
     const pull = await pullSince(0);
     const payload = toRemotePayload(pull);
     await pushLocalDiff(existingFeeds, existingFlags, payload.feeds, payload.flags);
     await mergePayload(payload, pull.serverTime);
+    if (statsSupported) {
+      await enqueueAllLocalStats();
+      await flushNow();
+      await runStatsPull();
+    }
   } catch (e) {
     markError('pull', e);
     throw e;
@@ -147,16 +217,16 @@ export async function runPull(): Promise<number | null> {
     const payload = toRemotePayload(pull);
     if (payload.feeds.length === 0 && payload.flags.length === 0) {
       await setStoredLastSyncAt(Math.max(since, pull.serverTime));
-      markPullSuccess();
-      return pull.serverTime;
+    } else {
+      await applyRemoteState(payload, offset);
+      const newTime = Math.max(since, pull.serverTime);
+      await setStoredLastSyncAt(newTime);
+      scheduleFlush();
+      onSync?.();
     }
-    await applyRemoteState(payload, offset);
-    const newTime = Math.max(since, pull.serverTime);
-    await setStoredLastSyncAt(newTime);
+    await runStatsPull();
     markPullSuccess();
-    scheduleFlush();
-    onSync?.();
-    return newTime;
+    return Math.max(since, pull.serverTime);
   } catch (e) {
     markError('pull', e);
     throw e;

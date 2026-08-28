@@ -99,6 +99,8 @@ function makeCtx() {
     updateFeedTags: async () => {},
     markReadAndSync: async () => {},
     toggleStar: async () => {},
+    statsRevision: () => 0,
+    openStats: () => {},
   };
 
   return { ctx, setFeeds, setItems, setHydrated };

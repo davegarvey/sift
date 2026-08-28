@@ -19,6 +19,8 @@ const flushPersist = () => new Promise((r) => setTimeout(r, 250));
 beforeEach(async () => {
   const db = await getDb();
   await db.clear('meta');
+  await db.clear('feedStats');
+  await db.clear('readMarkers');
   await loadStatus();
 });
 

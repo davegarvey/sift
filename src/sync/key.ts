@@ -80,6 +80,17 @@ export async function setStoredLastSyncAt(value: number | null): Promise<void> {
   await setMeta(SETTINGS_KEY, { ...stored, lastSyncAt: value });
 }
 
+export async function getStoredLastStatsSyncAt(): Promise<number | null> {
+  const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
+  const v = stored.lastStatsSyncAt;
+  return typeof v === 'number' ? v : null;
+}
+
+export async function setStoredLastStatsSyncAt(value: number | null): Promise<void> {
+  const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
+  await setMeta(SETTINGS_KEY, { ...stored, lastStatsSyncAt: value });
+}
+
 export async function getStoredServerOffset(): Promise<number> {
   const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
   const v = stored.serverOffset;

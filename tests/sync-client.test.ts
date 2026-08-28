@@ -10,12 +10,15 @@ import { upsertFeed, listFeeds, getFeedByUrl } from '../src/db/feeds';
 import { insertOrUpdateItem, listItems } from '../src/db/items';
 import { applyRemoteState } from '../src/sync/apply';
 import { encodeItemId, decodeItemId } from '../src/sync/itemId';
+import { applyRemoteStatistics, getFeedStats, getReadMarker } from '../src/db/stats';
 
 beforeEach(async () => {
   const db = await getDb();
   await db.clear('feeds');
   await db.clear('items');
   await db.clear('itemFlags');
+  await db.clear('feedStats');
+  await db.clear('readMarkers');
   await db.clear('meta');
 });
 
@@ -442,5 +445,48 @@ describe('applyRemoteState', () => {
     // The apply function should not throw.
     const items = await listItems(10);
     expect(items.length).toBe(0);
+  });
+
+  it('applies server statistics without recounting pulled current flags', async () => {
+    const feedId = crypto.randomUUID();
+    const itemId = `${feedId}::guid-1`;
+    await upsertFeed({
+      id: feedId,
+      url: 'https://example.com/sync-stats.xml',
+      title: 'Stats Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: 1000,
+    });
+    await insertOrUpdateItem({
+      id: itemId,
+      feedId,
+      guid: 'guid-1',
+      title: 'Read me',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await applyRemoteState({
+      serverTime: 2000,
+      feeds: [],
+      flags: [{
+        item_id: encodeItemId(feedId, 'guid-1'),
+        feed_id: feedId,
+        read: 1,
+        read_at: 1500,
+        row_at: 1500,
+      }],
+    });
+    await applyRemoteStatistics(
+      [{ feedId, totalSeen: 10, readOnce: 3 }],
+      [{ id: itemId, feedId }],
+    );
+    const stats = await getFeedStats(feedId);
+    expect(stats?.totalSeen).toBe(10);
+    expect(stats?.readOnce).toBe(3);
+    expect((await getReadMarker(itemId))?.acknowledged).toBe(1);
   });
 });
