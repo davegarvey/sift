@@ -52,6 +52,7 @@ describe('stats view', () => {
     } as unknown as AppContext;
     const dispose = render(() => <Stats />, document.body);
     await vi.waitFor(() => expect(document.body.textContent).toContain('View Feed'));
+    expect(document.querySelector('.stats-kicker')?.textContent).toContain('Stats');
     expect(document.body.textContent).toContain('Your reading habits');
     expect(document.body.textContent).toContain('Your stats stay on this device and work offline.');
     expect(document.body.textContent).toContain('Articles');
@@ -61,6 +62,8 @@ describe('stats view', () => {
     expect(document.querySelectorAll('.stats-value span')).toHaveLength(0);
     const help = document.querySelector<HTMLButtonElement>('[aria-label="How these numbers work"]');
     expect(help?.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('.stats-page-heading .stats-help-button')).toBe(help);
+    expect(document.querySelector('.stats-list-heading .stats-help-button')).toBeNull();
     help?.click();
     expect(help?.getAttribute('aria-expanded')).toBe('true');
     await Promise.resolve();
@@ -97,10 +100,12 @@ describe('stats view', () => {
     } as unknown as AppContext;
     const dispose = render(() => <Stats />, document.body);
     await vi.waitFor(() => expect(document.body.textContent).toContain('Synced Feed'));
-    expect(document.body.textContent).toContain('Across devices, article totals are estimates; each article counts as read only once.');
+    expect(document.body.textContent).not.toContain('Across devices, article totals are estimates; each article counts as read only once.');
     expect(document.body.textContent).not.toContain('observed volume');
     const help = document.querySelector<HTMLButtonElement>('[aria-label="How these numbers work"]');
     help?.click();
+    await Promise.resolve();
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('article totals are estimates across devices');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(help?.getAttribute('aria-expanded')).toBe('false');
     dispose();

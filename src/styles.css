@@ -686,6 +686,10 @@ a:hover { text-decoration: underline; }
   padding: 56px 48px 80px;
 }
 
+.stats-page-heading {
+  position: relative;
+}
+
 .stats-header {
   max-width: 720px;
   margin-bottom: 36px;
@@ -770,11 +774,7 @@ a:hover { text-decoration: underline; }
 }
 
 .stats-list-title {
-  position: relative;
-  display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 12px;
 }
 
 .stats-list-title-copy {
@@ -827,10 +827,16 @@ a:hover { text-decoration: underline; }
   outline-offset: 2px;
 }
 
+.stats-help {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
 .stats-definitions {
   position: absolute;
   top: calc(100% + 10px);
-  left: 0;
+  right: 0;
   z-index: 5;
   width: min(430px, calc(100vw - 32px));
   padding: 18px;
@@ -888,6 +894,12 @@ a:hover { text-decoration: underline; }
 .stats-definitions dd {
   margin: 0;
   line-height: 1.45;
+}
+
+.stats-definitions-note {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
 }
 
 .stats-sort {
@@ -1061,9 +1073,8 @@ a:hover { text-decoration: underline; }
     gap: 12px;
   }
 
-  .stats-list-title {
-    width: 100%;
-    align-items: flex-start;
+  .stats-header {
+    padding-top: 48px;
   }
 
   .stats-sort {
