@@ -1,7 +1,15 @@
-import { ArrowDownUp, ChartNoAxesCombined, CircleQuestionMark, X } from 'lucide-solid';
+import { ArrowDown, ArrowDownUp, ArrowUp, ChartNoAxesCombined, CircleQuestionMark, X } from 'lucide-solid';
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useApp } from '../state';
-import { loadStats, sortFeedStats, type StatsSort } from '../stats/service';
+import {
+  DEFAULT_STATS_SORT,
+  defaultStatsSortDirection,
+  loadStats,
+  sortFeedStats,
+  type StatsSort,
+  type StatsSortColumn,
+  type StatsSortDirection,
+} from '../stats/service';
 
 const numberFormat = new Intl.NumberFormat();
 
@@ -21,12 +29,53 @@ function formatIndex(value: number | null): string {
   return value == null ? 'Not enough data' : `${value.toFixed(1)}x`;
 }
 
+interface SortColumn {
+  column: StatsSortColumn;
+  label: string;
+}
+
+const sortColumns: SortColumn[] = [
+  { column: 'title', label: 'Feed' },
+  { column: 'totalSeen', label: 'Articles' },
+  { column: 'readOnce', label: 'Read' },
+  { column: 'readRate', label: 'Rate' },
+  { column: 'expectedReads', label: 'Expected' },
+  { column: 'readIndex', label: 'Preference' },
+];
+
+function directionLabel(direction: StatsSortDirection): string {
+  return direction === 'asc' ? 'ascending' : 'descending';
+}
+
 export function Stats() {
   const ctx = useApp();
-  const [sort, setSort] = createSignal<StatsSort>('readOnce');
+  const sort = createMemo<StatsSort>(() => ctx.settings().statsSort ?? DEFAULT_STATS_SORT);
   const [definitionsOpen, setDefinitionsOpen] = createSignal(false);
   let helpButton: HTMLButtonElement | undefined;
   let definitionsPanel: HTMLDivElement | undefined;
+
+  const isActiveSortColumn = (column: StatsSortColumn) => sort().column === column;
+  const saveSort = (next: StatsSort) => void ctx.saveSettingsPatch({ statsSort: next });
+  const selectSortColumn = (column: StatsSortColumn) => {
+    const current = sort();
+    const direction = current.column === column ? current.direction : defaultStatsSortDirection(column);
+    saveSort({ column, direction });
+  };
+  const toggleSortColumn = (column: StatsSortColumn) => {
+    const current = sort();
+    if (current.column !== column) {
+      selectSortColumn(column);
+      return;
+    }
+    saveSort({ column, direction: current.direction === 'asc' ? 'desc' : 'asc' });
+  };
+  const selectSortDirection = (direction: StatsSortDirection) => {
+    saveSort({ column: sort().column, direction });
+  };
+  const sortButtonLabel = (column: SortColumn) => {
+    if (!isActiveSortColumn(column.column)) return `Sort by ${column.label}`;
+    return `Sort by ${column.label}, currently ${directionLabel(sort().direction)}`;
+  };
 
   const closeDefinitions = () => {
     setDefinitionsOpen(false);
@@ -186,26 +235,58 @@ export function Stats() {
                         <span>{data().feeds.length} current subscriptions</span>
                       </div>
                     </div>
-                    <label class="stats-sort">
-                      <ArrowDownUp size={14} />
-                      <span class="sr-only">Sort feeds</span>
-                      <select value={sort()} onChange={(event) => setSort(event.currentTarget.value as StatsSort)}>
-                        <option value="readOnce">Most read</option>
-                        <option value="readRate">Highest rate</option>
-                        <option value="backlog">Most not read yet</option>
+                    <div class="stats-mobile-sort" role="group" aria-label="Sort feed statistics">
+                      <ArrowDownUp size={14} aria-hidden="true" />
+                      <span>Sort by</span>
+                      <select
+                        aria-label="Stats sort column"
+                        value={sort().column}
+                        onChange={(event) => selectSortColumn(event.currentTarget.value as StatsSortColumn)}
+                      >
+                        <For each={sortColumns}>
+                          {(column) => <option value={column.column}>{column.label}</option>}
+                        </For>
                       </select>
-                    </label>
+                      <select
+                        aria-label="Stats sort direction"
+                        value={sort().direction}
+                        onChange={(event) => selectSortDirection(event.currentTarget.value as StatsSortDirection)}
+                      >
+                        <option value="asc">Ascending</option>
+                        <option value="desc">Descending</option>
+                      </select>
+                    </div>
                   </div>
 
                   <Show when={rows().length > 0} fallback={<div class="stats-message stats-message-inline">Subscribe to a feed to start building a reading history.</div>}>
                     <div class="stats-table" role="table" aria-label="Reading history by feed">
                       <div class="stats-table-head" role="row">
-                        <span role="columnheader">Feed</span>
-                        <span role="columnheader">Articles</span>
-                        <span role="columnheader">Read</span>
-                        <span role="columnheader">Rate</span>
-                        <span role="columnheader">Expected</span>
-                        <span role="columnheader">Preference</span>
+                        <For each={sortColumns}>
+                          {(column) => (
+                            <span
+                              role="columnheader"
+                              aria-sort={isActiveSortColumn(column.column)
+                                ? sort().direction === 'asc' ? 'ascending' : 'descending'
+                                : 'none'}
+                            >
+                              <button
+                                class="stats-column-sort"
+                                classList={{ active: isActiveSortColumn(column.column) }}
+                                type="button"
+                                data-sort-column={column.column}
+                                aria-label={sortButtonLabel(column)}
+                                onClick={() => toggleSortColumn(column.column)}
+                              >
+                                <span>{column.label}</span>
+                                <Show when={isActiveSortColumn(column.column)}>
+                                  {sort().direction === 'asc'
+                                    ? <ArrowUp size={12} aria-hidden="true" />
+                                    : <ArrowDown size={12} aria-hidden="true" />}
+                                </Show>
+                              </button>
+                            </span>
+                          )}
+                        </For>
                       </div>
                       <For each={rows()}>
                         {(row) => (

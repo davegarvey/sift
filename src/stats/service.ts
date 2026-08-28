@@ -1,8 +1,10 @@
 import { listFeeds } from '../db/feeds';
 import { listFeedStats } from '../db/stats';
-import type { Feed, FeedStats } from '../db/types';
+import { DEFAULT_STATS_SORT, type Feed, type FeedStats, type StatsSortColumn, type StatsSortDirection, type StatsSortPreference } from '../db/types';
 
-export type StatsSort = 'readOnce' | 'readRate' | 'backlog';
+export type StatsSort = StatsSortPreference;
+export type { StatsSortColumn, StatsSortDirection };
+export { DEFAULT_STATS_SORT };
 
 export interface FeedStatsView {
   feedId: string;
@@ -57,12 +59,42 @@ export function deriveFeedStats(
   };
 }
 
+function compareTitles(a: FeedStatsView, b: FeedStatsView): number {
+  return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+}
+
+function compareNumbers(a: number | null, b: number | null, direction: StatsSortDirection): number {
+  if (a == null || b == null) {
+    if (a == null && b == null) return 0;
+    return a == null ? 1 : -1;
+  }
+  if (a === b) return 0;
+  const comparison = a < b ? -1 : 1;
+  return direction === 'asc' ? comparison : -comparison;
+}
+
+function numericSortValue(row: FeedStatsView, column: Exclude<StatsSortColumn, 'title'>): number | null {
+  switch (column) {
+    case 'totalSeen': return row.totalSeen;
+    case 'readOnce': return row.readOnce;
+    case 'readRate': return row.readRate;
+    case 'expectedReads': return row.expectedReads;
+    case 'readIndex': return row.readIndex;
+  }
+}
+
+export function defaultStatsSortDirection(column: StatsSortColumn): StatsSortDirection {
+  return column === 'title' ? 'asc' : 'desc';
+}
+
 export function sortFeedStats(rows: readonly FeedStatsView[], sort: StatsSort): FeedStatsView[] {
   return [...rows].sort((a, b) => {
-    const av = sort === 'readOnce' ? a.readOnce : sort === 'readRate' ? a.readRate ?? -1 : a.backlog;
-    const bv = sort === 'readOnce' ? b.readOnce : sort === 'readRate' ? b.readRate ?? -1 : b.backlog;
-    if (bv !== av) return bv - av;
-    return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    if (sort.column === 'title') {
+      const comparison = compareTitles(a, b);
+      return sort.direction === 'asc' ? comparison : -comparison;
+    }
+    const comparison = compareNumbers(numericSortValue(a, sort.column), numericSortValue(b, sort.column), sort.direction);
+    return comparison === 0 ? compareTitles(a, b) : comparison;
   });
 }
 

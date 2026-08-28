@@ -6,20 +6,42 @@ import { listItems, listItemsByFeed, listStarred, markRead, toggleStar as dbTogg
 import type { Feed, Item } from './db/types';
 import { itemUrl, parseItemIdFromUrl, hashId, isStatsPath } from './routing';
 import { getMeta, setMeta } from './db/meta';
-import { DEFAULT_SETTINGS, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
-import type { AppSettings, ThemePreference } from './db/types';
+import { DEFAULT_SETTINGS, DEFAULT_STATS_SORT, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
+import type { AppSettings, StatsSortColumn, StatsSortDirection, StatsSortPreference, ThemePreference } from './db/types';
 
 const SETTINGS_KEY = 'settings';
+
+function isStatsSortColumn(value: unknown): value is StatsSortColumn {
+  return value === 'title'
+    || value === 'totalSeen'
+    || value === 'readOnce'
+    || value === 'readRate'
+    || value === 'expectedReads'
+    || value === 'readIndex';
+}
+
+function isStatsSortDirection(value: unknown): value is StatsSortDirection {
+  return value === 'asc' || value === 'desc';
+}
+
+function normalizeStatsSort(value: unknown): StatsSortPreference {
+  if (typeof value !== 'object' || value === null) return DEFAULT_STATS_SORT;
+  const candidate = value as { column?: unknown; direction?: unknown };
+  if (!isStatsSortColumn(candidate.column) || !isStatsSortDirection(candidate.direction)) return DEFAULT_STATS_SORT;
+  return { column: candidate.column, direction: candidate.direction };
+}
 
 async function getSettings(): Promise<AppSettings> {
   const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
   const sidebarWidth = typeof stored.sidebarWidth === 'number' && Number.isFinite(stored.sidebarWidth)
     ? stored.sidebarWidth
     : SIDEBAR_WIDTH_DEFAULT;
+  const statsSort = normalizeStatsSort(stored.statsSort);
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
     sidebarWidth: Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, sidebarWidth)),
+    statsSort,
   };
 }
 
@@ -166,6 +188,7 @@ export const AppProvider: ParentComponent = (props) => {
     lastRefreshRunAt: null,
     lastFeedUrl: null,
     mcpEnabled: false,
+    statsSort: { ...DEFAULT_STATS_SORT },
   });
 
   const [mcpAvailable, setMcpAvailable] = createSignal(false);

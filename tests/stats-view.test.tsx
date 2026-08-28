@@ -1,11 +1,13 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
+import { createSignal } from 'solid-js';
 import { getDb } from '../src/db/open';
 import { upsertFeed } from '../src/db/feeds';
 import { upsertFeedStats } from '../src/db/stats';
 import { Stats } from '../src/components/Stats';
 import type { AppContext } from '../src/state';
+import type { AppSettings, StatsSortPreference } from '../src/db/types';
 
 const contextRef = vi.hoisted(() => ({ value: null as AppContext | null }));
 
@@ -49,6 +51,8 @@ describe('stats view', () => {
       hydrated: () => true,
       statsRevision: () => 0,
       syncKey: () => null,
+      settings: () => ({ statsSort: { column: 'readOnce', direction: 'desc' } }),
+      saveSettingsPatch: async () => {},
     } as unknown as AppContext;
     const dispose = render(() => <Stats />, document.body);
     await vi.waitFor(() => expect(document.body.textContent).toContain('View Feed'));
@@ -99,6 +103,8 @@ describe('stats view', () => {
       hydrated: () => true,
       statsRevision: () => 0,
       syncKey: () => 'sync-key',
+      settings: () => ({ statsSort: { column: 'readOnce', direction: 'desc' } }),
+      saveSettingsPatch: async () => {},
     } as unknown as AppContext;
     const dispose = render(() => <Stats />, document.body);
     await vi.waitFor(() => expect(document.body.textContent).toContain('Synced Feed'));
@@ -111,5 +117,84 @@ describe('stats view', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(help?.getAttribute('aria-expanded')).toBe('false');
     dispose();
+  });
+
+  it('sorts from headings and restores the local preference', async () => {
+    const first = {
+      id: 'first-view-feed',
+      url: 'https://example.com/first-view.xml',
+      title: 'First View Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    };
+    const second = {
+      id: 'second-view-feed',
+      url: 'https://example.com/second-view.xml',
+      title: 'Second View Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    };
+    await upsertFeed(first);
+    await upsertFeed(second);
+    await upsertFeedStats({
+      feedId: first.id,
+      totalSeen: 100,
+      readOnce: 20,
+      serverReadOnce: 0,
+      title: first.title,
+      url: first.url,
+    });
+    await upsertFeedStats({
+      feedId: second.id,
+      totalSeen: 10,
+      readOnce: 1,
+      serverReadOnce: 0,
+      title: second.title,
+      url: second.url,
+    });
+
+    const [savedSort, setSavedSort] = createSignal<StatsSortPreference>({ column: 'readOnce', direction: 'desc' });
+    const saveSettingsPatch = vi.fn(async (patch: Partial<AppSettings>) => {
+      if (patch.statsSort) setSavedSort(patch.statsSort);
+    });
+    contextRef.value = {
+      hydrated: () => true,
+      statsRevision: () => 0,
+      syncKey: () => null,
+      settings: () => ({ statsSort: savedSort() }),
+      saveSettingsPatch,
+    } as unknown as AppContext;
+
+    const dispose = render(() => <Stats />, document.body);
+    await vi.waitFor(() => expect(document.querySelectorAll('.stats-row')).toHaveLength(2));
+
+    const feedIds = () => [...document.querySelectorAll<HTMLElement>('.stats-feed strong')].map((element) => element.textContent);
+    expect(feedIds()).toEqual(['First View Feed', 'Second View Feed']);
+    const readButton = document.querySelector<HTMLButtonElement>('[data-sort-column="readOnce"]');
+    const rateButton = document.querySelector<HTMLButtonElement>('[data-sort-column="readRate"]');
+    expect(readButton?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    rateButton?.click();
+    expect(feedIds()).toEqual(['First View Feed', 'Second View Feed']);
+    expect(saveSettingsPatch).toHaveBeenLastCalledWith({ statsSort: { column: 'readRate', direction: 'desc' } });
+    expect(rateButton?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    rateButton?.click();
+    expect(feedIds()).toEqual(['Second View Feed', 'First View Feed']);
+    expect(saveSettingsPatch).toHaveBeenLastCalledWith({ statsSort: { column: 'readRate', direction: 'asc' } });
+    expect(rateButton?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
+
+    const mobileColumn = document.querySelector('[aria-label="Stats sort column"]') as HTMLSelectElement | null;
+    const mobileDirection = document.querySelector('[aria-label="Stats sort direction"]') as HTMLSelectElement | null;
+    expect(mobileColumn?.value).toBe('readRate');
+    expect(mobileDirection?.value).toBe('asc');
+    mobileColumn!.value = 'title';
+    mobileColumn!.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(savedSort()).toEqual({ column: 'title', direction: 'asc' });
+
+    dispose();
+    document.body.innerHTML = '';
+    const secondDispose = render(() => <Stats />, document.body);
+    await vi.waitFor(() => expect(document.querySelector('[data-sort-column="title"]')?.parentElement?.getAttribute('aria-sort')).toBe('ascending'));
+    expect(feedIds()).toEqual(['First View Feed', 'Second View Feed']);
+    secondDispose();
   });
 });
