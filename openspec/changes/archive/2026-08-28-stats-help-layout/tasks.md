@@ -7,4 +7,4 @@
 
 - [x] 2.1 Add stats view assertions for shared kicker/help-row placement and preserved explanation behavior.
 - [x] 2.2 Run strict OpenSpec validation, typecheck, lint, tests, and build.
-- [ ] 2.3 Review the combined PR diff and update the PR description.
+- [x] 2.3 Review the combined PR diff and update the PR description.
