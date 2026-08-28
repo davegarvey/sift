@@ -82,7 +82,7 @@ export function Stats() {
             <div class="stats-kicker"><ChartNoAxesCombined size={16} /> Stats</div>
             <h1>Your reading habits</h1>
             <p>
-              See which feeds you come back to most, and how much of what they publish you get through.
+              Find your favourite feeds and see how much you read from each.
               <Show when={!approximate()}>
                 {' '}Your stats stay on this device and work offline.
               </Show>
