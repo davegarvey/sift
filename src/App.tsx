@@ -1,6 +1,6 @@
 import { onMount, onCleanup, Show, type JSX } from 'solid-js';
 import { AppProvider, useApp } from './state';
-import { hashId, parseItemIdFromUrl } from './routing';
+import { hashId, isStatsPath, parseItemIdFromUrl } from './routing';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { River } from './components/River';
@@ -14,6 +14,7 @@ import { AgentsModal } from './components/AgentsModal';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { ConfirmModal } from './components/ConfirmModal';
 import { FeedEditorModal } from './components/FeedEditorModal';
+import { Stats } from './components/Stats';
 import { SIDEBAR_WIDTH_DEFAULT } from './db/types';
 import './styles.css';
 
@@ -74,6 +75,7 @@ function Shell() {
       }
       return;
     }
+    if (ctx.state.view === 'stats') return;
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
       e.preventDefault();
       ctx.openModal({ kind: 'palette' });
@@ -120,6 +122,9 @@ function Shell() {
     const path = window.location.pathname;
     if (path === '/') {
       if (ctx.state.view === 'reading') ctx.closeReading();
+      else if (ctx.state.view === 'stats') ctx.setState({ view: 'river' });
+    } else if (isStatsPath(path)) {
+      ctx.setState({ view: 'stats', currentItem: null, sidebarOpen: false, focusedIndex: -1 });
     } else {
       const hash = parseItemIdFromUrl();
       if (hash) {
@@ -161,6 +166,7 @@ function Shell() {
   });
 
   const reading = () => ctx.state.view === 'reading';
+  const stats = () => ctx.state.view === 'stats';
   const sidebarHiddenAttr = () => String(ctx.state.sidebarHiddenDesktop && !reading());
   const sidebarOpenAttr = () => String(ctx.state.sidebarOpen);
 
@@ -173,13 +179,15 @@ function Shell() {
       data-sidebar-open={sidebarOpenAttr()}
     >
       <TopBar />
-      <Show when={!reading()}>
+       <Show when={!reading()}>
         <Sidebar onNavigate={() => ctx.setState({ sidebarOpen: false })} />
         <div
           class="sidebar-backdrop"
           onClick={() => ctx.setState({ sidebarOpen: false })}
         />
-        <River />
+         <Show when={!stats()} fallback={<Stats />}>
+           <River />
+         </Show>
       </Show>
       <Show when={reading()}>
         <ReadingView />

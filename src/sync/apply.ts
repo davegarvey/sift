@@ -180,7 +180,7 @@ export async function applyRemoteState(payload: RemotePayload, serverOffset = 0)
     const targetRead = f.read === 1;
     const targetStarred = f.starred === 1;
     if (localItem.read !== targetRead || localItem.starred !== targetStarred) {
-      await updateItem(f.id, { read: targetRead, starred: targetStarred });
+      await updateItem(f.id, { read: targetRead, starred: targetStarred }, { trackReadOnce: false });
     }
   }
 }

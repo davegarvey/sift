@@ -151,6 +151,26 @@ describe('agent tokens: lifecycle (D1)', () => {
       const pull = (await pullRes.json()) as { feeds: Array<Record<string, unknown>> };
       expect(pull.feeds.length).toBe(1);
 
+      const itemId = `${encodeURIComponent('https://ex.com/agent-feed')}::article-1`;
+      const readRes = await mf.dispatchFetch('http://localhost/sync/push', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flags: [{ itemId, feedId: 'https://ex.com/agent-feed', read: 1 }] }),
+      });
+      expect(readRes.status).toBe(204);
+      const statsRes = await mf.dispatchFetch('http://localhost/sync/stats/pull?since=0', {
+        headers: { 'X-Sync-Key': token },
+      });
+      expect(statsRes.status).toBe(200);
+      const stats = await statsRes.json() as { stats: Array<Record<string, unknown>> };
+      expect(stats.stats.find((row) => row.feed_id === 'https://ex.com/agent-feed')?.read_once).toBe(1);
+      const statsWrite = await mf.dispatchFetch('http://localhost/sync/stats/push', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stats: [{ feedId: 'https://ex.com/agent-feed', totalSeen: 10 }] }),
+      });
+      expect(statsWrite.status).toBe(401);
+
       // Master lists tokens (metadata only).
       const listRes = await mf.dispatchFetch('http://localhost/sync/tokens', {
         headers: { 'X-Sync-Key': key },

@@ -5,7 +5,7 @@ import { getDb, upgradeDb } from '../src/db/open';
 import { parseFeed, parsedToItems } from '../src/feeds/parse';
 import { insertOrUpdateItem, bulkUpsertItems, getItem, listUnreadAcrossFeeds, listStarred } from '../src/db/items';
 import { relativeTime, humanRelativeTime } from '../src/util/time';
-import { DB_NAME, DB_VERSION, type Feed, type Item, type Meta } from '../src/db/types';
+import { DB_NAME, DB_VERSION, type Feed, type FeedStats, type Item, type Meta, type ReadMarker } from '../src/db/types';
 import type { ItemFlag } from '../src/db/flags';
 
 const NOW = Date.now();
@@ -124,7 +124,7 @@ describe('merge: dates are never re-stamped', () => {
   });
 });
 
-describe('migration v7', () => {
+describe('migration v8', () => {
   // Structurally identical to open.ts's RssReaderDB so `upgradeDb` is
   // directly assignable as the upgrade callback for the seeded database.
   interface SeedSchema extends DBSchema {
@@ -132,6 +132,8 @@ describe('migration v7', () => {
     items: { key: string; value: Item; indexes: { 'by-feed-published': [string, number]; 'by-guid': string; 'by-published': number } };
     itemFlags: { key: string; value: ItemFlag; indexes: { 'by-read': number; 'by-starred': number; 'by-feed-id': string } };
     meta: { key: string; value: Meta };
+    feedStats: { key: string; value: FeedStats; indexes: {} };
+    readMarkers: { key: string; value: ReadMarker; indexes: { 'by-feed-id': string; 'by-acknowledged': number } };
   }
 
   const seedUpgrade = (version: number) => (db: IDBPDatabase<SeedSchema>) => {
@@ -161,10 +163,11 @@ describe('migration v7', () => {
     await db.put('items', makeItem({ guid: 'future', publishedAt: FUTURE, updatedAt: FUTURE, createdAt: FIRST_SEEN }));
     await db.put('items', { ...makeItem({ guid: 'flagless' }), dateFallback: undefined });
     await db.put('items', makeItem({ guid: 'valid', publishedAt: PAST, updatedAt: PAST, dateFallback: undefined }));
+    await db.put('items', makeItem({ guid: 'opened', firstOpenedAt: FIRST_SEEN }));
     const noCreatedAt = makeItem({ guid: 'nocreated', publishedAt: FUTURE, updatedAt: FUTURE });
     delete (noCreatedAt as Partial<Item>).createdAt;
     await db.put('items', noCreatedAt);
-    await db.put('itemFlags', { id: 'f1::valid', feedId: 'f1', read: 0, starred: 0 });
+    await db.put('itemFlags', { id: 'f1::valid', feedId: 'f1', read: 1, starred: 0 });
     await db.put('meta', { key: 'flagsBackfilled', value: true });
     db.close();
   }
@@ -193,10 +196,15 @@ describe('migration v7', () => {
     expect(backfilled.starred).toBe(0);
 
     expect(await db.get('meta', 'flagsBackfilled')).toBeUndefined();
+    const stats = await db.get('feedStats', 'f1');
+    expect(stats?.totalSeen).toBe(5);
+    expect(stats?.readOnce).toBe(2);
+    expect(await db.get('readMarkers', 'f1::valid')).toMatchObject({ acknowledged: 0 });
+    expect(await db.get('readMarkers', 'f1::opened')).toMatchObject({ acknowledged: 0 });
     db.close();
   });
 
-  it('upgrades a v5 database through the full chain to v7', async () => {
+  it('upgrades a v5 database through the full chain to v8', async () => {
     const name = `${DB_NAME}-mig-v5`;
     await seed(5, name);
     const db = await openDB<SeedSchema>(name, DB_VERSION, { upgrade: upgradeDb });
@@ -206,16 +214,20 @@ describe('migration v7', () => {
     const future = (await db.get('items', 'f1::future'))!;
     expect(future.publishedAt).toBe(FIRST_SEEN);
     expect(future.dateFallback).toBe(true);
+    expect(db.objectStoreNames.contains('feedStats')).toBe(true);
+    expect(db.objectStoreNames.contains('readMarkers')).toBe(true);
     db.close();
   });
 
-  it('fresh install at v7 runs the whole chain cleanly', async () => {
+  it('fresh install at v8 runs the whole chain cleanly', async () => {
     const name = `${DB_NAME}-mig-fresh`;
     const db = await openDB<SeedSchema>(name, DB_VERSION, { upgrade: upgradeDb });
     expect(db.objectStoreNames.contains('feeds')).toBe(true);
     expect(db.objectStoreNames.contains('items')).toBe(true);
     expect(db.objectStoreNames.contains('itemFlags')).toBe(true);
     expect(db.objectStoreNames.contains('meta')).toBe(true);
+    expect(db.objectStoreNames.contains('feedStats')).toBe(true);
+    expect(db.objectStoreNames.contains('readMarkers')).toBe(true);
     db.close();
   });
 });
@@ -227,6 +239,8 @@ describe('listings without the meta flag', () => {
     await db.clear('items');
     await db.clear('itemFlags');
     await db.clear('meta');
+    await db.clear('feedStats');
+    await db.clear('readMarkers');
   });
 
   it('listUnreadAcrossFeeds and listStarred use the flags store', async () => {

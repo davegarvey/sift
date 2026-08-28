@@ -14,6 +14,8 @@ import {
   RETRY_AFTER_CLAMP_MS,
 } from '../db/types';
 import { isIdle } from '../util/idle';
+import { ensureFeedStats, getFeedStats } from '../db/stats';
+import { enqueueStatsIfSync } from '../sync/queue';
 
 const TICK_MS = 5 * 60 * 1000;
 
@@ -171,7 +173,7 @@ async function refreshFeedOnce(feed: Feed): Promise<void> {
       feed.learnedIntervalMs > DEFAULT_LEARNED_INTERVAL_MS
         ? DEFAULT_LEARNED_INTERVAL_MS
         : adaptInterval(feed, items, lastItemPublishedAt);
-    await upsertFeed({
+    const updatedFeed: Feed = {
       ...feed,
       title: feed.title || parsed.title,
       htmlUrl: feed.htmlUrl ?? parsed.htmlUrl,
@@ -183,6 +185,15 @@ async function refreshFeedOnce(feed: Feed): Promise<void> {
       learnedIntervalMs,
       lastError: null,
       refreshError: null,
+    };
+    await upsertFeed(updatedFeed);
+    await ensureFeedStats(updatedFeed);
+    const stats = await getFeedStats(updatedFeed.id);
+    await enqueueStatsIfSync({
+      feedId: updatedFeed.id,
+      totalSeen: stats?.totalSeen ?? 0,
+      feedUrl: updatedFeed.url,
+      title: updatedFeed.title,
     });
     clearFeedError(feed);
   } finally {

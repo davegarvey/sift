@@ -489,6 +489,22 @@ async function push(mf: Miniflare, key: string, body: unknown): Promise<number> 
   return res.status;
 }
 
+async function pushStats(mf: Miniflare, key: string, body: unknown) {
+  return mf.dispatchFetch('http://localhost/sync/stats/push', {
+    method: 'POST',
+    headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function pullStats(mf: Miniflare, key: string, since = 0): Promise<{ serverTime: number; stats: Array<Record<string, unknown>>; markers: Array<Record<string, unknown>> }> {
+  const res = await mf.dispatchFetch(`http://localhost/sync/stats/pull?since=${since}`, {
+    headers: { 'X-Sync-Key': key },
+  });
+  expect(res.status).toBe(200);
+  return await res.json() as { serverTime: number; stats: Array<Record<string, unknown>>; markers: Array<Record<string, unknown>> };
+}
+
 async function pullFeeds(mf: Miniflare, key: string): Promise<Array<Record<string, unknown>>> {
   const res = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
     headers: { 'X-Sync-Key': key },
@@ -731,6 +747,75 @@ describe('sync D1 tombstone semantics', () => {
       const rows = feeds.filter((f) => f.feed_url === url);
       expect(rows.length).toBe(1);
       expect(rows[0].deleted).toBe(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+});
+
+describe('sync D1 reading statistics', () => {
+  it('deduplicates current reads and preserves the lifetime marker across unread', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'stats-read---');
+      const feedId = 'stats-feed';
+      const itemId = `${encodeURIComponent(feedId)}::article-1`;
+      expect(await push(mf, key, { feeds: [feedPayload(feedId, 'https://example.com/stats')] })).toBe(204);
+      expect(await push(mf, key, { flags: [{ itemId, feedId, read: 1 }] })).toBe(204);
+      expect(await push(mf, key, { flags: [{ itemId, feedId, read: 0 }] })).toBe(204);
+      expect(await push(mf, key, { flags: [{ itemId, feedId, read: 1 }] })).toBe(204);
+      const stats = await pullStats(mf, key);
+      expect(stats.stats.find((row) => row.feed_id === feedId)?.read_once).toBe(1);
+      expect(stats.markers.filter((row) => row.item_id === itemId).length).toBeGreaterThan(0);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('accepts idempotent historical markers and max volume snapshots', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'stats-marker-');
+      const feedId = 'historical-feed';
+      const itemId = `${encodeURIComponent(feedId)}::article-1`;
+      const first = await pushStats(mf, key, {
+        stats: [{ feedId, totalSeen: 10, feedUrl: 'https://example.com/history', title: 'History' }],
+        markers: [{ itemId, feedId }],
+      });
+      expect(first.status).toBe(200);
+      const firstBody = await first.json() as { acknowledged: string[]; stats: Array<Record<string, unknown>> };
+      expect(firstBody.acknowledged).toEqual([itemId]);
+      expect(firstBody.stats[0].read_once).toBe(1);
+      const second = await pushStats(mf, key, {
+        stats: [{ feedId, totalSeen: 5 }],
+        markers: [{ itemId, feedId }],
+      });
+      expect(second.status).toBe(200);
+      const secondBody = await second.json() as { stats: Array<Record<string, unknown>> };
+      expect(secondBody.stats[0].total_seen).toBe(10);
+      expect(secondBody.stats[0].read_once).toBe(1);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('keeps statistics on a separate cursor and rejects stats writes from agents', async () => {
+    const mf = await createMf();
+    try {
+      const key = await setupKey(mf, 'stats-cursor-');
+      const feedId = 'cursor-feed';
+      await pushStats(mf, key, { stats: [{ feedId, totalSeen: 2 }] });
+      const stats = await pullStats(mf, key);
+      const ordinary = await mf.dispatchFetch('http://localhost/sync/pull?since=0', { headers: { 'X-Sync-Key': key } });
+      const ordinaryBody = await ordinary.json() as { flags: Array<Record<string, unknown>> };
+      expect(ordinaryBody.flags).toEqual([]);
+      expect(stats.stats.find((row) => row.feed_id === feedId)?.total_seen).toBe(2);
+      const invalid = await mf.dispatchFetch('http://localhost/sync/stats/push', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': 't'.padEnd(23, 'x'), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stats: [{ feedId, totalSeen: 3 }] }),
+      });
+      expect(invalid.status).toBe(401);
     } finally {
       await mf.dispose();
     }

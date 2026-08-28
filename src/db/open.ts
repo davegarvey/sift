@@ -1,8 +1,8 @@
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction, type StoreNames } from 'idb';
-import { DB_NAME, DB_VERSION, type Feed, type Item, type Meta } from './types';
+import { DB_NAME, DB_VERSION, type Feed, type FeedStats, type Item, type Meta, type ReadMarker } from './types';
 import type { ItemFlag } from './flags';
 
-interface RssReaderDB extends DBSchema {
+interface BaseRssReaderDB extends DBSchema {
   feeds: {
     key: string;
     value: Feed;
@@ -34,6 +34,22 @@ interface RssReaderDB extends DBSchema {
   };
 }
 
+interface RssReaderDB extends BaseRssReaderDB {
+  feedStats: {
+    key: string;
+    value: FeedStats;
+    indexes: {};
+  };
+  readMarkers: {
+    key: string;
+    value: ReadMarker;
+    indexes: {
+      'by-feed-id': string;
+      'by-acknowledged': number;
+    };
+  };
+}
+
 let dbPromise: Promise<IDBPDatabase<RssReaderDB>> | null = null;
 
 /**
@@ -42,12 +58,14 @@ let dbPromise: Promise<IDBPDatabase<RssReaderDB>> | null = null;
  * their own transactions and throw while a versionchange is in flight).
  * Exported so tests can drive migrations from any old version.
  */
-export async function upgradeDb(
-  db: IDBPDatabase<RssReaderDB>,
+export async function upgradeDb<T extends DBSchema>(
+  legacyDb: IDBPDatabase<T>,
   _oldVersion: number,
   _newVersion: number,
-  transaction: IDBPTransaction<RssReaderDB, StoreNames<RssReaderDB>[], 'versionchange'>,
+  legacyTransaction: IDBPTransaction<T, StoreNames<T>[], 'versionchange'>,
 ): Promise<void> {
+  const db = legacyDb as unknown as IDBPDatabase<RssReaderDB>;
+  const transaction = legacyTransaction as unknown as IDBPTransaction<RssReaderDB, StoreNames<RssReaderDB>[], 'versionchange'>;
   if (!db.objectStoreNames.contains('feeds')) {
     db.createObjectStore('feeds', { keyPath: 'url' });
   }
@@ -183,6 +201,63 @@ export async function upgradeDb(
 
     // Drop the stale backfill marker — the flags backfill is now versioned.
     await metaStore.delete('flagsBackfilled');
+  }
+  if (_oldVersion < 8) {
+    const feedStatsStore = db.objectStoreNames.contains('feedStats')
+      ? transaction.objectStore('feedStats')
+      : db.createObjectStore('feedStats', { keyPath: 'feedId' });
+    const readMarkersStore = db.objectStoreNames.contains('readMarkers')
+      ? transaction.objectStore('readMarkers')
+      : db.createObjectStore('readMarkers', { keyPath: 'id' });
+    if (!readMarkersStore.indexNames.contains('by-feed-id')) {
+      readMarkersStore.createIndex('by-feed-id', 'feedId');
+    }
+    if (!readMarkersStore.indexNames.contains('by-acknowledged')) {
+      readMarkersStore.createIndex('by-acknowledged', 'acknowledged');
+    }
+
+    const feedStats = new Map<string, FeedStats>();
+    const feedsStore = transaction.objectStore('feeds');
+    let feedCursor = await feedsStore.openCursor();
+    while (feedCursor) {
+      const feed = feedCursor.value as Feed;
+      feedStats.set(feed.id, {
+        feedId: feed.id,
+        totalSeen: 0,
+        readOnce: 0,
+        serverReadOnce: 0,
+        title: feed.title,
+        url: feed.url,
+      });
+      feedCursor = await feedCursor.continue();
+    }
+
+    const flagsStore = transaction.objectStore('itemFlags');
+    const itemsStore = transaction.objectStore('items');
+    let itemCursor = await itemsStore.openCursor();
+    while (itemCursor) {
+      const item = itemCursor.value as Item;
+      const stats = feedStats.get(item.feedId) ?? {
+        feedId: item.feedId,
+        totalSeen: 0,
+        readOnce: 0,
+        serverReadOnce: 0,
+        title: '',
+        url: '',
+      };
+      stats.totalSeen += 1;
+      const flag = await flagsStore.get(item.id);
+      const seededRead = item.firstOpenedAt != null || flag?.read === 1 || item.read;
+      if (seededRead) {
+        await readMarkersStore.put({ id: item.id, feedId: item.feedId, acknowledged: 0 });
+        stats.readOnce += 1;
+      }
+      feedStats.set(item.feedId, stats);
+      itemCursor = await itemCursor.continue();
+    }
+    for (const stats of feedStats.values()) {
+      await feedStatsStore.put(stats);
+    }
   }
 }
 

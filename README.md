@@ -6,8 +6,8 @@ uses a short-lived feed response cache to reduce duplicate upstream requests,
 serves the static app shell, and optionally provides multi-device sync and AI
 agent integration.
 
-- **Local-only**: subscriptions, items, read/starred state live in IndexedDB.
-- **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based).
+- **Local-only**: subscriptions, items, read/starred state, and lifetime reading statistics live in IndexedDB.
+- **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based), including exact group read-once deduplication and approximate observed volume.
 - **AI agent integration**: built-in MCP server for AI tool access to feeds.
 - **Portable**: import/export your subscription list as OPML.
 - **Offline**: installable PWA; works offline against cached data.
@@ -80,9 +80,13 @@ log upstream URLs anywhere persistent.
 
 The `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged
-or exposed to third parties. Agent tokens are stored in D1 as SHA-256 hashes
-only — the raw token never touches the database — and are revocable from
-Settings.
+or exposed to third parties. Synced lifetime reading statistics contain only
+per-feed aggregate counters and compact per-item `everRead` markers; article
+content and a detailed reading event history are not synchronized. Authorized
+agent pulls can read the same aggregate statistics, while only the master sync
+key can write statistics snapshots or historical markers. Agent tokens are
+stored in D1 as SHA-256 hashes only — the raw token never touches the
+database — and are revocable from Settings.
 
 ## MCP server
 
@@ -156,9 +160,10 @@ them:
   token. The same code works on `GET /sync/pull` as a read-only credential
   for hosted chat agents.
 - Tokens are 23-character credentials starting with `t` — distinct from the
-  master sync key, which never leaves your browser. Tokens can only call
-  `/sync/pull` and `/sync/push`; they cannot mint device codes, register, or
-  manage tokens (a device code would redeem to the master key).
+  master sync key, which never leaves your browser. Tokens can call
+  `/sync/pull`, `/sync/stats/pull`, and `/sync/push`; statistics writes remain
+  master-key-only. They cannot mint device codes, register, or manage tokens
+  (a device code would redeem to the master key).
 - **Revocation**: Settings → Sync → Agents lists every token (by fingerprint)
   with a revoke button. Revocation is immediate and does not affect your
   devices. Regenerating the sync key (Settings → Sync → Regenerate) is the

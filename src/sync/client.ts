@@ -29,6 +29,12 @@ export interface PullPayload {
   flags: unknown[];
 }
 
+export interface StatsPullPayload {
+  serverTime: number;
+  stats: unknown[];
+  markers: unknown[];
+}
+
 export class SyncClientError extends Error {
   constructor(
     message: string,
@@ -234,6 +240,16 @@ export interface PushChunk {
   flags?: unknown[];
 }
 
+export interface StatsPushChunk {
+  stats?: unknown[];
+  markers?: unknown[];
+}
+
+export interface StatsPushResponse {
+  acknowledged: string[];
+  stats: unknown[];
+}
+
 /**
  * Push a chunk. On 413, returns the payload as-is so the caller can split
  * and retry. A 401 is final — a rotated or revoked key is never
@@ -282,6 +298,46 @@ export async function pullSince(since: number): Promise<PullPayload> {
     }
     if (!res.ok) throw new SyncClientError(`Pull failed: ${res.status}`, res.status);
     return (await res.json()) as PullPayload;
+  }, (err) => err instanceof SyncClientError && err.status === 429);
+}
+
+export async function pushStatsChunk(chunk: StatsPushChunk): Promise<StatsPushResponse> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  const res = await fetchWithTimeout(
+    '/sync/stats/push',
+    {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(chunk),
+    },
+    PUSH_TIMEOUT_MS,
+  );
+  if (res.status === 413) throw new SyncClientError('Statistics payload too large', 413);
+  if (res.status === 429) {
+    const ra = Number(res.headers.get('Retry-After') ?? '60');
+    throw new SyncClientError('Statistics push rate-limited', 429, ra);
+  }
+  if (!res.ok) throw new SyncClientError(`Statistics push failed: ${res.status}`, res.status);
+  return (await res.json()) as StatsPushResponse;
+}
+
+export async function pullStatsSince(since: number): Promise<StatsPullPayload> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(
+      `/sync/stats/pull?since=${encodeURIComponent(String(since))}`,
+      { method: 'GET', headers: { 'X-Sync-Key': key } },
+      PULL_TIMEOUT_MS,
+    );
+    if (res.status === 429) {
+      const ra = Number(res.headers.get('Retry-After') ?? '60');
+      await sleep(ra * 1000);
+      throw new SyncClientError('Statistics pull rate-limited', 429, ra);
+    }
+    if (!res.ok) throw new SyncClientError(`Statistics pull failed: ${res.status}`, res.status);
+    return (await res.json()) as StatsPullPayload;
   }, (err) => err instanceof SyncClientError && err.status === 429);
 }
 

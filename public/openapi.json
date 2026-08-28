@@ -3,7 +3,7 @@
   "info": {
     "title": "Sift Sync API",
     "version": "0.49.6",
-    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags) for AI agents and other tools. Agents are first-class sync devices: they authenticate with a scoped, revocable agent token and can read your feeds and change subscriptions.\n\nGet started: open Sift Settings → Sync → Agents → pair an agent, then redeem the 8-character code via POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the X-Sync-Key header.\n\nHosted chat tools (ChatGPT, Claude web) cannot POST or send headers. They can read with the pairing code directly: GET /sync/pull?code=<code> works with no headers and stays valid until the code's 5-minute expiry. To add a feed, such agents propose a link of the form /?intent=add&url=<feed-url> (URL-encoded) — the user clicks it and approves the add in the app; the agent never writes directly.\n\nSecurity notes:\n- Agent tokens can only call GET /sync/pull and POST /sync/push. The register, otp, and tokens endpoints are master-key-only and will reject agent tokens with 401.\n- A token grants read/write of the subscriptions it is bound to. Revoke it anytime from Settings; revocation takes effect immediately. Rotating the sync key orphans all tokens.\n- A pairing code on GET /sync/pull is read-only and expires in 5 minutes; it can appear in chat history — treat it as a short-lived read capability.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
+    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags) and aggregate feed-reading statistics for AI agents and other tools. Agents are first-class sync devices: they authenticate with a scoped, revocable agent token and can read your feeds and change subscriptions.\n\nGet started: open Sift Settings → Sync → Agents → pair an agent, then redeem the 8-character code via POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the X-Sync-Key header.\n\nHosted chat tools (ChatGPT, Claude web) cannot POST or send headers. They can read with the pairing code directly: GET /sync/pull?code=<code> works with no headers and stays valid until the code's 5-minute expiry. To add a feed, such agents propose a link of the form /?intent=add&url=<feed-url> (URL-encoded) — the user clicks it and approves the add in the app; the agent never writes directly.\n\nSecurity notes:\n- Agent tokens can only call GET /sync/pull, GET /sync/stats/pull, and POST /sync/push. Statistics writes are master-key-only.\n- Aggregate statistics contain feed identities, counters, and lifetime-read marker identities only; they do not contain article content or reading-event history.\n- A token grants read/write of the subscriptions it is bound to. Revoke it anytime from Settings; revocation takes effect immediately. Rotating the sync key orphans all tokens.\n- A pairing code on GET /sync/pull or GET /sync/stats/pull is read-only and expires in 5 minutes; it can appear in chat history — treat it as a short-lived read capability.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
     "contact": {
       "name": "Sift"
     }
@@ -58,6 +58,65 @@
         "properties": {
           "feeds": { "type": "array", "items": { "$ref": "#/components/schemas/FeedPatch" } },
           "flags": { "type": "array", "items": { "$ref": "#/components/schemas/FlagPatch" } }
+        }
+      },
+      "StatsPatch": {
+        "type": "object",
+        "description": "An approximate observed-volume snapshot. The server derives readOnce from lifetime-read markers; clients must not send a readOnce value.",
+        "required": ["feedId", "totalSeen"],
+        "properties": {
+          "feedId": { "type": "string" },
+          "totalSeen": { "type": "integer", "minimum": 0, "description": "Observed article volume high-water mark." },
+          "feedUrl": { "type": ["string", "null"] },
+          "title": { "type": ["string", "null"] }
+        }
+      },
+      "ReadMarkerPatch": {
+        "type": "object",
+        "description": "A compact lifetime-read marker for one canonical item identity.",
+        "required": ["itemId", "feedId"],
+        "properties": {
+          "itemId": { "type": "string", "description": "Encoded item identity, using the same format as FlagPatch.itemId." },
+          "feedId": { "type": "string" }
+        }
+      },
+      "StatsPushBody": {
+        "type": "object",
+        "properties": {
+          "stats": { "type": "array", "items": { "$ref": "#/components/schemas/StatsPatch" } },
+          "markers": { "type": "array", "items": { "$ref": "#/components/schemas/ReadMarkerPatch" } }
+        }
+      },
+      "StatsPullResponse": {
+        "type": "object",
+        "required": ["serverTime", "stats", "markers"],
+        "properties": {
+          "serverTime": { "type": "integer", "description": "Monotonic statistics cursor for the next statistics pull." },
+          "stats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "feed_id": { "type": "string" },
+                "total_seen": { "type": "integer", "minimum": 0 },
+                "read_once": { "type": "integer", "minimum": 0 },
+                "feed_url": { "type": ["string", "null"] },
+                "title": { "type": ["string", "null"] },
+                "row_at": { "type": "integer" }
+              }
+            }
+          },
+          "markers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_id": { "type": "string" },
+                "feed_id": { "type": "string" },
+                "row_at": { "type": "integer" }
+              }
+            }
+          }
         }
       },
       "PullResponse": {
@@ -118,7 +177,7 @@
             "description": "Sync availability",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "sync": { "type": "boolean" } } }
+                "schema": { "type": "object", "properties": { "sync": { "type": "boolean" }, "stats": { "type": "boolean", "description": "Aggregate feed-reading statistics sync support." } } }
               }
             }
           }
@@ -204,6 +263,70 @@
           "401": { "description": "Missing, revoked, or invalid credential" },
           "413": { "description": "Payload too large (split and retry)" },
           "429": { "description": "Rate limited (per sync key)" }
+        }
+      }
+    },
+    "/sync/stats/push": {
+      "post": {
+        "summary": "Push aggregate feed-reading statistics (master key only)",
+        "description": "Pushes approximate observed-volume snapshots and compact once-read marker identities. The server derives readOnce atomically from ever-read state and returns marker acknowledgements plus authoritative affected aggregates. Agent tokens are rejected.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StatsPushBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statistics accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["acknowledged", "stats"],
+                  "properties": {
+                    "acknowledged": { "type": "array", "items": { "type": "string" } },
+                    "stats": { "type": "array", "description": "Authoritative affected aggregate rows.", "items": { "$ref": "#/components/schemas/StatsPullResponse/properties/stats/items" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Missing, revoked, invalid, or agent-token credential" },
+          "413": { "description": "Payload too large" },
+          "429": { "description": "Rate limited (per sync key)" }
+        }
+      }
+    },
+    "/sync/stats/pull": {
+      "get": {
+        "summary": "Pull aggregate feed-reading statistics",
+        "description": "Returns aggregate rows and lifetime-read marker identities with row_at >= since. Uses an independent statistics cursor and contains no article content or event history. Authenticate with the X-Sync-Key header or an agent pairing code.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 0 },
+            "description": "Statistics cursor from the previous response; 0 for the full baseline."
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "schema": { "type": "string", "minLength": 8, "maxLength": 8 },
+            "description": "Agent pairing code alternative to X-Sync-Key; read-only until expiry."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate statistics and lifetime-read markers",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatsPullResponse" } } }
+          },
+          "401": { "description": "Missing, revoked, or invalid credential" },
+          "404": { "description": "Unknown, expired, or non-agent code" },
+          "429": { "description": "Rate limited" }
         }
       }
     },

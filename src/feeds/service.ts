@@ -1,8 +1,9 @@
 import { upsertFeed, updateFeed, getFeed, getFeedByUrl, unsubscribeFeed as dbUnsubscribeFeed } from '../db/feeds';
-import { enqueueFeed, enqueueFeedDelete } from '../sync/queue';
+import { enqueueFeed, enqueueFeedDelete, enqueueStatsIfSync } from '../sync/queue';
 import { scheduleFlush } from '../sync/push';
 import { DEFAULT_LEARNED_INTERVAL_MS } from '../db/types';
 import type { Feed } from '../db/types';
+import { ensureFeedStats, getFeedStats, updateFeedStatsLabel } from '../db/stats';
 
 export interface SubscribeInput {
   url: string;
@@ -15,7 +16,7 @@ export interface SubscribeInput {
 export async function subscribeFeed(input: SubscribeInput): Promise<string> {
   const now = Date.now();
   const id = crypto.randomUUID();
-  await upsertFeed({
+  const feed: Feed = {
     id,
     url: input.url,
     urlAt: now,
@@ -30,7 +31,10 @@ export async function subscribeFeed(input: SubscribeInput): Promise<string> {
     learnedIntervalMs: DEFAULT_LEARNED_INTERVAL_MS,
     lastFetched: null,
     lastItemPublishedAt: null,
-  });
+  };
+  await upsertFeed(feed);
+  await ensureFeedStats(feed);
+  await enqueueStatsIfSync({ feedId: feed.id, totalSeen: 0, feedUrl: feed.url, title: feed.title });
   enqueueFeed({
     feedId: id,
     folder: input.folder ?? null,
@@ -64,6 +68,12 @@ export async function updateFeedMeta(
     patch.tagsAt = now;
   }
   await updateFeed(feedId, patch);
+  if (feed) {
+    const title = patch.title ?? feed.title;
+    await updateFeedStatsLabel({ id: feed.id, title, url: feed.url });
+    const stats = await getFeedStats(feed.id);
+    await enqueueStatsIfSync({ feedId: feed.id, totalSeen: stats?.totalSeen ?? 0, feedUrl: feed.url, title });
+  }
   enqueueFeed({
     feedId,
     folder: null,
@@ -100,6 +110,11 @@ export async function changeFeedUrl(feedId: string, newUrl: string): Promise<voi
     lastModified: null,
     refreshError: null,
   });
+  if (feed) {
+    await updateFeedStatsLabel({ id: feed.id, title: feed.title, url: trimmed });
+    const stats = await getFeedStats(feed.id);
+    await enqueueStatsIfSync({ feedId: feed.id, totalSeen: stats?.totalSeen ?? 0, feedUrl: trimmed, title: feed.title });
+  }
   enqueueFeed({
     feedId,
     folder: null,

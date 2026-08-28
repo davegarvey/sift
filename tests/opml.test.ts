@@ -11,6 +11,8 @@ async function reset() {
   const db = await getDb();
   await db.clear('feeds');
   await db.clear('items');
+  await db.clear('feedStats');
+  await db.clear('readMarkers');
   await db.clear('meta');
 }
 

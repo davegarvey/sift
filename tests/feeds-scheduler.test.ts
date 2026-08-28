@@ -23,6 +23,8 @@ beforeEach(async () => {
   await db.clear('feeds');
   await db.clear('items');
   await db.clear('itemFlags');
+  await db.clear('feedStats');
+  await db.clear('readMarkers');
 });
 
 const RSS = `<rss version="2.0"><channel><title>X</title><link>https://x.example</link><description>d</description></channel></rss>`;

@@ -4,15 +4,18 @@ import { getDb } from '../src/db/open';
 import { upsertFeed, getFeedByUrl, listFeeds, deleteFeed } from '../src/db/feeds';
 import {
   insertOrUpdateItem,
+  bulkUpsertItems,
   getItem,
   listUnreadAcrossFeeds,
   listStarred,
   markRead,
   toggleStar,
   searchItems,
+  deleteItemsByFeed,
 } from '../src/db/items';
 import { runEviction } from '../src/articles/eviction';
 import { getFlag } from '../src/db/flags';
+import { getFeedStats, listReadMarkers } from '../src/db/stats';
 import type { Feed, Item } from '../src/db/types';
 
 function makeFeed(overrides: Partial<Feed> = {}): Feed {
@@ -51,6 +54,8 @@ describe('feeds store', () => {
     await db.clear('feeds');
     await db.clear('items');
     await db.clear('meta');
+    await db.clear('feedStats');
+    await db.clear('readMarkers');
   });
 
   it('upserts and retrieves by URL', async () => {
@@ -83,6 +88,8 @@ describe('items store', () => {
     await db.clear('items');
     await db.clear('itemFlags');
     await db.clear('meta');
+    await db.clear('feedStats');
+    await db.clear('readMarkers');
   });
 
   it('inserts a new item', async () => {
@@ -167,6 +174,37 @@ describe('items store', () => {
     expect(got?.read).toBe(true);
     const flag = await getFlag(item.id);
     expect(flag?.read).toBe(1);
+  });
+
+  it('counts duplicate new identities in one batch once', async () => {
+    const feedId = 'feed-duplicate';
+    await bulkUpsertItems([
+      makeItem({ feedId, guid: 'a' }),
+      makeItem({ feedId, guid: 'a', title: 'Updated' }),
+      makeItem({ feedId, guid: 'b' }),
+    ]);
+    const stats = await getFeedStats(feedId);
+    expect(stats?.totalSeen).toBe(2);
+  });
+
+  it('counts a first read once and keeps it through unread and reread', async () => {
+    const item = makeItem({ guid: 'lifetime-read' });
+    await insertOrUpdateItem(item);
+    await markRead(item.id, true);
+    await markRead(item.id, false);
+    await markRead(item.id, true);
+    const stats = await getFeedStats(item.feedId);
+    expect(stats?.readOnce).toBe(1);
+    expect(await listReadMarkers()).toContainEqual({ id: item.id, feedId: item.feedId, acknowledged: 0 });
+  });
+
+  it('retains statistics and markers when article records are removed', async () => {
+    const item = makeItem({ guid: 'retained' });
+    await insertOrUpdateItem(item);
+    await markRead(item.id, true);
+    await deleteItemsByFeed(item.feedId);
+    expect(await getFeedStats(item.feedId)).toMatchObject({ totalSeen: 1, readOnce: 1 });
+    expect(await listReadMarkers()).toContainEqual(expect.objectContaining({ id: item.id }));
   });
 
   it('toggleStar updates both the item and the flag store', async () => {

@@ -1,12 +1,15 @@
 import { getMeta, setMeta } from '../db/meta';
 import { MAX_DIRTY_PER_PUSH } from './client';
+import { getStoredSyncKey } from './key';
 
 const DIRTY_KEY = 'sync_dirty';
 
 export type DirtyEntry =
   | { kind: 'feed-upsert'; feedId: string; folder: string[] | null; folderAt: number; title: string | null; titleAt: number; feedUrl: { value: string | null; at: number } | null; htmlUrl: { value: string | null; at: number } | null; tags: string[] | null; tagsAt: number; deleted: 0 | 1 | null; deletedAt: number | null }
   | { kind: 'feed-delete'; feedId: string; feedUrl: { value: string; at: number }; at: number }
-  | { kind: 'flag-update'; itemId: string; feedId: string; read: 0 | 1 | null; readAt: number; starred: 0 | 1 | null; starredAt: number };
+  | { kind: 'flag-update'; itemId: string; feedId: string; read: 0 | 1 | null; readAt: number; starred: 0 | 1 | null; starredAt: number }
+  | { kind: 'stats-update'; feedId: string; totalSeen: number; feedUrl: string | null; title: string | null; at: number }
+  | { kind: 'read-marker'; itemId: string; feedId: string; at: number };
 
 let inMemory: DirtyEntry[] = [];
 let loaded = false;
@@ -60,6 +63,10 @@ function entryAt(e: DirtyEntry): number {
       return Math.max(e.feedUrl.at, e.at);
     case 'flag-update':
       return Math.max(e.readAt, e.starredAt);
+    case 'stats-update':
+      return e.at;
+    case 'read-marker':
+      return e.at;
   }
 }
 
@@ -122,6 +129,46 @@ export function enqueueFlag(flag: {
     starred: flag.starred,
     starredAt: flag.starredAt,
   });
+}
+
+export function enqueueStats(stats: {
+  feedId: string;
+  totalSeen: number;
+  feedUrl?: string | null;
+  title?: string | null;
+  at?: number;
+}): void {
+  appendEntry({
+    kind: 'stats-update',
+    feedId: stats.feedId,
+    totalSeen: stats.totalSeen,
+    feedUrl: stats.feedUrl ?? null,
+    title: stats.title ?? null,
+    at: stats.at ?? Date.now(),
+  });
+}
+
+export function enqueueReadMarker(item: { itemId: string; feedId: string; at?: number }): void {
+  appendEntry({
+    kind: 'read-marker',
+    itemId: item.itemId,
+    feedId: item.feedId,
+    at: item.at ?? Date.now(),
+  });
+}
+
+export async function enqueueStatsIfSync(stats: {
+  feedId: string;
+  totalSeen: number;
+  feedUrl?: string | null;
+  title?: string | null;
+  at?: number;
+}): Promise<void> {
+  if (await getStoredSyncKey()) enqueueStats(stats);
+}
+
+export async function enqueueReadMarkerIfSync(item: { itemId: string; feedId: string; at?: number }): Promise<void> {
+  if (await getStoredSyncKey()) enqueueReadMarker(item);
 }
 
 export { entryAt };

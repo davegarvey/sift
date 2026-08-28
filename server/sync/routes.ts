@@ -52,6 +52,26 @@ interface PushBody {
   flags?: FlagPayload[];
 }
 
+interface StatsPayload {
+  feedId: string;
+  totalSeen: number;
+  feedUrl?: string | null;
+  title?: string | null;
+}
+
+interface MarkerPayload {
+  itemId: string;
+  feedId: string;
+}
+
+interface StatsPushBody {
+  stats?: StatsPayload[];
+  markers?: MarkerPayload[];
+}
+
+const MAX_STATS_PER_PUSH = 500;
+const MAX_TOTAL_SEEN = 2_000_000_000;
+
 /** True when a value is a legacy `{ value, at }` wrapper. */
 function isLegacyWrapper(v: unknown): v is { value: unknown; at: unknown } {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -142,6 +162,42 @@ function validateFlagPayload(g: FlagPayload): { message: string; field: string }
   return null;
 }
 
+function validateStatsPayload(s: StatsPayload): { message: string; field: string } | null {
+  if (typeof s.feedId !== 'string' || !s.feedId) {
+    return { message: 'stats.feedId must be a non-empty string', field: 'feedId' };
+  }
+  if (!Number.isSafeInteger(s.totalSeen) || s.totalSeen < 0 || s.totalSeen > MAX_TOTAL_SEEN) {
+    return { message: 'stats.totalSeen must be a safe non-negative integer within bounds', field: 'totalSeen' };
+  }
+  if (s.feedUrl !== undefined && isLegacyWrapper(s.feedUrl)) {
+    return { message: 'stats.feedUrl must not contain timestamps (server stamps all writes)', field: 'feedUrl' };
+  }
+  if (s.feedUrl !== undefined && s.feedUrl !== null && typeof s.feedUrl !== 'string') {
+    return { message: 'stats.feedUrl must be a string or null', field: 'feedUrl' };
+  }
+  if (s.title !== undefined && isLegacyWrapper(s.title)) {
+    return { message: 'stats.title must not contain timestamps (server stamps all writes)', field: 'title' };
+  }
+  if (s.title !== undefined && s.title !== null && typeof s.title !== 'string') {
+    return { message: 'stats.title must be a string or null', field: 'title' };
+  }
+  return null;
+}
+
+function validateMarkerPayload(m: MarkerPayload): { message: string; field: string } | null {
+  if (typeof m.itemId !== 'string' || !m.itemId) {
+    return { message: 'marker.itemId must be a non-empty string', field: 'itemId' };
+  }
+  const parsed = decodeItemId(m.itemId);
+  if (!parsed) {
+    return { message: 'marker.itemId must contain "::"', field: 'itemId' };
+  }
+  if (typeof m.feedId !== 'string' || m.feedId !== parsed.feedId) {
+    return { message: 'marker.feedId does not match itemId', field: 'feedId' };
+  }
+  return null;
+}
+
 function rateLimitResponse(scope: string, limitKey: string, retryAfter: number, status: 429 | 503 = 429): Response {
   return new Response(null, {
     status,
@@ -180,7 +236,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
   });
 
   // Capabilities — public, no auth.
-  app.get('/sync/capabilities', (c) => c.json({ sync: true }));
+  app.get('/sync/capabilities', (c) => c.json({ sync: true, stats: true }));
 
   // POST /sync/register — explicit user creation.
   app.post('/sync/register', async (c) => {
@@ -254,6 +310,8 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
   app.use('/sync/otp', masterAuth);
   app.use('/sync/push', auth);
   app.use('/sync/pull', pullAuth);
+  app.use('/sync/stats/push', masterAuth);
+  app.use('/sync/stats/pull', pullAuth);
   app.use('/sync/status', auth);
   app.use('/sync/tokens', masterAuth);
   app.use('/sync/rotate', masterAuth);
@@ -752,7 +810,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     for (const g of flags) {
       stmts.push(
         db
-          .prepare('INSERT OR IGNORE INTO flags (sync_key, item_id, feed_id, row_at) VALUES (?, ?, ?, 0)')
+          .prepare('INSERT OR IGNORE INTO flags (sync_key, item_id, feed_id, ever_read, row_at) VALUES (?, ?, ?, 0, 0)')
           .bind(syncKey, g.itemId, g.feedId),
       );
 
@@ -784,6 +842,27 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
           .prepare('UPDATE flags SET row_at = ? WHERE sync_key = ? AND item_id = ? AND ? > COALESCE(row_at, 0)')
           .bind(batchT, syncKey, g.itemId, batchT),
       );
+      if (g.read === 1) {
+        stmts.push(
+          db
+            .prepare(
+              'INSERT OR IGNORE INTO feed_stats (sync_key, feed_id, total_seen, read_once, row_at) VALUES (?, ?, 0, 0, 0)',
+            )
+            .bind(syncKey, g.feedId),
+        );
+        stmts.push(
+          db
+            .prepare('UPDATE flags SET ever_read = ?, row_at = ? WHERE sync_key = ? AND item_id = ? AND ever_read = 0')
+            .bind(1, batchT, syncKey, g.itemId),
+        );
+        stmts.push(
+          db
+            .prepare(
+              'UPDATE feed_stats SET read_once = read_once + 1, total_seen = CASE WHEN total_seen < read_once + 1 THEN read_once + 1 ELSE total_seen END, row_at = ? WHERE sync_key = ? AND feed_id = ? AND changes() = 1',
+            )
+            .bind(batchT, syncKey, g.feedId),
+        );
+      }
       assertNoUrlLog(g.feedId);
     }
 
@@ -826,13 +905,140 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         .bind(syncKey, since)
         .all(),
       db
-        .prepare('SELECT * FROM flags WHERE sync_key = ? AND row_at >= ? ORDER BY row_at ASC')
+        .prepare('SELECT item_id, feed_id, read, read_at, starred, starred_at, row_at FROM flags WHERE sync_key = ? AND row_at >= ? ORDER BY row_at ASC')
         .bind(syncKey, since)
         .all(),
       currentMonotonicTime(db),
     ]);
 
     return c.json({ serverTime, feeds: feedsRes.results, flags: flagsRes.results });
+  });
+
+  app.post('/sync/stats/push', async (c) => {
+    const { syncKey } = getSyncKeyContext(c);
+    const rl = await checkRateLimit(
+      db,
+      `stats-push:${syncKey}`,
+      RATE_LIMITS.statsPush.windowSeconds,
+      RATE_LIMITS.statsPush.limit,
+      now(),
+    );
+    if (!rl.ok) return rateLimitResponse(`stats-push:${syncKey}`, syncKey, rl.retryAfter);
+
+    let body: StatsPushBody;
+    try {
+      body = (await c.req.json()) as StatsPushBody;
+    } catch {
+      return jsonError('Invalid JSON body', 'body');
+    }
+    const stats = Array.isArray(body.stats) ? body.stats : [];
+    const markers = Array.isArray(body.markers) ? body.markers : [];
+    if (stats.length + markers.length > MAX_STATS_PER_PUSH) {
+      return new Response('Payload too large', { status: 413 });
+    }
+    for (const row of stats) {
+      const err = validateStatsPayload(row);
+      if (err) return jsonError(err.message, err.field);
+    }
+    for (const marker of markers) {
+      const err = validateMarkerPayload(marker);
+      if (err) return jsonError(err.message, err.field);
+    }
+    if (stats.length === 0 && markers.length === 0) {
+      return c.json({ acknowledged: [], stats: [] });
+    }
+
+    const batchT = await nextMonotonicTime(db);
+    const stmts: D1PreparedStatement[] = [];
+    const feedIds = new Set<string>();
+    for (const row of stats) {
+      feedIds.add(row.feedId);
+      stmts.push(
+        db
+          .prepare(
+            'INSERT OR IGNORE INTO feed_stats (sync_key, feed_id, total_seen, read_once, feed_url, title, row_at) VALUES (?, ?, ?, 0, ?, ?, 0)',
+          )
+          .bind(syncKey, row.feedId, row.totalSeen, row.feedUrl ?? null, row.title ?? null),
+      );
+      stmts.push(
+        db
+          .prepare(
+            'UPDATE feed_stats SET total_seen = CASE WHEN total_seen < ? THEN ? ELSE total_seen END, row_at = CASE WHEN total_seen < ? THEN ? ELSE row_at END WHERE sync_key = ? AND feed_id = ?',
+          )
+          .bind(row.totalSeen, row.totalSeen, row.totalSeen, batchT, syncKey, row.feedId),
+      );
+    }
+    for (const marker of markers) {
+      feedIds.add(marker.feedId);
+      stmts.push(
+        db
+          .prepare(
+            'INSERT OR IGNORE INTO flags (sync_key, item_id, feed_id, ever_read, row_at) VALUES (?, ?, ?, 0, 0)',
+          )
+          .bind(syncKey, marker.itemId, marker.feedId),
+      );
+      stmts.push(
+        db
+          .prepare('INSERT OR IGNORE INTO feed_stats (sync_key, feed_id, total_seen, read_once, row_at) VALUES (?, ?, 0, 0, 0)')
+          .bind(syncKey, marker.feedId),
+      );
+      stmts.push(
+        db
+          .prepare('UPDATE flags SET ever_read = ?, row_at = ? WHERE sync_key = ? AND item_id = ? AND ever_read = 0')
+          .bind(1, batchT, syncKey, marker.itemId),
+      );
+      stmts.push(
+        db
+          .prepare(
+            'UPDATE feed_stats SET read_once = read_once + 1, total_seen = CASE WHEN total_seen < read_once + 1 THEN read_once + 1 ELSE total_seen END, row_at = ? WHERE sync_key = ? AND feed_id = ? AND changes() = 1',
+          )
+          .bind(batchT, syncKey, marker.feedId),
+      );
+    }
+    await db.batch(stmts);
+
+    const authoritative: unknown[] = [];
+    for (const feedId of feedIds) {
+      const row = await db
+        .prepare('SELECT feed_id, total_seen, read_once, feed_url, title, row_at FROM feed_stats WHERE sync_key = ? AND feed_id = ?')
+        .bind(syncKey, feedId)
+        .first();
+      if (row) authoritative.push(row);
+    }
+    return c.json({ acknowledged: markers.map((marker) => marker.itemId), stats: authoritative });
+  });
+
+  app.get('/sync/stats/pull', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    const { syncKey } = getSyncKeyContext(c);
+    const rl = await checkRateLimit(
+      db,
+      `stats-pull:${syncKey}`,
+      RATE_LIMITS.statsPull.windowSeconds,
+      RATE_LIMITS.statsPull.limit,
+      now(),
+    );
+    if (!rl.ok) return rateLimitResponse(`stats-pull:${syncKey}`, syncKey, rl.retryAfter);
+
+    const sinceRaw = c.req.query('since');
+    let since = 0;
+    if (sinceRaw !== undefined && sinceRaw !== '' && sinceRaw !== 'null') {
+      const n = Number(sinceRaw);
+      if (!Number.isFinite(n) || n < 0) return jsonError('Invalid `since` query parameter', 'since');
+      since = Math.floor(n);
+    }
+    const [statsRes, markersRes, serverTime] = await Promise.all([
+      db
+        .prepare('SELECT feed_id, total_seen, read_once, feed_url, title, row_at FROM feed_stats WHERE sync_key = ? AND row_at >= ? ORDER BY row_at ASC')
+        .bind(syncKey, since)
+        .all(),
+      db
+        .prepare('SELECT item_id, feed_id, row_at FROM flags WHERE sync_key = ? AND ever_read = 1 AND row_at >= ? ORDER BY row_at ASC')
+        .bind(syncKey, since)
+        .all(),
+      currentMonotonicTime(db),
+    ]);
+    return c.json({ serverTime, stats: statsRes.results, markers: markersRes.results });
   });
 
   return app;

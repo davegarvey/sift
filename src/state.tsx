@@ -4,7 +4,7 @@ import { createStore } from 'solid-js/store';
 import { listFeeds } from './db/feeds';
 import { listItems, listItemsByFeed, listStarred, markRead, toggleStar as dbToggleStar } from './db/items';
 import type { Feed, Item } from './db/types';
-import { itemUrl, parseItemIdFromUrl, hashId } from './routing';
+import { itemUrl, parseItemIdFromUrl, hashId, isStatsPath } from './routing';
 import { getMeta, setMeta } from './db/meta';
 import { DEFAULT_SETTINGS, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
 import type { AppSettings, ThemePreference } from './db/types';
@@ -27,7 +27,7 @@ async function saveSettings(settings: AppSettings): Promise<void> {
   await setMeta(SETTINGS_KEY, settings);
 }
 import { refreshStaleFeeds, fetchingState, startScheduler, setOnRefresh } from './feeds/scheduler';
-import { enqueueFlag, clearAllDirty } from './sync/queue';
+import { enqueueFlag, clearAllDirty, enqueueStatsIfSync, enqueueReadMarkerIfSync } from './sync/queue';
 import { scheduleFlush, flushNow } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { setOnSync } from './sync/merge';
@@ -36,8 +36,9 @@ import { redeemCode, register, rotateSyncKey } from './sync/client';
 import { subscribeFeed as subscribeFeedSvc, unsubscribeFeed as unsubscribeFeedSvc, updateFeedMeta, changeFeedUrl, type SubscribeInput } from './feeds/service';
 import { refreshTargetForSelection } from './feeds/scope';
 import { isIdle, onCatchup, clearActivityOnHide } from './util/idle';
+import { getFeedStats, getReadMarker } from './db/stats';
 
-type ViewKind = 'river' | 'reading';
+type ViewKind = 'river' | 'reading' | 'stats';
 type ModalKind =
   | { kind: 'none' }
   | { kind: 'palette' }
@@ -115,6 +116,8 @@ export interface AppContext {
   updateFeedTags: (feedId: string, tags: string[]) => Promise<void>;
   markReadAndSync: (item: Item, read: boolean) => Promise<void>;
   toggleStar: (item: Item) => Promise<void>;
+  statsRevision: () => number;
+  openStats: () => void;
 }
 
 const Ctx = createContext<AppContext>();
@@ -127,7 +130,7 @@ export const useApp = (): AppContext => {
 
 export const AppProvider: ParentComponent = (props) => {
   const [state, setStateInternal] = createStore<AppState>({
-    view: 'river',
+    view: typeof window !== 'undefined' && isStatsPath(window.location.pathname) ? 'stats' : 'river',
     riverScope: null,
     activeTags: [],
     currentItem: null,
@@ -156,6 +159,7 @@ export const AppProvider: ParentComponent = (props) => {
   const [items, setItems] = createSignal<Item[]>([]);
   /** True once the boot sequence has finished reading feeds/items from IndexedDB. */
   const [hydrated, setHydrated] = createSignal(false);
+  const [statsRevision, setStatsRevision] = createSignal(0);
   const [settings, setSettings] = createSignal<AppSettings>({
     theme: 'system',
     highContrast: false,
@@ -252,6 +256,20 @@ export const AppProvider: ParentComponent = (props) => {
       starred: item.starred ? 1 : 0,
       starredAt: now,
     });
+    if (read) {
+      const [stats, marker] = await Promise.all([getFeedStats(item.feedId), getReadMarker(item.id)]);
+      if (stats) {
+        await enqueueStatsIfSync({
+          feedId: item.feedId,
+          totalSeen: stats.totalSeen,
+          feedUrl: stats.url,
+          title: stats.title,
+        });
+      }
+      if (marker?.acknowledged === 0) {
+        await enqueueReadMarkerIfSync({ itemId: marker.id, feedId: marker.feedId });
+      }
+    }
     scheduleFlush();
   };
 
@@ -271,7 +289,12 @@ export const AppProvider: ParentComponent = (props) => {
     scheduleFlush();
   };
 
-  const reloadFeeds = async () => setFeeds(await listFeeds());
+  const reloadFeeds = async () => {
+    const next = await listFeeds();
+    setFeeds(next);
+    setStatsRevision((revision) => revision + 1);
+    return next;
+  };
 
   let reloadItemsPromise: Promise<void> | null = null;
   const reloadItems = async () => {
@@ -294,7 +317,13 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const setRiverScope = (feedId: string | null) => {
+    if (state.view === 'stats') history.pushState(null, '', '/');
     setState({ riverScope: feedId, activeTags: [], focusedIndex: -1, view: 'river' });
+  };
+
+  const openStats = () => {
+    if (state.view !== 'stats') history.pushState(null, '', '/stats');
+    setState({ view: 'stats', currentItem: null, sidebarOpen: false, focusedIndex: -1 });
   };
 
   const toggleTag = (tag: string) => {
@@ -488,7 +517,7 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const disableSync = async () => {
-    await updateSettingsWith({ syncKey: null, lastSyncAt: null, serverOffset: null });
+    await updateSettingsWith({ syncKey: null, lastSyncAt: null, lastStatsSyncAt: null, serverOffset: null });
     clearAllDirty();
   };
 
@@ -593,6 +622,8 @@ export const AppProvider: ParentComponent = (props) => {
     updateFeedTags: (feedId, tags) => updateFeedMeta(feedId, { tags }),
     markReadAndSync,
     toggleStar,
+    statsRevision,
+    openStats,
   };
 
   // Boot: load settings + initial feeds/items, then kick the scheduler.
