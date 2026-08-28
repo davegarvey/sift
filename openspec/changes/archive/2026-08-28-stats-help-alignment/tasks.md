@@ -7,4 +7,4 @@
 
 - [x] 2.1 Add regression coverage for heading structure and preserved help behavior.
 - [x] 2.2 Run strict OpenSpec validation, typecheck, lint, tests, and build.
-- [ ] 2.3 Review the final diff, commit, push, update the PR, and merge it.
+- [x] 2.3 Review the final diff, commit, push, update the PR, and merge it.
