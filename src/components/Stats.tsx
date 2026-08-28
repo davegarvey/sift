@@ -128,7 +128,75 @@ export function Stats() {
       <div class="stats-inner">
         <div class="stats-page-heading">
           <header class="stats-header">
-            <div class="stats-kicker"><ChartNoAxesCombined size={16} /> Stats</div>
+            <div class="stats-heading-top">
+              <div class="stats-kicker"><ChartNoAxesCombined size={16} /> Stats</div>
+              <div class="stats-help">
+                <button
+                  ref={helpButton}
+                  class="stats-help-button"
+                  type="button"
+                  aria-label="How these numbers work"
+                  aria-haspopup="dialog"
+                  aria-expanded={definitionsOpen()}
+                  aria-controls="stats-definitions"
+                  onClick={toggleDefinitions}
+                >
+                  <CircleQuestionMark size={15} aria-hidden="true" />
+                  <span>How this works</span>
+                </button>
+                <Show when={definitionsOpen()}>
+                  <div
+                    ref={definitionsPanel}
+                    class="stats-definitions"
+                    id="stats-definitions"
+                    role="dialog"
+                    aria-labelledby="stats-definitions-title"
+                    tabIndex={-1}
+                  >
+                    <div class="stats-definitions-header">
+                      <h3 id="stats-definitions-title">How to read this</h3>
+                      <button
+                        class="stats-definitions-close"
+                        type="button"
+                        aria-label="Close stats explanation"
+                        onClick={closeDefinitions}
+                      >
+                        <X size={15} aria-hidden="true" />
+                      </button>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Articles</dt>
+                        <dd>Distinct articles Sift encountered while refreshing this feed. You may not have opened all of them.</dd>
+                      </div>
+                      <div>
+                        <dt>Read</dt>
+                        <dd>Articles you opened at least once. Reading an article again does not add to this number.</dd>
+                      </div>
+                      <div>
+                        <dt>Rate</dt>
+                        <dd>The share of this feed's articles that you read.</dd>
+                      </div>
+                      <div>
+                        <dt>Expected</dt>
+                        <dd>How many articles you might have read at your overall reading rate.</dd>
+                      </div>
+                      <div>
+                        <dt>Preference</dt>
+                        <dd>How your reading compares with that expectation. 1.0x is your average; higher means you read this feed more than usual.</dd>
+                      </div>
+                      <div>
+                        <dt>Not read yet</dt>
+                        <dd>The articles in this history that you have not read at least once. It is a lifetime estimate, not your current unread list.</dd>
+                      </div>
+                    </dl>
+                    <Show when={approximate()}>
+                      <p class="stats-definitions-note">With sync, article totals are estimates across devices. An article still counts as read only once.</p>
+                    </Show>
+                  </div>
+                </Show>
+              </div>
+            </div>
             <h1>Your reading habits</h1>
             <p>
               Find your favourite feeds and see how much you read from each.
@@ -137,72 +205,6 @@ export function Stats() {
               </Show>
             </p>
           </header>
-          <div class="stats-help">
-            <button
-              ref={helpButton}
-              class="stats-help-button"
-              type="button"
-              aria-label="How these numbers work"
-              aria-haspopup="dialog"
-              aria-expanded={definitionsOpen()}
-              aria-controls="stats-definitions"
-              onClick={toggleDefinitions}
-            >
-              <CircleQuestionMark size={15} aria-hidden="true" />
-              <span>How this works</span>
-            </button>
-            <Show when={definitionsOpen()}>
-              <div
-                ref={definitionsPanel}
-                class="stats-definitions"
-                id="stats-definitions"
-                role="dialog"
-                aria-labelledby="stats-definitions-title"
-                tabIndex={-1}
-              >
-                <div class="stats-definitions-header">
-                  <h3 id="stats-definitions-title">How to read this</h3>
-                  <button
-                    class="stats-definitions-close"
-                    type="button"
-                    aria-label="Close stats explanation"
-                    onClick={closeDefinitions}
-                  >
-                    <X size={15} aria-hidden="true" />
-                  </button>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Articles</dt>
-                    <dd>Distinct articles Sift encountered while refreshing this feed. You may not have opened all of them.</dd>
-                  </div>
-                  <div>
-                    <dt>Read</dt>
-                    <dd>Articles you opened at least once. Reading an article again does not add to this number.</dd>
-                  </div>
-                  <div>
-                    <dt>Rate</dt>
-                    <dd>The share of this feed's articles that you read.</dd>
-                  </div>
-                  <div>
-                    <dt>Expected</dt>
-                    <dd>How many articles you might have read at your overall reading rate.</dd>
-                  </div>
-                  <div>
-                    <dt>Preference</dt>
-                    <dd>How your reading compares with that expectation. 1.0x is your average; higher means you read this feed more than usual.</dd>
-                  </div>
-                  <div>
-                    <dt>Not read yet</dt>
-                    <dd>The articles in this history that you have not read at least once. It is a lifetime estimate, not your current unread list.</dd>
-                  </div>
-                </dl>
-                <Show when={approximate()}>
-                  <p class="stats-definitions-note">With sync, article totals are estimates across devices. An article still counts as read only once.</p>
-                </Show>
-              </div>
-            </Show>
-          </div>
         </div>
 
         <Show when={!summary.loading} fallback={<div class="stats-message">Loading statistics...</div>}>

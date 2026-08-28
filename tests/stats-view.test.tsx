@@ -69,12 +69,16 @@ describe('stats view', () => {
     const help = document.querySelector<HTMLButtonElement>('[aria-label="How these numbers work"]');
     expect(help?.getAttribute('aria-expanded')).toBe('false');
     expect(document.querySelector('.stats-page-heading .stats-help-button')).toBe(help);
+    const headingTop = document.querySelector('.stats-heading-top');
+    expect(headingTop?.querySelector('.stats-kicker')).not.toBeNull();
+    expect(headingTop?.querySelector('.stats-help-button')).toBe(help);
     expect(document.querySelector('.stats-list-heading .stats-help-button')).toBeNull();
     help?.click();
     expect(help?.getAttribute('aria-expanded')).toBe('true');
     await Promise.resolve();
     const dialog = document.querySelector('[role="dialog"]');
     expect(document.activeElement).toBe(dialog);
+    expect(help?.parentElement?.querySelector('[role="dialog"]')).toBe(dialog);
     expect(dialog?.textContent).toContain('Distinct articles Sift encountered');
     expect(dialog?.textContent).toContain('not your current unread list');
     document.querySelector<HTMLButtonElement>('[aria-label="Close stats explanation"]')?.click();

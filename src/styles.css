@@ -687,12 +687,19 @@ a:hover { text-decoration: underline; }
 }
 
 .stats-page-heading {
-  position: relative;
+  min-width: 0;
 }
 
 .stats-header {
   max-width: 720px;
   margin-bottom: 36px;
+}
+
+.stats-heading-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
 
 .stats-kicker {
@@ -828,9 +835,8 @@ a:hover { text-decoration: underline; }
 }
 
 .stats-help {
-  position: absolute;
-  top: 0;
-  right: 0;
+  position: relative;
+  flex-shrink: 0;
 }
 
 .stats-definitions {
@@ -1086,10 +1092,6 @@ a:hover { text-decoration: underline; }
     align-items: start;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .stats-header {
-    padding-top: 48px;
   }
 
   .stats-mobile-sort {
