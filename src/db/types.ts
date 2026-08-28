@@ -96,6 +96,14 @@ export interface ReadMarker {
   acknowledged: 0 | 1;
 }
 
+export type StatsSortColumn = 'title' | 'totalSeen' | 'readOnce' | 'readRate' | 'expectedReads' | 'readIndex';
+export type StatsSortDirection = 'asc' | 'desc';
+
+export interface StatsSortPreference {
+  column: StatsSortColumn;
+  direction: StatsSortDirection;
+}
+
 export interface Meta {
   key: string;
   value: unknown;
@@ -149,7 +157,13 @@ export interface AppSettings {
   lastStatsSyncAt?: number | null;
   /** Server-clock offset (serverTime - Date.now()) measured at the last successful pull. */
   serverOffset?: number | null;
+  statsSort?: StatsSortPreference;
 }
+
+export const DEFAULT_STATS_SORT: StatsSortPreference = {
+  column: 'readOnce',
+  direction: 'desc',
+};
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
@@ -162,4 +176,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastSyncAt: null,
   lastStatsSyncAt: null,
   serverOffset: null,
+  statsSort: DEFAULT_STATS_SORT,
 };
