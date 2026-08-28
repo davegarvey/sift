@@ -58,9 +58,9 @@ describe('stats view', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('View Feed'));
     expect(document.querySelector('.stats-kicker')?.textContent).toContain('Stats');
     expect(document.body.textContent).toContain('Your reading habits');
-    expect(document.body.textContent).toContain('Find your favourite feeds and see how much you read from each.');
-    expect(document.body.textContent).not.toContain('See which feeds you come back to most');
-    expect(document.body.textContent).toContain('Your stats stay on this device and work offline.');
+    expect(document.body.textContent).toContain('See which feeds you read most.');
+    expect(document.body.textContent).not.toContain('Find your favourite feeds and see how much you read from each.');
+    expect(document.body.textContent).not.toContain('Your stats stay on this device and work offline.');
     expect(document.body.textContent).toContain('Articles');
     expect(document.body.textContent).toContain('Reading rate');
     expect(document.body.textContent).not.toContain('Observed volume');
