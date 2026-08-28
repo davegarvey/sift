@@ -198,12 +198,7 @@ export function Stats() {
               </div>
             </div>
             <h1>Your reading habits</h1>
-            <p>
-              Find your favourite feeds and see how much you read from each.
-              <Show when={!approximate()}>
-                {' '}Your stats stay on this device and work offline.
-              </Show>
-            </p>
+            <p>See which feeds you read most.</p>
           </header>
         </div>
 

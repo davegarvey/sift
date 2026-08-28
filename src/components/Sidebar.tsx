@@ -114,7 +114,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
           <Show when={ctx.feeds().length > 0}>
             <div class="tag-chips">
               <button
-                class={`tag-chip ${ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
+                class={`tag-chip ${ctx.state.view === 'river' && ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
                 onClick={selectAll}
                 type="button"
               >
@@ -132,7 +132,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
               <For each={ctx.allTags()}>
                 {(tag) => (
                   <button
-                    class={`tag-chip ${ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
+                    class={`tag-chip ${ctx.state.view === 'river' && ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
                     onClick={() => ctx.toggleTag(tag)}
                     type="button"
                   >
@@ -150,7 +150,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
                     feed={feed}
                     errors={ctx.feedErrors()}
                     fetchingFeeds={ctx.fetchingFeeds()}
-                    active={ctx.state.riverScope === feed.id}
+                    active={ctx.state.view === 'river' && ctx.state.riverScope === feed.id}
                     onClick={() => selectFeed(feed)}
                     onEdit={() =>
                       ctx.openModal({

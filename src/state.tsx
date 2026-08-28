@@ -345,19 +345,29 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const openStats = () => {
+    const hadRiverSelection = state.riverScope !== null || state.activeTags.length > 0;
     if (state.view !== 'stats') history.pushState(null, '', '/stats');
-    setState({ view: 'stats', currentItem: null, sidebarOpen: false, focusedIndex: -1 });
+    setState({
+      view: 'stats',
+      riverScope: null,
+      activeTags: [],
+      currentItem: null,
+      sidebarOpen: false,
+      focusedIndex: -1,
+    });
+    if (hadRiverSelection) void reloadItems();
   };
 
   const toggleTag = (tag: string) => {
+    if (state.view === 'stats') history.pushState(null, '', '/');
     const current = state.activeTags;
     const idx = current.indexOf(tag);
     if (idx >= 0) {
       const next = current.filter((t) => t !== tag);
-      setState({ activeTags: next, riverScope: null, focusedIndex: -1 });
+      setState({ activeTags: next, riverScope: null, focusedIndex: -1, view: 'river' });
       if (next.length > 0) void reloadItems();
     } else {
-      setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: -1 });
+      setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: -1, view: 'river' });
       void reloadItems();
     }
   };
@@ -671,7 +681,7 @@ export const AppProvider: ParentComponent = (props) => {
     await reloadFeeds();
     const matchingFeed = s.lastFeedUrl ? feeds().find((f) => f.url === s.lastFeedUrl) : undefined;
     const validFeedId = matchingFeed?.id ?? null;
-    setState({ riverScope: validFeedId, sidebarWidth: s.sidebarWidth });
+    setState({ riverScope: state.view === 'stats' ? null : validFeedId, sidebarWidth: s.sidebarWidth });
     await reloadItems();
     const hash = parseItemIdFromUrl();
     if (hash) {

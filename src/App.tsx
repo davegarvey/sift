@@ -124,7 +124,14 @@ function Shell() {
       if (ctx.state.view === 'reading') ctx.closeReading();
       else if (ctx.state.view === 'stats') ctx.setState({ view: 'river' });
     } else if (isStatsPath(path)) {
-      ctx.setState({ view: 'stats', currentItem: null, sidebarOpen: false, focusedIndex: -1 });
+      ctx.setState({
+        view: 'stats',
+        riverScope: null,
+        activeTags: [],
+        currentItem: null,
+        sidebarOpen: false,
+        focusedIndex: -1,
+      });
     } else {
       const hash = parseItemIdFromUrl();
       if (hash) {
