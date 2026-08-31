@@ -259,6 +259,22 @@ export async function upgradeDb<T extends DBSchema>(
       await feedStatsStore.put(stats);
     }
   }
+  if (_oldVersion < 9) {
+    const metaStore = transaction.objectStore('meta');
+    const settings = await metaStore.get('settings');
+    if (settings && typeof settings.value === 'object' && settings.value !== null) {
+      const value = settings.value as Record<string, unknown>;
+      await metaStore.put({
+        ...settings,
+        value: {
+          ...value,
+          lastSyncAt: null,
+          lastStatsSyncAt: null,
+          serverOffset: null,
+        },
+      });
+    }
+  }
 }
 
 export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {

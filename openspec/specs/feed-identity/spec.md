@@ -5,8 +5,8 @@ TBD - created by archiving change stable-feed-ids. Update Purpose after archive.
 
 ## Requirements
 
-### Requirement: Feed has stable UUID primary key
-Every feed SHALL have a stable `id` field generated at subscribe time using `crypto.randomUUID()`. The `id` SHALL be the IndexedDB primary key. The `url` field SHALL be a regular mutable field — never used as a key or identity.
+### Requirement: Feed has a stable subscription identity
+Every newly subscribed feed SHALL have an `id` field generated at subscribe time using `crypto.randomUUID()`. The `id` SHALL be the IndexedDB primary key and SHALL remain stable except when sync reconciliation adopts the server's canonical identity for the same subscription. The `url` field SHALL be a regular mutable field — never used as a persistent key or identity.
 
 #### Scenario: Subscribe generates UUID
 - **WHEN** a user subscribes to a new feed
@@ -62,6 +62,18 @@ The sync push/pull protocol SHALL use `feedId` / `feed_id` as the stable feed id
 - **WHEN** the client pushes a flag-update entry
 - **THEN** the wire payload SHALL contain `feedId` instead of `feedUrl`
 - **AND** the item ID SHALL use `encodeURIComponent(feedId)::guid` format
+
+### Requirement: Sync reconciliation adopts the canonical feed ID
+When a local feed matches a remote feed by URL but has a different feed ID, the client SHALL adopt the remote `feed_id` as the local canonical ID during reconciliation. The migration SHALL atomically rewrite the feed, its item IDs, item flags, read markers, feed statistics, and pending dirty entries. After reconciliation, all devices in the sync group SHALL use the same feed ID for that subscription.
+
+#### Scenario: Pre-pairing duplicate feed IDs converge
+- **WHEN** a device has a local subscription for a feed URL with ID `L`
+- **AND** the sync group has the same feed URL with ID `S`
+- **AND** `L` and `S` differ
+- **THEN** the local feed SHALL be re-keyed from `L` to `S`
+- **AND** an item `${L}::guid` SHALL become `${S}::guid`
+- **AND** its current read/starred state and lifetime statistics SHALL be preserved
+- **AND** future sync writes SHALL use `S` directly without an alias
 
 ### Requirement: Server D1 schema uses feed_id
 The server D1 `feeds` table SHALL use `(sync_key, feed_id)` as the primary key. The `url` field SHALL be stored as `feed_url` with a `feed_url_at` timestamp. The `flags` table SHALL use `feed_id` instead of `feed_url`.

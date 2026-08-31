@@ -157,3 +157,10 @@ The system SHALL use the stable feed identity as the key for a statistics series
 
 - **WHEN** sync revives a tombstoned feed under its original feed identity
 - **THEN** the revived feed SHALL use the aggregate statistics associated with that identity
+
+#### Scenario: Pairing canonicalizes a duplicate local identity
+
+- **WHEN** a local feed URL matches a synced feed URL but the local and remote feed identities differ
+- **THEN** the local feed statistics SHALL be re-keyed to the remote feed identity
+- **AND** local once-read markers for that feed SHALL be re-keyed with the same identity
+- **AND** the existing aggregate values SHALL be preserved

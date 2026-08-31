@@ -1,11 +1,11 @@
-import { listFeeds, upsertFeed, unsubscribeFeed } from '../db/feeds';
+import { listFeeds } from '../db/feeds';
 import { listItems } from '../db/items';
-import { getItemFlags, bulkSetFlags, type ItemFlag } from '../db/flags';
+import { getItemFlags, type ItemFlag } from '../db/flags';
 import { listFeedStats, listPendingReadMarkers, applyRemoteStatistics } from '../db/stats';
 import { enqueueFeed, enqueueFlag, enqueueStats, enqueueReadMarker, clearAllDirty } from './queue';
 import { flushNow, scheduleFlush } from './push';
 import { pullSince, pullStatsSince, register, type PullPayload, type StatsPullPayload } from './client';
-import { applyRemoteState, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
+import { applyRemoteState, canonicalizeLocalFeedIds, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
 import { getStoredLastStatsSyncAt, getStoredLastSyncAt, setStoredLastStatsSyncAt, setStoredLastSyncAt, setStoredServerOffset } from './key';
 import { decodeItemId } from './itemId';
 import { markPullSuccess, markError } from './status';
@@ -44,7 +44,10 @@ function toRemoteStats(p: StatsPullPayload): { rows: Parameters<typeof applyRemo
     const row = value as Record<string, unknown>;
     if (typeof row.item_id !== 'string' || typeof row.feed_id !== 'string') return [];
     const parsed = decodeItemId(row.item_id);
-    return [{ id: parsed ? `${parsed.feedId}::${parsed.guid}` : row.item_id, feedId: row.feed_id }];
+    return [{
+      id: parsed ? `${parsed.feedId}::${parsed.guid}` : row.item_id,
+      feedId: row.feed_id,
+    }];
   });
   return { rows, markers };
 }
@@ -85,8 +88,13 @@ export async function snapshotLocal(): Promise<LocalSnapshot> {
   };
 }
 
-export async function mergeForFirstTime(_snapshot: LocalSnapshot, payload: RemotePayload, serverOffset = 0): Promise<void> {
-  await applyRemoteState(payload, serverOffset);
+export async function mergeForFirstTime(
+  _snapshot: LocalSnapshot,
+  payload: RemotePayload,
+  serverOffset = 0,
+  canonicalFeedIds?: ReadonlyMap<string, string>,
+): Promise<void> {
+  await applyRemoteState(payload, serverOffset, canonicalFeedIds);
   onSync?.();
 }
 
@@ -159,11 +167,15 @@ async function pushLocalDiff(feeds: Feed[], flags: ItemFlag[], serverFeeds: Remo
   await flushNow();
 }
 
-async function mergePayload(payload: RemotePayload, serverTime: number): Promise<void> {
+async function mergePayload(
+  payload: RemotePayload,
+  serverTime: number,
+  canonicalFeedIds?: ReadonlyMap<string, string>,
+): Promise<void> {
   const offset = serverTime - Date.now();
   await setStoredServerOffset(offset);
   const snap = await snapshotLocal();
-  await mergeForFirstTime(snap, payload, offset);
+  await mergeForFirstTime(snap, payload, offset, canonicalFeedIds);
   await flushNow();
   const newTime = Math.max(await getStoredLastSyncAt() ?? 0, serverTime);
   await setStoredLastSyncAt(newTime);
@@ -175,9 +187,6 @@ export async function runFirstTimeSetup(): Promise<number> {
   // with 403 and the setup fails, which is the intended outcome.
   await register();
 
-  const existingFeeds = await listFeeds();
-  const existingFlags = await getItemFlags();
-
   // Start clean: any dirty entries from a previous partial setup, or from
   // changes made while sync was disabled, are superseded by the diff below
   // (the diff is computed from local DB state, not from the dirty queue).
@@ -185,15 +194,21 @@ export async function runFirstTimeSetup(): Promise<number> {
 
   try {
     const statsSupported = await isStatsSyncAvailable();
+    let statsPull: StatsPullPayload | null = null;
     if (statsSupported) {
-      const statsPull = await pullStatsSince(0);
-      await applyStatsPayload(statsPull);
-      await setStoredLastStatsSyncAt(statsPull.serverTime);
+      statsPull = await pullStatsSince(0);
     }
     const pull = await pullSince(0);
     const payload = toRemotePayload(pull);
+    const canonicalFeedIds = await canonicalizeLocalFeedIds(payload.feeds);
+    const existingFeeds = await listFeeds();
+    const existingFlags = await getItemFlags();
     await pushLocalDiff(existingFeeds, existingFlags, payload.feeds, payload.flags);
-    await mergePayload(payload, pull.serverTime);
+    await mergePayload(payload, pull.serverTime, canonicalFeedIds);
+    if (statsPull) {
+      await applyStatsPayload(statsPull);
+      await setStoredLastStatsSyncAt(statsPull.serverTime);
+    }
     if (statsSupported) {
       await enqueueAllLocalStats();
       await flushNow();
@@ -209,8 +224,8 @@ export async function runFirstTimeSetup(): Promise<number> {
 }
 
 export async function runPull(): Promise<number | null> {
-  const since = (await getStoredLastSyncAt()) ?? 0;
   try {
+    const since = (await getStoredLastSyncAt()) ?? 0;
     const pull = await pullSince(since);
     const offset = pull.serverTime - Date.now();
     await setStoredServerOffset(offset);

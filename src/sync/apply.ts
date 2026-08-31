@@ -1,8 +1,9 @@
-import { upsertFeed, getFeedByUrl, unsubscribeFeed, listFeeds } from '../db/feeds';
-import { getItem, listItems, bulkUpsertItems, updateItem } from '../db/items';
-import { bulkSetFlags, getItemFlags, READ_UNREAD, READ_READ, STAR_UNSTARRED, STAR_STARRED, type ItemFlag } from '../db/flags';
+import { upsertFeed, unsubscribeFeed, listFeeds, rekeyFeedId } from '../db/feeds';
+import { listItems, updateItem } from '../db/items';
+import { bulkSetFlags, getItemFlags, READ_UNREAD, STAR_UNSTARRED, type ItemFlag } from '../db/flags';
 import type { Feed, Item } from '../db/types';
-import { decodeItemId, encodeItemId } from './itemId';
+import { decodeItemId } from './itemId';
+import { rekeyDirtyFeedId } from './queue';
 
 export interface RemoteFeed {
   feed_id: string;
@@ -72,43 +73,66 @@ function parseTags(s: string | null | undefined): string[] | undefined {
   return undefined;
 }
 
-export async function applyRemoteState(payload: RemotePayload, serverOffset = 0): Promise<void> {
-  // 1) Feeds.
+export async function canonicalizeLocalFeedIds(remoteFeeds: readonly RemoteFeed[]): Promise<ReadonlyMap<string, string>> {
   const localFeeds = await listFeeds();
-  const localById = new Map<string, Feed>(localFeeds.map((f) => [f.id, f]));
+  const localById = new Map(localFeeds.map((feed) => [feed.id, feed]));
   const localByUrl = new Map<string, Feed>();
-  for (const f of localFeeds) {
-    if (f.url) localByUrl.set(f.url, f);
+  for (const feed of localFeeds) {
+    if (feed.url) localByUrl.set(feed.url, feed);
   }
-  const tombstonedForUnsubscribe: string[] = [];
-  for (let rf of payload.feeds) {
-    // Convert remote stamps to the local clock frame so every comparison
-    // against local stamps (userMutationTime, newer()) is skew-correct.
-    if (serverOffset !== 0) {
-      rf = {
-        ...rf,
-        feed_url_at: rf.feed_url_at != null ? rf.feed_url_at - serverOffset : rf.feed_url_at,
-        folder_at: rf.folder_at != null ? rf.folder_at - serverOffset : rf.folder_at,
-        title_at: rf.title_at != null ? rf.title_at - serverOffset : rf.title_at,
-        html_url_at: rf.html_url_at != null ? rf.html_url_at - serverOffset : rf.html_url_at,
-        tags_at: rf.tags_at != null ? rf.tags_at - serverOffset : rf.tags_at,
-        deleted_at: rf.deleted_at != null ? rf.deleted_at - serverOffset : rf.deleted_at,
-        row_at: rf.row_at - serverOffset,
-      };
-    }
-    let local = localById.get(rf.feed_id);
+  const canonicalIdByUrl = new Map<string, string>();
+  const canonicalIdByRemoteId = new Map<string, string>();
 
-    // Deduplicate by URL: if the remote feed matches a local feed by URL
-    // but has a different ID (e.g. two devices subscribed to the same feed
-    // before pairing), merge into the local feed instead of creating a
-    // duplicate.
-    if (!local && rf.feed_url) {
-      const dup = localByUrl.get(rf.feed_url);
-      if (dup && dup.id !== rf.feed_id) {
-        rf = { ...rf, feed_id: dup.id };
-        local = dup;
+  for (const remote of remoteFeeds) {
+    const canonicalByUrl = remote.feed_url ? canonicalIdByUrl.get(remote.feed_url) : undefined;
+    const canonicalId = canonicalByUrl ?? remote.feed_id;
+    if (!canonicalByUrl && !localById.has(remote.feed_id) && remote.feed_url) {
+      const local = localByUrl.get(remote.feed_url);
+      if (local && local.id !== remote.feed_id) {
+        const oldId = local.id;
+        await rekeyFeedId(oldId, remote.feed_id);
+        rekeyDirtyFeedId(oldId, remote.feed_id);
+        const rekeyed = { ...local, id: remote.feed_id };
+        localById.delete(oldId);
+        localById.set(remote.feed_id, rekeyed);
+        localByUrl.set(remote.feed_url, rekeyed);
       }
     }
+    if (remote.feed_url && !canonicalIdByUrl.has(remote.feed_url)) {
+      canonicalIdByUrl.set(remote.feed_url, canonicalId);
+    }
+    canonicalIdByRemoteId.set(remote.feed_id, canonicalId);
+  }
+  return canonicalIdByRemoteId;
+}
+
+export async function applyRemoteState(
+  payload: RemotePayload,
+  serverOffset = 0,
+  canonicalFeedIds?: ReadonlyMap<string, string>,
+): Promise<void> {
+  // 1) Feeds.
+  const remoteFeedIds = canonicalFeedIds ?? await canonicalizeLocalFeedIds(payload.feeds);
+  const localFeeds = await listFeeds();
+  const localById = new Map<string, Feed>(localFeeds.map((f) => [f.id, f]));
+  const tombstonedForUnsubscribe: string[] = [];
+  for (const remoteFeed of payload.feeds) {
+    // Convert remote stamps to the local clock frame so every comparison
+    // against local stamps (userMutationTime, newer()) is skew-correct.
+    const rf = serverOffset === 0
+      ? remoteFeed
+      : {
+          ...remoteFeed,
+          feed_url_at: remoteFeed.feed_url_at != null ? remoteFeed.feed_url_at - serverOffset : remoteFeed.feed_url_at,
+          folder_at: remoteFeed.folder_at != null ? remoteFeed.folder_at - serverOffset : remoteFeed.folder_at,
+          title_at: remoteFeed.title_at != null ? remoteFeed.title_at - serverOffset : remoteFeed.title_at,
+          html_url_at: remoteFeed.html_url_at != null ? remoteFeed.html_url_at - serverOffset : remoteFeed.html_url_at,
+          tags_at: remoteFeed.tags_at != null ? remoteFeed.tags_at - serverOffset : remoteFeed.tags_at,
+          deleted_at: remoteFeed.deleted_at != null ? remoteFeed.deleted_at - serverOffset : remoteFeed.deleted_at,
+          row_at: remoteFeed.row_at - serverOffset,
+        };
+    const localFeedId = remoteFeedIds.get(rf.feed_id) ?? rf.feed_id;
+    const local = localById.get(localFeedId);
     const remoteFolder = parseFolder(rf.folder);
     const remoteTags = parseTags(rf.tags);
     const mergedUrl = rf.feed_url != null
@@ -116,12 +140,12 @@ export async function applyRemoteState(payload: RemotePayload, serverOffset = 0)
       : (local?.url ?? '');
     if (!mergedUrl) {
       if (local && rf.deleted === 1 && rf.deleted_at != null && userMutationTime(local) < rf.deleted_at) {
-        tombstonedForUnsubscribe.push(rf.feed_id);
+        tombstonedForUnsubscribe.push(localFeedId);
       }
       continue;
     }
     const merged: Feed = {
-      id: rf.feed_id,
+      id: localFeedId,
       url: mergedUrl,
       title: newer(rf.title ?? null, local?.title ?? null, rf.title_at ?? null, local?.titleAt ?? userMutationTime(local)) ?? '',
       htmlUrl: newer(rf.html_url ?? null, local?.htmlUrl ?? null, rf.html_url_at ?? null, local?.htmlUrlAt ?? null) ?? undefined,
@@ -141,9 +165,10 @@ export async function applyRemoteState(payload: RemotePayload, serverOffset = 0)
       recentPublishCounts: local?.recentPublishCounts,
     };
     await upsertFeed(merged);
+    localById.set(localFeedId, merged);
     if (rf.deleted === 1 && rf.deleted_at != null) {
       const isNewer = !local || userMutationTime(local) < rf.deleted_at;
-      if (isNewer) tombstonedForUnsubscribe.push(rf.feed_id);
+      if (isNewer) tombstonedForUnsubscribe.push(localFeedId);
     }
   }
   for (const id of tombstonedForUnsubscribe) {
@@ -158,7 +183,8 @@ export async function applyRemoteState(payload: RemotePayload, serverOffset = 0)
 
   for (const rf of payload.flags) {
     const parsed = decodeItemId(rf.item_id);
-    const rawId = parsed ? `${parsed.feedId}::${parsed.guid}` : rf.item_id;
+    const localFeedId = parsed ? remoteFeedIds.get(parsed.feedId) ?? parsed.feedId : rf.feed_id;
+    const rawId = parsed ? `${localFeedId}::${parsed.guid}` : rf.item_id;
     const existing: ItemFlag | undefined = flagMap.get(rawId);
     const existingRead = existing ? (existing.read as 0 | 1) : null;
     const existingStarred = existing ? (existing.starred as 0 | 1) : null;
@@ -166,7 +192,7 @@ export async function applyRemoteState(payload: RemotePayload, serverOffset = 0)
     const mergedStarred = newer(rf.starred ?? null, existingStarred, rf.starred_at ?? null, null);
     const flagRow: ItemFlag = {
       id: rawId,
-      feedId: rf.feed_id,
+      feedId: localFeedId,
       read: mergedRead === null ? READ_UNREAD : (mergedRead as 0 | 1),
       starred: mergedStarred === null ? STAR_UNSTARRED : (mergedStarred as 0 | 1),
     };

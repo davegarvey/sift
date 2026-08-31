@@ -10,7 +10,7 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../src/db/open';
 import { listFeeds } from '../src/db/feeds';
-import { getDirty, enqueueFeed, enqueueFlag, enqueueReadMarker, enqueueStats } from '../src/sync/queue';
+import { getDirty, enqueueFeed, enqueueFeedDelete, enqueueFlag, enqueueReadMarker, enqueueStats, rekeyDirtyFeedId } from '../src/sync/queue';
 import { subscribeFeed, unsubscribeFeed, updateFeedMeta } from '../src/feeds/service';
 
 beforeEach(async () => {
@@ -121,6 +121,47 @@ describe('unsubscribeFeed', () => {
     const upserts = dirty.filter((e) => e.kind === 'feed-upsert' && e.feedId === feeds[0].id);
     expect(upserts.length).toBe(0);
     expect(dirty).toContainEqual(expect.objectContaining({ kind: 'feed-delete', feedId: feeds[0].id }));
+  });
+});
+
+describe('feed identity rekeying', () => {
+  it('rewrites every pending feed-linked entry', () => {
+    const oldFeedId = 'local-feed';
+    const newFeedId = 'server-feed';
+    enqueueFeed({
+      feedId: oldFeedId,
+      folder: null,
+      folderAt: 1,
+      title: 'Feed',
+      titleAt: 1,
+      feedUrl: { value: 'https://example.com/feed', at: 1 },
+      htmlUrl: null,
+      tags: null,
+      tagsAt: 1,
+      deleted: 0,
+      deletedAt: null,
+    });
+    enqueueFeedDelete(oldFeedId, { value: 'https://example.com/feed', at: 2 }, 2);
+    enqueueFlag({
+      itemId: `${oldFeedId}::article`,
+      feedId: oldFeedId,
+      read: 1,
+      readAt: 3,
+      starred: 0,
+      starredAt: 3,
+    });
+    enqueueStats({ feedId: oldFeedId, totalSeen: 1, at: 4 });
+    enqueueReadMarker({ itemId: `${oldFeedId}::article`, feedId: oldFeedId, at: 5 });
+
+    rekeyDirtyFeedId(oldFeedId, newFeedId);
+
+    expect(getDirty()).toEqual([
+      expect.objectContaining({ kind: 'feed-delete', feedId: newFeedId }),
+      expect.objectContaining({ kind: 'flag-update', feedId: newFeedId, itemId: `${newFeedId}::article` }),
+      expect.objectContaining({ kind: 'stats-update', feedId: newFeedId }),
+      expect.objectContaining({ kind: 'read-marker', feedId: newFeedId, itemId: `${newFeedId}::article` }),
+    ]);
+    expect(getDirty().some((entry) => entry.feedId === oldFeedId)).toBe(false);
   });
 });
 

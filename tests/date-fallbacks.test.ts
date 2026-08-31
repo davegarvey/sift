@@ -124,7 +124,7 @@ describe('merge: dates are never re-stamped', () => {
   });
 });
 
-describe('migration v8', () => {
+describe('migration v9', () => {
   // Structurally identical to open.ts's RssReaderDB so `upgradeDb` is
   // directly assignable as the upgrade callback for the seeded database.
   interface SeedSchema extends DBSchema {
@@ -169,6 +169,10 @@ describe('migration v8', () => {
     await db.put('items', noCreatedAt);
     await db.put('itemFlags', { id: 'f1::valid', feedId: 'f1', read: 1, starred: 0 });
     await db.put('meta', { key: 'flagsBackfilled', value: true });
+    await db.put('meta', {
+      key: 'settings',
+      value: { syncKey: 'a'.repeat(22), lastSyncAt: 123, lastStatsSyncAt: 456, serverOffset: 789 },
+    });
     db.close();
   }
 
@@ -201,10 +205,13 @@ describe('migration v8', () => {
     expect(stats?.readOnce).toBe(2);
     expect(await db.get('readMarkers', 'f1::valid')).toMatchObject({ acknowledged: 0 });
     expect(await db.get('readMarkers', 'f1::opened')).toMatchObject({ acknowledged: 0 });
+    expect(await db.get('meta', 'settings')).toMatchObject({
+      value: { lastSyncAt: null, lastStatsSyncAt: null, serverOffset: null },
+    });
     db.close();
   });
 
-  it('upgrades a v5 database through the full chain to v8', async () => {
+  it('upgrades a v5 database through the full chain to v9', async () => {
     const name = `${DB_NAME}-mig-v5`;
     await seed(5, name);
     const db = await openDB<SeedSchema>(name, DB_VERSION, { upgrade: upgradeDb });
@@ -219,7 +226,7 @@ describe('migration v8', () => {
     db.close();
   });
 
-  it('fresh install at v8 runs the whole chain cleanly', async () => {
+  it('fresh install at v9 runs the whole chain cleanly', async () => {
     const name = `${DB_NAME}-mig-fresh`;
     const db = await openDB<SeedSchema>(name, DB_VERSION, { upgrade: upgradeDb });
     expect(db.objectStoreNames.contains('feeds')).toBe(true);

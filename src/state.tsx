@@ -313,8 +313,29 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   const reloadFeeds = async () => {
+    const previousFeeds = feeds();
+    const previousScope = state.riverScope;
+    const previousScopedFeed = previousScope
+      ? previousFeeds.find((feed) => feed.id === previousScope)
+      : undefined;
+    const previousItem = state.currentItem;
+    const previousItemFeed = previousItem
+      ? previousFeeds.find((feed) => feed.id === previousItem.feedId)
+      : undefined;
     const next = await listFeeds();
     setFeeds(next);
+    const feedForPrevious = (feed: Feed | undefined): Feed | undefined =>
+      feed?.url ? next.find((candidate) => candidate.url === feed.url) : undefined;
+    if (previousScope != null && !next.some((feed) => feed.id === previousScope)) {
+      setState({ riverScope: feedForPrevious(previousScopedFeed)?.id ?? null });
+    }
+    const replacementFeed = feedForPrevious(previousItemFeed);
+    if (previousItem && replacementFeed && replacementFeed.id !== previousItem.feedId) {
+      const replacementId = `${replacementFeed.id}::${previousItem.guid}`;
+      const replacementItem = { ...previousItem, id: replacementId, feedId: replacementFeed.id };
+      setState({ currentItem: replacementItem, returnToItemId: replacementId });
+      if (state.view === 'reading') history.replaceState(null, '', itemUrl(replacementItem));
+    }
     setStatsRevision((revision) => revision + 1);
     return next;
   };
@@ -504,7 +525,10 @@ export const AppProvider: ParentComponent = (props) => {
 
   const refreshFeeds = (feedIds: readonly string[]) => enqueueManualRefresh(new Set(feedIds), false, false);
 
-  const reloadBoth = () => { void reloadFeeds(); void reloadItems(); };
+  const reloadBoth = async () => {
+    await reloadFeeds();
+    await reloadItems();
+  };
 
   const toggleStar = async (item: Item) => {
     await toggleStarAndSync(item);
