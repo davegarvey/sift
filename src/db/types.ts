@@ -5,7 +5,7 @@
  */
 
 export interface Feed {
-  /** Stable UUID — primary key, never changes. Generated at subscribe time. */
+  /** Stable subscription identity — generated locally, then canonicalized from sync when paired. */
   id: string;
   /** Feed fetch URL (mutable — user may edit it). */
   url: string;
@@ -56,7 +56,7 @@ export interface FeedRefreshError {
 }
 
 export interface Item {
-  /** Stable id: `${feedId}::${guid}`. */
+  /** Canonical id: `${feedId}::${guid}`. Rewritten when the feed adopts a sync identity. */
   id: string;
   feedId: string;
   guid: string;
@@ -118,7 +118,7 @@ export interface DBSchema {
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 8;
+export const DB_VERSION = 9;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;

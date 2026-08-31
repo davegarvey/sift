@@ -43,6 +43,36 @@ export function clearAllDirty(): void {
   schedulePersist();
 }
 
+function rekeyItemId(itemId: string, fromId: string, toId: string): string {
+  const prefix = `${fromId}::`;
+  return itemId.startsWith(prefix) ? `${toId}::${itemId.slice(prefix.length)}` : itemId;
+}
+
+export function rekeyDirtyFeedId(fromId: string, toId: string): void {
+  if (fromId === toId) return;
+  inMemory = inMemory.map((entry) => {
+    switch (entry.kind) {
+      case 'feed-upsert':
+        return entry.feedId === fromId ? { ...entry, feedId: toId } : entry;
+      case 'feed-delete':
+        return entry.feedId === fromId
+          ? { ...entry, feedId: toId }
+          : entry;
+      case 'flag-update':
+        return entry.feedId === fromId
+          ? { ...entry, feedId: toId, itemId: rekeyItemId(entry.itemId, fromId, toId) }
+          : entry;
+      case 'stats-update':
+        return entry.feedId === fromId ? { ...entry, feedId: toId } : entry;
+      case 'read-marker':
+        return entry.feedId === fromId
+          ? { ...entry, feedId: toId, itemId: rekeyItemId(entry.itemId, fromId, toId) }
+          : entry;
+    }
+  });
+  schedulePersist();
+}
+
 function schedulePersist(): void {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {

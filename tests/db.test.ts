@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getDb } from '../src/db/open';
-import { upsertFeed, getFeedByUrl, listFeeds, deleteFeed } from '../src/db/feeds';
+import { upsertFeed, getFeedByUrl, listFeeds, deleteFeed, rekeyFeedId } from '../src/db/feeds';
 import {
   insertOrUpdateItem,
   bulkUpsertItems,
@@ -174,6 +174,45 @@ describe('items store', () => {
     expect(got?.read).toBe(true);
     const flag = await getFlag(item.id);
     expect(flag?.read).toBe(1);
+  });
+
+  it('rekeys every feed-linked record without losing reading state', async () => {
+    const oldFeedId = 'local-feed';
+    const newFeedId = 'server-feed';
+    const item = makeItem({ feedId: oldFeedId, guid: 'rekeyed' });
+    await upsertFeed(makeFeed({ id: oldFeedId }));
+    await insertOrUpdateItem(item);
+    await markRead(item.id, true);
+    await toggleStar(item.id);
+
+    await rekeyFeedId(oldFeedId, newFeedId);
+
+    const newItemId = `${newFeedId}::rekeyed`;
+    expect(await getItem(item.id)).toBeUndefined();
+    expect(await getItem(newItemId)).toMatchObject({
+      id: newItemId,
+      feedId: newFeedId,
+      read: true,
+      starred: true,
+    });
+    expect(await getFlag(item.id)).toBeUndefined();
+    expect(await getFlag(newItemId)).toMatchObject({
+      id: newItemId,
+      feedId: newFeedId,
+      read: 1,
+      starred: 1,
+    });
+    expect(await getFeedStats(oldFeedId)).toBeUndefined();
+    expect(await getFeedStats(newFeedId)).toMatchObject({
+      feedId: newFeedId,
+      totalSeen: 1,
+      readOnce: 1,
+    });
+    expect(await listReadMarkers()).toContainEqual({
+      id: newItemId,
+      feedId: newFeedId,
+      acknowledged: 0,
+    });
   });
 
   it('counts duplicate new identities in one batch once', async () => {

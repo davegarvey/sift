@@ -5,11 +5,12 @@ import * as esbuild from 'esbuild';
 import path from 'path';
 import { getDb } from '../src/db/open';
 import { upsertFeed, listFeeds, getFeedByUrl } from '../src/db/feeds';
-import { insertOrUpdateItem, markRead } from '../src/db/items';
+import { getItem, insertOrUpdateItem, markRead } from '../src/db/items';
 import { getFeedStats, getReadMarker } from '../src/db/stats';
-import { setFlag } from '../src/db/flags';
+import { getFlag, setFlag } from '../src/db/flags';
 import { setStoredSyncKey, setStoredLastSyncAt, clearStoredSyncKey } from '../src/sync/key';
-import { triggerFirstTime } from '../src/sync/init';
+import { bootSync, triggerFirstTime } from '../src/sync/init';
+import { runPull } from '../src/sync/merge';
 import { clearAllDirty, enqueueFlag } from '../src/sync/queue';
 import { setMeta } from '../src/db/meta';
 import { updateFeedMeta, unsubscribeFeed } from '../src/feeds/service';
@@ -389,6 +390,245 @@ describe('sync pairing first-time setup', () => {
     const localFeeds = await listFeeds();
     const matchingFeeds = localFeeds.filter((f) => f.url === sharedUrl);
     expect(matchingFeeds.length).toBe(1);
+    expect(matchingFeeds[0].id).toBe(deskFeedId);
+  });
+
+  it('applies read state when paired devices have different IDs for the same feed URL', async () => {
+    const key = makeSyncKey('read-dedup-');
+    const url = 'https://ex.com/read-dedup';
+    const laptopFeedId = crypto.randomUUID();
+    const laptopItemId = `${laptopFeedId}::article-1`;
+
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await upsertFeed({
+      id: laptopFeedId,
+      url,
+      title: 'Read Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await insertOrUpdateItem({
+      id: laptopItemId,
+      feedId: laptopFeedId,
+      guid: 'article-1',
+      title: 'Already read',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await markRead(laptopItemId, true);
+    await withMfFetch(() => triggerFirstTime());
+
+    const serverPull = await mf.dispatchFetch(
+      'http://localhost/sync/pull?since=0',
+      { headers: { 'X-Sync-Key': key } },
+    );
+    const serverState = await serverPull.json() as { flags: Array<Record<string, unknown>> };
+    expect(serverState.flags.find((flag) => flag.read === 1)).toBeDefined();
+
+    const db = await getDb();
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
+      if (db.objectStoreNames.contains(store)) await db.clear(store);
+    }
+
+    const mobileFeedId = crypto.randomUUID();
+    const mobileItemId = `${mobileFeedId}::article-1`;
+    await upsertFeed({
+      id: mobileFeedId,
+      url,
+      title: 'Read Feed (mobile)',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await insertOrUpdateItem({
+      id: mobileItemId,
+      feedId: mobileFeedId,
+      guid: 'article-1',
+      title: 'Already read',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+
+    await withMfFetch(() => triggerFirstTime());
+
+    expect((await getItem(laptopItemId))?.read).toBe(true);
+    expect(await getItem(mobileItemId)).toBeUndefined();
+    expect((await getFlag(laptopItemId))?.read).toBe(1);
+  });
+
+  it('uses the canonical feed ID for later incremental reads and local read pushes', async () => {
+    const key = makeSyncKey('read-canon--');
+    const url = 'https://ex.com/read-canon';
+    const laptopFeedId = crypto.randomUUID();
+    const laptopItemId = `${laptopFeedId}::article-1`;
+
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await upsertFeed({
+      id: laptopFeedId,
+      url,
+      title: 'Read Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await insertOrUpdateItem({
+      id: laptopItemId,
+      feedId: laptopFeedId,
+      guid: 'article-1',
+      title: 'Read later',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await markRead(laptopItemId, true);
+    await withMfFetch(() => triggerFirstTime());
+
+    const db = await getDb();
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
+      if (db.objectStoreNames.contains(store)) await db.clear(store);
+    }
+
+    const mobileFeedId = crypto.randomUUID();
+    const mobileItemId = `${mobileFeedId}::article-1`;
+    await upsertFeed({
+      id: mobileFeedId,
+      url,
+      title: 'Read Feed (mobile)',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await insertOrUpdateItem({
+      id: mobileItemId,
+      feedId: mobileFeedId,
+      guid: 'article-1',
+      title: 'Read later',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await withMfFetch(() => triggerFirstTime());
+
+    const remoteUnread = await mf.dispatchFetch('http://localhost/sync/push', {
+      method: 'POST',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        flags: [{
+          itemId: `${encodeURIComponent(laptopFeedId)}::article-1`,
+          feedId: laptopFeedId,
+          read: 0,
+        }],
+      }),
+    });
+    expect(remoteUnread.status).toBe(204);
+
+    await withMfFetch(() => runPull());
+    expect((await getItem(laptopItemId))?.read).toBe(false);
+
+    await markRead(laptopItemId, true);
+    enqueueFlag({
+      itemId: laptopItemId,
+      feedId: laptopFeedId,
+      read: 1,
+      readAt: Date.now(),
+      starred: 0,
+      starredAt: Date.now(),
+    });
+    const { flushNow } = await import('../src/sync/push');
+    await withMfFetch(() => flushNow());
+
+    const serverPull = await mf.dispatchFetch(
+      'http://localhost/sync/pull?since=0',
+      { headers: { 'X-Sync-Key': key } },
+    );
+    const serverState = await serverPull.json() as { flags: Array<Record<string, unknown>> };
+    expect(serverState.flags).toContainEqual(expect.objectContaining({
+      item_id: `${encodeURIComponent(laptopFeedId)}::article-1`,
+      read: 1,
+    }));
+  });
+
+  it('repairs an existing client during the sync identity migration', async () => {
+    const key = makeSyncKey('read-repair-');
+    const url = 'https://ex.com/read-repair';
+    const laptopFeedId = crypto.randomUUID();
+    const laptopItemId = `${laptopFeedId}::article-1`;
+
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+    await upsertFeed({
+      id: laptopFeedId,
+      url,
+      title: 'Repair Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await insertOrUpdateItem({
+      id: laptopItemId,
+      feedId: laptopFeedId,
+      guid: 'article-1',
+      title: 'Repair me',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await markRead(laptopItemId, true);
+    await withMfFetch(() => triggerFirstTime());
+
+    const db = await getDb();
+    for (const store of ['feeds', 'items', 'itemFlags', 'meta', 'feedStats', 'readMarkers'] as const) {
+      if (db.objectStoreNames.contains(store)) await db.clear(store);
+    }
+
+    const mobileFeedId = crypto.randomUUID();
+    const mobileItemId = `${mobileFeedId}::article-1`;
+    await upsertFeed({
+      id: mobileFeedId,
+      url,
+      title: 'Repair Feed (mobile)',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    await insertOrUpdateItem({
+      id: mobileItemId,
+      feedId: mobileFeedId,
+      guid: 'article-1',
+      title: 'Repair me',
+      publishedAt: 100,
+      updatedAt: 100,
+      excerpt: '...',
+      read: false,
+      starred: false,
+      createdAt: 100,
+    });
+    await setStoredSyncKey(key);
+    await setStoredLastSyncAt(null);
+
+    await withMfFetch(() => bootSync());
+
+    expect((await getItem(laptopItemId))?.read).toBe(true);
+    expect(await getItem(mobileItemId)).toBeUndefined();
+    expect((await getFlag(laptopItemId))?.read).toBe(1);
   });
 
   it('preserves existing group rows when a populated device joins', async () => {

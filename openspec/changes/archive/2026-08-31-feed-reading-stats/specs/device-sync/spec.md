@@ -90,6 +90,13 @@ For each canonical item identity in a sync group, the server SHALL retain an `ev
 
 First-time sync SHALL transfer the server's aggregate feed statistics before the newly paired device is considered synchronized. A device with no local statistics SHALL adopt the pulled values, while a device with local statistics SHALL reconcile local and remote values without discarding the higher value.
 
+#### Scenario: Pairing adopts the server feed identity
+
+- **WHEN** a local subscription matches a remote feed by URL but uses a different feed ID
+- **THEN** first-time sync SHALL re-key the local feed, item identities, flags, statistics, and once-read markers to the remote `feed_id`
+- **AND** the re-key SHALL preserve the local reading state and aggregate values
+- **AND** subsequent synchronization writes SHALL use the remote `feed_id` directly
+
 #### Scenario: Empty device receives existing statistics
 
 - **WHEN** a new device performs its first sync for a populated sync group
