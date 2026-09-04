@@ -390,6 +390,50 @@ a:hover { text-decoration: underline; }
   overflow-y: auto;
 }
 
+.sidebar::-webkit-scrollbar,
+.sidebar .feed-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.sidebar::-webkit-scrollbar-track,
+.sidebar .feed-list::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-corner,
+.sidebar .feed-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb,
+.sidebar .feed-list::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  transition: background-color 150ms ease;
+}
+
+.sidebar:hover::-webkit-scrollbar-thumb,
+.sidebar:focus-within::-webkit-scrollbar-thumb,
+.sidebar .feed-list:hover::-webkit-scrollbar-thumb,
+.sidebar .feed-list:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--overlay);
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover,
+.sidebar .feed-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--subtext);
+}
+
+.sidebar::-webkit-scrollbar-thumb:active,
+.sidebar .feed-list::-webkit-scrollbar-thumb:active {
+  background-color: var(--text);
+}
+
+.sidebar::-webkit-scrollbar-button,
+.sidebar .feed-list::-webkit-scrollbar-button {
+  display: none;
+}
+
 .sidebar-resizer {
   position: absolute;
   top: 0;
