@@ -4,8 +4,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { runCli } from '../packages/siftctl/src/cli';
+import { capabilities, pullStats } from '../packages/siftctl/src/api';
 import { tokenFingerprint } from '../packages/siftctl/src/fingerprint';
 import { fetchFeedMetadata, fetchItems } from '../packages/siftctl/src/items';
+import { buildStats, deriveFeedStats, sortStatsRows } from '../packages/siftctl/src/stats';
+import { packageVersion } from '../packages/siftctl/src/version';
 
 const BASE = 'https://sift.example';
 let home: string;
@@ -106,6 +109,32 @@ describe('siftctl: tokenFingerprint', () => {
   });
 });
 
+describe('siftctl: package version', () => {
+  it('reads the version from package metadata', () => {
+    const metadata = JSON.parse(readFileSync(new URL('../packages/siftctl/package.json', import.meta.url), 'utf8')) as { version: string };
+    expect(packageVersion()).toBe(metadata.version);
+  });
+
+  it('prints the version without loading a token or contacting the server', async () => {
+    let called = false;
+    mockFetch(async () => {
+      called = true;
+      return jsonRes({}, 500);
+    });
+    await expect(runCli(['--version'])).resolves.toBe(0);
+    expect(stdout.trim()).toBe(packageVersion());
+    await expect(runCli(['-v'])).resolves.toBe(0);
+    expect(stdout.trim().split('\n')).toEqual([packageVersion(), packageVersion()]);
+    expect(called).toBe(false);
+  });
+
+  it('rejects unexpected version arguments', async () => {
+    const code = await runCli(['--version', 'extra']);
+    expect(code).toBe(2);
+    expect(stderr).toContain('takes no arguments');
+  });
+});
+
 describe('siftctl: feed metadata discovery', () => {
   it('reads the feed title and HTML URL', async () => {
     mockFetch(async (url) => {
@@ -116,6 +145,156 @@ describe('siftctl: feed metadata discovery', () => {
       title: 'Example Feed',
       htmlUrl: 'https://x.com/',
     });
+  });
+});
+
+describe('siftctl: statistics derivation', () => {
+  it('filters live feeds, fills missing rows, and derives browser-parity metrics', () => {
+    const result = buildStats(
+      [
+        { feed_id: 'feed-a', feed_url: 'https://example.com/a', title: 'Alpha', deleted: 0 },
+        { feed_id: 'feed-a-duplicate', feed_url: 'https://example.com/a', title: 'Duplicate', deleted: 0 },
+        { feed_id: 'feed-b', feed_url: 'https://example.com/b', title: 'Beta', deleted: 0 },
+        { feed_id: 'feed-c', feed_url: 'https://example.com/c', title: 'Deleted', deleted: 1 },
+      ],
+      [{ feed_id: 'feed-a', total_seen: 100, read_once: 20 }],
+    );
+    expect(result.summary).toEqual({ totalSeen: 100, readOnce: 20, readRate: 0.2 });
+    expect(result.feeds).toHaveLength(2);
+    expect(result.feeds[0]).toMatchObject({ feedId: 'feed-a', readRate: 0.2, expectedReads: 20, readIndex: 1, backlog: 80 });
+    expect(result.feeds[1]).toMatchObject({ feedId: 'feed-b', totalSeen: 0, readOnce: 0, readRate: null, expectedReads: null, readIndex: null });
+  });
+
+  it('treats invalid counters as zero and clamps read-once counts', () => {
+    const row = deriveFeedStats(
+      { feed_id: 'feed-a', feed_url: 'https://example.com/a', title: 'Alpha' },
+      { totalSeen: -1, readOnce: 4 },
+      0.5,
+    );
+    expect(row).toMatchObject({ totalSeen: 0, readOnce: 0, readRate: null, expectedReads: null, readIndex: null, backlog: 0 });
+    const result = buildStats(
+      [{ feed_id: 'feed-a', feed_url: 'https://example.com/a', title: 'Alpha', deleted: 0 }],
+      [{ feed_id: 'feed-a', total_seen: 5, read_once: 9 }],
+    );
+    expect(result.feeds[0].readOnce).toBe(5);
+    expect(result.summary.readOnce).toBe(5);
+  });
+
+  it('orders equal read counts by title and then feed ID', () => {
+    const rows = [
+      deriveFeedStats({ feed_id: 'z', feed_url: 'https://example.com/z', title: 'Zulu' }, { totalSeen: 10, readOnce: 5 }, 0.5),
+      deriveFeedStats({ feed_id: 'a', feed_url: 'https://example.com/a', title: 'Alpha' }, { totalSeen: 10, readOnce: 5 }, 0.5),
+    ];
+    expect(sortStatsRows(rows).map((row) => row.feedId)).toEqual(['a', 'z']);
+  });
+});
+
+describe('siftctl: stats command', () => {
+  it('returns a synchronized, approximate JSON snapshot for live feeds', async () => {
+    setTokenFile(TOKEN);
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/capabilities`) return jsonRes({ sync: true, stats: true });
+      if (url === `${BASE}/sync/pull?since=0`) {
+        return jsonRes({
+          serverTime: 1,
+          feeds: [
+            { feed_id: 'feed-a', feed_url: 'https://example.com/a', title: 'A', deleted: 0 },
+            { feed_id: 'feed-a-duplicate', feed_url: 'https://example.com/a', title: 'A duplicate', deleted: 0 },
+            { feed_id: 'feed-b', feed_url: 'https://example.com/b', title: 'B', deleted: 0 },
+            { feed_id: 'feed-old', feed_url: 'https://example.com/old', title: 'Old', deleted: 1 },
+          ],
+          flags: [],
+        });
+      }
+      if (url === `${BASE}/sync/stats/pull?since=0`) {
+        return jsonRes({
+          serverTime: 1,
+          stats: [
+            { feed_id: 'feed-a', total_seen: 100, read_once: 20 },
+            { feed_id: 'feed-b', total_seen: 50, read_once: 15 },
+            { feed_id: 'feed-old', total_seen: 500, read_once: 500 },
+          ],
+          markers: [],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const code = await runCli(['stats', '--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({
+      source: 'sync',
+      approximate: true,
+      summary: {
+        totalSeen: 150,
+        readOnce: 35,
+        readRate: 35 / 150,
+      },
+      feeds: [
+        {
+          feedId: 'feed-a',
+          title: 'A',
+          url: 'https://example.com/a',
+          totalSeen: 100,
+          readOnce: 20,
+          readRate: 0.2,
+          expectedReads: 100 * (35 / 150),
+          readIndex: 20 / (100 * (35 / 150)),
+          backlog: 80,
+        },
+        {
+          feedId: 'feed-b',
+          title: 'B',
+          url: 'https://example.com/b',
+          totalSeen: 50,
+          readOnce: 15,
+          readRate: 0.3,
+          expectedReads: 50 * (35 / 150),
+          readIndex: 15 / (50 * (35 / 150)),
+          backlog: 35,
+        },
+      ],
+    });
+    expect(stderr).toBe('');
+  });
+
+  it('prints synchronized human-readable output', async () => {
+    setTokenFile(TOKEN);
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/capabilities`) return jsonRes({ sync: true, stats: true });
+      if (url === `${BASE}/sync/pull?since=0`) return jsonRes({ serverTime: 1, feeds: [{ feed_id: 'feed-a', feed_url: 'https://example.com/a', title: 'A', deleted: 0 }], flags: [] });
+      if (url === `${BASE}/sync/stats/pull?since=0`) return jsonRes({ serverTime: 1, stats: [{ feed_id: 'feed-a', total_seen: 10, read_once: 2 }], markers: [] });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const code = await runCli(['stats']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('Synchronized reading statistics (approximate across devices)');
+    expect(stdout).toContain('A\t10\t2\t20%');
+  });
+
+  it('fails clearly when statistics are not advertised', async () => {
+    setTokenFile(TOKEN);
+    let pullCalled = false;
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/capabilities`) return jsonRes({ sync: true, stats: false });
+      pullCalled = true;
+      return jsonRes({}, 500);
+    });
+    const code = await runCli(['stats']);
+    expect(code).toBe(1);
+    expect(pullCalled).toBe(false);
+    expect(stderr).toContain('Statistics unavailable');
+  });
+
+  it('does not contact the server without a token', async () => {
+    let called = false;
+    mockFetch(async () => {
+      called = true;
+      return jsonRes({}, 500);
+    });
+    const code = await runCli(['stats']);
+    expect(code).toBe(1);
+    expect(called).toBe(false);
+    expect(stderr).toContain('Not paired');
   });
 });
 
@@ -173,6 +352,35 @@ describe('siftctl: status', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.paired).toBe(true);
     expect(parsed.groupFingerprint).toBeNull();
+  });
+});
+
+describe('siftctl: statistics API', () => {
+  it('retains the stats capability and pulls aggregate rows', async () => {
+    mockFetch(async (url) => {
+      if (url === `${BASE}/sync/capabilities`) return jsonRes({ sync: true, stats: true });
+      if (url === `${BASE}/sync/stats/pull?since=0`) {
+        return jsonRes({ serverTime: 2, stats: [{ feed_id: 'feed-1', total_seen: 10, read_once: 3 }], markers: [] });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    await expect(capabilities()).resolves.toEqual({ sync: true, stats: true });
+    await expect(pullStats(TOKEN)).resolves.toEqual({
+      serverTime: 2,
+      stats: [{ feed_id: 'feed-1', total_seen: 10, read_once: 3 }],
+      markers: [],
+    });
+  });
+
+  it('reports an unavailable statistics endpoint distinctly', async () => {
+    mockFetch(async (url) => {
+      expect(url).toBe(`${BASE}/sync/stats/pull?since=0`);
+      return new Response('Not Found', { status: 404 });
+    });
+    await expect(pullStats(TOKEN)).rejects.toMatchObject({
+      status: 404,
+      message: 'Statistics unavailable — this deployment does not support synced statistics',
+    });
   });
 });
 
