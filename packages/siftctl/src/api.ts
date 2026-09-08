@@ -32,10 +32,22 @@ export interface PullPayload {
   flags: Array<Record<string, unknown>>;
 }
 
-export async function capabilities(): Promise<{ sync: boolean }> {
+export interface StatsPullPayload {
+  serverTime: number;
+  stats: Array<Record<string, unknown>>;
+  markers: Array<Record<string, unknown>>;
+}
+
+export interface Capabilities {
+  sync: boolean;
+  stats: boolean;
+}
+
+export async function capabilities(): Promise<Capabilities> {
   const res = await request('/sync/capabilities');
   if (!res.ok) throw new ApiError(`Capabilities failed: ${res.status}`, res.status);
-  return (await res.json()) as { sync: boolean };
+  const body = (await res.json()) as { sync?: unknown; stats?: unknown };
+  return { sync: body.sync === true, stats: body.stats === true };
 }
 
 export interface GroupStatus {
@@ -69,6 +81,15 @@ export async function pull(token: string, since = 0): Promise<PullPayload> {
   if (res.status === 429) throw new ApiError('Rate limited — wait a moment and retry', 429);
   if (!res.ok) throw new ApiError(`Pull failed: ${res.status}`, res.status);
   return (await res.json()) as PullPayload;
+}
+
+export async function pullStats(token: string, since = 0): Promise<StatsPullPayload> {
+  const res = await request(`/sync/stats/pull?since=${encodeURIComponent(String(since))}`, { token });
+  if (res.status === 401) throw new ApiError('Unauthorized — token revoked or invalid; run `siftctl pair` again', 401);
+  if (res.status === 404) throw new ApiError('Statistics unavailable — this deployment does not support synced statistics', 404);
+  if (res.status === 429) throw new ApiError('Rate limited — wait a moment and retry', 429);
+  if (!res.ok) throw new ApiError(`Statistics pull failed: ${res.status}`, res.status);
+  return (await res.json()) as StatsPullPayload;
 }
 
 export async function push(token: string, body: { feeds?: unknown[]; flags?: unknown[] }): Promise<void> {

@@ -3,9 +3,11 @@
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { baseUrl, readToken, writeToken } from './config.js';
-import { ApiError, capabilities, groupStatus, pull, push, redeemToken } from './api.js';
+import { ApiError, capabilities, groupStatus, pull, pullStats, push, redeemToken } from './api.js';
 import { tokenFingerprint } from './fingerprint.js';
 import { fetchFeedMetadata, fetchItems } from './items.js';
+import { buildStats, type StatsOutput } from './stats.js';
+import { packageVersion } from './version.js';
 
 const USAGE = `siftctl — control your Sift subscriptions
 
@@ -13,6 +15,7 @@ Usage:
   siftctl pair <code>               Redeem an agent pairing code from Sift Settings
   siftctl status [--json]           Show API status, base URL, group code, and token fingerprint
   siftctl feeds [--json]            List subscribed feeds
+  siftctl stats [--json]            Show synchronized reading statistics
   siftctl feed add <url> [--title TITLE] [--tags TAG,...] [--json]
                                    Subscribe to a feed
   siftctl feed edit <url> [--title TITLE] [--tags TAG,...] [--json]
@@ -23,6 +26,7 @@ Usage:
                                    Show recent items (default 20)
   siftctl mark read <itemId> [--json]
                                    Mark an item read
+  siftctl --version, -v             Show the installed siftctl version
   siftctl help                      Show this help
 
 Environment:
@@ -128,6 +132,7 @@ async function cmdStatus(json: boolean): Promise<void> {
   if (json) {
     out({
       sync: cap.sync,
+      stats: cap.stats,
       url: baseUrl(),
       paired: token !== null,
       groupFingerprint: token ? (await groupStatus(token)).groupFingerprint : null,
@@ -136,6 +141,7 @@ async function cmdStatus(json: boolean): Promise<void> {
     return;
   }
   console.log(`Sync: ${cap.sync ? 'available' : 'unavailable'}`);
+  console.log(`Stats: ${cap.stats ? 'available' : 'unavailable'}`);
   console.log(`URL: ${baseUrl()}`);
   if (token) {
     const group = (await groupStatus(token)).groupFingerprint;
@@ -144,6 +150,51 @@ async function cmdStatus(json: boolean): Promise<void> {
   } else {
     console.log('Paired: no — run `siftctl pair <code>`');
   }
+}
+
+function formatCount(value: number): string {
+  return new Intl.NumberFormat().format(value);
+}
+
+function formatRate(value: number | null): string {
+  return value == null ? 'N/A' : `${Math.round(value * 100)}%`;
+}
+
+function formatDecimal(value: number | null): string {
+  return value == null ? 'N/A' : value.toFixed(1);
+}
+
+function printStats(data: StatsOutput): void {
+  console.log('Synchronized reading statistics (approximate across devices)');
+  console.log(`Articles: ${formatCount(data.summary.totalSeen)}`);
+  console.log(`Read: ${formatCount(data.summary.readOnce)}`);
+  console.log(`Reading rate: ${formatRate(data.summary.readRate)}`);
+  console.log('');
+  console.log('Feed\tArticles\tRead\tRate\tExpected\tPreference\tNot read yet');
+  for (const row of data.feeds) {
+    console.log([
+      row.title,
+      formatCount(row.totalSeen),
+      formatCount(row.readOnce),
+      formatRate(row.readRate),
+      formatDecimal(row.expectedReads),
+      row.readIndex == null ? 'N/A' : `${row.readIndex.toFixed(1)}x`,
+      formatCount(row.backlog),
+    ].join('\t'));
+  }
+}
+
+async function cmdStats(json: boolean): Promise<void> {
+  const token = requireToken();
+  const cap = await capabilities();
+  if (!cap.stats) throw new Error('Statistics unavailable — this deployment does not support synced statistics');
+  const [feedPayload, statsPayload] = await Promise.all([pull(token), pullStats(token)]);
+  const data = buildStats(feedPayload.feeds as unknown as FeedRow[], statsPayload.stats);
+  if (json) {
+    out(data);
+    return;
+  }
+  printStats(data);
 }
 
 async function cmdFeeds(json: boolean): Promise<void> {
@@ -319,6 +370,12 @@ export async function main(argv: string[]): Promise<number> {
       await cmdFeeds(json);
       return 0;
     }
+    case 'stats': {
+      const json = isFlag(rest, '--json');
+      if (rest.length > 0) throw new UsageError('stats takes no arguments');
+      await cmdStats(json);
+      return 0;
+    }
     case 'feed': {
       const sub = rest.shift();
       if (sub === 'add') {
@@ -376,6 +433,11 @@ export async function main(argv: string[]): Promise<number> {
     case '-h':
     case undefined:
       console.log(USAGE);
+      return 0;
+    case '--version':
+    case '-v':
+      if (rest.length > 0) throw new UsageError(`${cmd} takes no arguments`);
+      console.log(packageVersion());
       return 0;
     default:
       throw new UsageError(`Unknown command: ${cmd}\n\n${USAGE}`);

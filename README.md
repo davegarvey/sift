@@ -120,6 +120,8 @@ siftctl feed edit https://example.com/feed.xml --title "Example" --tags "tech, r
 siftctl feed remove https://example.com/feed.xml --yes
 siftctl items https://example.com/feed.xml
 siftctl mark read '<feed-id>::<guid>'
+siftctl stats --json
+siftctl --version
 ```
 
 Environment: `SIFTCTL_TOKEN` (overrides the token file at
@@ -130,6 +132,43 @@ the title or comma-separated tags. Tags are trimmed, lowercased, whitespace-
 normalized, deduplicated, and limited to 64 characters. All data commands and
 mutations support `--json` for machine consumption. Mutation results use stable
 objects such as `{ "ok": true, "operation": "edit", "feedId": "...", "url": "...", "title": "...", "tags": ["..."] }`.
+
+`siftctl stats` requires a paired agent token and reads the server-committed
+statistics snapshot; it cannot read device-local IndexedDB statistics. The
+browser may have newer pending sync data, and observed article volume is an
+approximate aggregate across devices. The command does not expose article
+content, reading-event history, reading duration, or trends. `--version` and
+`-v` print the installed CLI version without pairing or network access.
+
+With `--json`, stats output has a stable shape for scripts and LLMs:
+
+```json
+{
+  "source": "sync",
+  "approximate": true,
+  "summary": {
+    "totalSeen": 1200,
+    "readOnce": 340,
+    "readRate": 0.2833333333333333
+  },
+  "feeds": [
+    {
+      "feedId": "feed-id",
+      "title": "Example Feed",
+      "url": "https://example.com/feed.xml",
+      "totalSeen": 100,
+      "readOnce": 60,
+      "readRate": 0.6,
+      "expectedReads": 28.333333333333332,
+      "readIndex": 2.1176470588235294,
+      "backlog": 40
+    }
+  ]
+}
+```
+
+`readRate`, `expectedReads`, and `readIndex` are `null` when there is not
+enough data to calculate them.
 
 ### Via the OpenAPI document
 
