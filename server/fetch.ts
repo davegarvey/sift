@@ -160,12 +160,12 @@ async function resolveHost(hostname: string, signal?: AbortSignal): Promise<Reso
     const [a, aaaa] = await Promise.all([
       fetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=A`, {
         headers: { accept: 'application/dns-json' },
-        redirect: 'error',
+        redirect: 'manual',
         signal: controller.signal,
       }),
       fetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=AAAA`, {
         headers: { accept: 'application/dns-json' },
-        redirect: 'error',
+        redirect: 'manual',
         signal: controller.signal,
       }),
     ]);
