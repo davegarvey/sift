@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import * as esbuild from 'esbuild';
 import path from 'path';
 import { getDb } from '../src/db/open';
@@ -31,11 +31,11 @@ beforeAll(async () => {
 let mf: Miniflare;
 
 beforeEach(async () => {
-  mf = new Miniflare({
+  mf = new Miniflare(convertV4MiniflareOptions({
     modules: true,
     script: workerCode,
     d1Databases: ['DB'],
-  });
+  }));
   await mf.ready;
 
   // Reset server-side D1 state between tests (Miniflare may reuse a

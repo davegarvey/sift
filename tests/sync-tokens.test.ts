@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import * as esbuild from 'esbuild';
 import path from 'path';
 
@@ -28,11 +28,11 @@ function makeSyncKey(label: string): string {
 }
 
 async function createMf(): Promise<Miniflare> {
-  const mf = new Miniflare({
+  const mf = new Miniflare(convertV4MiniflareOptions({
     modules: true,
     script: workerCode,
     d1Databases: ['DB'],
-  });
+  }));
   await mf.ready;
   return mf;
 }

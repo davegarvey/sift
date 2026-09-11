@@ -1,9 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import crypto from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { randomBytes } from 'node:crypto';
 
 /** Generate a 22-char base64url sync key (same format as src/sync/key.ts). */
 function generateKey(): string {
-  return crypto.randomBytes(16)
+  return Buffer.from(randomBytes(16))
     .toString('base64url');
 }
 
