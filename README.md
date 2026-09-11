@@ -70,7 +70,11 @@ Copy `.env.example` to `.env` and set:
 ## Privacy
 
 The `/feed`, `/article`, and `/img` proxy endpoints forward your request to
-the upstream URL and return the body. Successful `/feed` responses may be
+the upstream URL and return the body. Only absolute HTTP(S) URLs whose literal
+or resolved target passes the public-target safety checks are requested. Normal
+public redirects are followed for up to five hops with each destination checked
+again; unsafe, malformed, or excessive redirects return a generic upstream
+failure and are not passed to the browser. Successful `/feed` responses may be
 held in a bounded cache for up to 15 minutes, keyed by the complete upstream
 URL. Node/Bun use process-local memory; Cloudflare Workers also use the
 Workers Cache API when available, with data-center-local, best-effort reuse.
@@ -81,7 +85,9 @@ The feed body cache is not part of sync or persistent storage. Cloudflare
 Workers also store hashed feed failure keys and cooldown timestamps in D1;
 they are not exposed through the sync API. Worker cache hits still
 count as Worker requests against the account plan limits. The proxy DOES NOT
-log upstream URLs anywhere persistent.
+log upstream URLs anywhere persistent. Target checks are application-level
+filtering and do not pin a hostname to one DNS answer for the lifetime of a
+connection.
 
 The `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged

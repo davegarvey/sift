@@ -6,7 +6,7 @@ let urlCounter = 0;
 
 function feedUrl(): string {
   urlCounter += 1;
-  return `https://cache-${urlCounter}.example/feed.xml`;
+  return `http://93.184.216.34/cache-${urlCounter}.example/feed.xml`;
 }
 
 function response(body: string, headers: Record<string, string> = {}): Response {
@@ -258,18 +258,21 @@ describe('shared feed cache', () => {
     expect(cappedCalls).toBe(1);
   });
 
-  it('does not cool down redirects', async () => {
+  it('follows public redirects without entering failure cooldown', async () => {
     const url = feedUrl();
     let calls = 0;
     vi.stubGlobal('fetch', (async () => {
       calls += 1;
-      return new Response(null, { status: 302, headers: { Location: '/new-feed.xml' } });
+      return calls === 1
+        ? new Response(null, { status: 302, headers: { Location: '/new-feed.xml' } })
+        : response('<rss>redirected</rss>');
     }) as typeof globalThis.fetch);
 
     const first = await fetchFeedCached(url);
     const second = await fetchFeedCached(url);
-    expect(first.response.status).toBe(302);
-    expect(second.response.status).toBe(302);
+    expect(first.response.status).toBe(200);
+    expect(await first.response.text()).toBe('<rss>redirected</rss>');
+    expect(second.response.status).toBe(200);
     expect(second.response.headers.get('X-Sift-Cache')).not.toBe('cooldown');
     expect(calls).toBe(2);
   });

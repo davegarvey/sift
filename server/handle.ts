@@ -13,6 +13,14 @@ import { createSyncRoutes } from './sync/routes';
 
 export type AppEnv = Env;
 
+const REDIRECT_HEADERS = ['Location', 'Refresh', 'Content-Location'];
+
+function responseHeadersWithoutRedirects(response: Response): Headers {
+  const headers = new Headers(response.headers);
+  for (const name of REDIRECT_HEADERS) headers.delete(name);
+  return headers;
+}
+
 export interface CreateAppOptions {
   relay?: Relay;
   db?: D1Database;
@@ -71,7 +79,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     if (upstreamRes.status < 200 || upstreamRes.status >= 300) {
       return new Response(upstreamRes.body, {
         status: upstreamRes.status,
-        headers: upstreamRes.headers,
+        headers: responseHeadersWithoutRedirects(upstreamRes),
       });
     }
 

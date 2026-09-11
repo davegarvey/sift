@@ -12,6 +12,8 @@ const DENY_HOST_SUFFIXES = ['.localhost', '.localdomain', '.local', '.internal']
 const DOH_URL = 'https://cloudflare-dns.com/dns-query';
 const DOH_TIMEOUT_MS = 5_000;
 const TARGET_CACHE_TTL_MS = 5 * 60_000;
+const MAX_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 const targetCache = new Map<string, { decision: boolean; at: number }>();
 
@@ -140,43 +142,56 @@ function isDeniedIpv6(s: string): boolean {
   return false;
 }
 
-async function resolveHost(hostname: string): Promise<string[] | null> {
+interface ResolvedAddress {
+  type: 1 | 28;
+  address: string;
+}
+
+async function resolveHost(hostname: string, signal?: AbortSignal): Promise<ResolvedAddress[] | null> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) {
+    controller.abort();
+  } else {
+    signal?.addEventListener('abort', abort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), DOH_TIMEOUT_MS);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DOH_TIMEOUT_MS);
-    try {
-      const [a, aaaa] = await Promise.all([
-        fetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=A`, {
-          headers: { accept: 'application/dns-json' },
-          signal: controller.signal,
-        }),
-        fetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=AAAA`, {
-          headers: { accept: 'application/dns-json' },
-          signal: controller.signal,
-        }),
-      ]);
-      const results: string[] = [];
-      for (const res of [a, aaaa]) {
-        if (!res.ok) return null;
-        const data = (await res.json()) as { Answer?: { type?: number; data?: string }[] };
-        for (const ans of data.Answer ?? []) {
-          // Only terminal A (1) and AAAA (28) records are IPs. CNAME (5)
-          // and other record types carry hostnames, not addresses, and must
-          // not be fed into the deny-range check.
-          if (ans.type !== 1 && ans.type !== 28) continue;
-          if (typeof ans.data === 'string') results.push(ans.data);
-        }
+    const [a, aaaa] = await Promise.all([
+      fetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=A`, {
+        headers: { accept: 'application/dns-json' },
+        redirect: 'error',
+        signal: controller.signal,
+      }),
+      fetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=AAAA`, {
+        headers: { accept: 'application/dns-json' },
+        redirect: 'error',
+        signal: controller.signal,
+      }),
+    ]);
+    const results: ResolvedAddress[] = [];
+    for (const res of [a, aaaa]) {
+      if (!res.ok) return null;
+      const data = (await res.json()) as { Answer?: unknown };
+      if (data.Answer !== undefined && !Array.isArray(data.Answer)) return null;
+      for (const answer of data.Answer ?? []) {
+        if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) return null;
+        const ans = answer as { type?: unknown; data?: unknown };
+        if (ans.type !== 1 && ans.type !== 28) continue;
+        if (typeof ans.data !== 'string') return null;
+        results.push({ type: ans.type, address: ans.data });
       }
-      return results;
-    } finally {
-      clearTimeout(timer);
     }
+    return results;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }
 
-async function isDeniedTarget(hostname: string): Promise<boolean> {
+async function isDeniedTarget(hostname: string, signal?: AbortSignal): Promise<boolean> {
   if (isDeniedHostname(hostname)) return true;
   if (hostname.includes(':')) {
     return isDeniedIpv6(hostname);
@@ -189,13 +204,19 @@ async function isDeniedTarget(hostname: string): Promise<boolean> {
   if (cached && Date.now() - cached.at < TARGET_CACHE_TTL_MS) {
     return cached.decision;
   }
-  const ips = await resolveHost(hostname);
+  const ips = await resolveHost(hostname, signal);
   // Fail closed: an unresolvable DoH result refuses the target.
   let decision = true;
-  if (ips !== null) {
+  if (ips !== null && ips.length > 0) {
     decision = false;
     for (const ip of ips) {
-      if (ip.includes(':') ? isDeniedIpv6(ip) : isDeniedIpv4(parseIpv4(ip) ?? 0)) {
+      const denied = ip.type === 1
+        ? (() => {
+          const value = parseIpv4(ip.address);
+          return value === null || isDeniedIpv4(value);
+        })()
+        : ipv6Groups(ip.address) === null || isDeniedIpv6(ip.address);
+      if (denied) {
         decision = true;
         break;
       }
@@ -205,23 +226,42 @@ async function isDeniedTarget(hostname: string): Promise<boolean> {
   return decision;
 }
 
+function parseUpstreamUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    try {
+      console.warn('getUpstreamUrl: failed to parse URL, trying decoded');
+      return new URL(decodeURIComponent(raw));
+    } catch {
+      return null;
+    }
+  }
+}
+
+export async function validateUpstreamUrl(raw: string, signal?: AbortSignal): Promise<string | null> {
+  const parsed = parseUpstreamUrl(raw);
+  if (!parsed) return null;
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (await isDeniedTarget(parsed.hostname, signal)) return null;
+  return parsed.toString();
+}
+
 export async function getUpstreamUrl(reqUrl: string): Promise<string | null> {
   try {
     const url = new URL(reqUrl);
     const raw = url.searchParams.get('url');
     if (!raw) return null;
-    let parsed: URL;
-    try {
-      parsed = new URL(raw);
-    } catch {
-      console.warn('getUpstreamUrl: failed to parse URL, trying decoded');
-      parsed = new URL(decodeURIComponent(raw));
-    }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    if (await isDeniedTarget(parsed.hostname)) return null;
-    return parsed.toString();
+    return await validateUpstreamUrl(raw);
   } catch {
     return null;
+  }
+}
+
+async function cancelResponse(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
   }
 }
 
@@ -231,7 +271,40 @@ export async function fetchUpstream(upstream: string, init: RequestInit = {}): P
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    return await fetch(upstream, { ...init, headers, signal: controller.signal });
+    let current = await validateUpstreamUrl(upstream, controller.signal);
+    if (!current) throw new Error('Unsafe upstream URL');
+
+    for (let redirects = 0; ; redirects += 1) {
+      const response = await fetch(current, {
+        ...init,
+        headers,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+      if (response.status === 304 || response.status < 300 || response.status >= 400) {
+        return response;
+      }
+      if (!REDIRECT_STATUSES.has(response.status) || redirects >= MAX_REDIRECTS) {
+        await cancelResponse(response);
+        throw new Error('Unsafe or excessive upstream redirect');
+      }
+
+      const location = response.headers.get('Location');
+      if (!location) {
+        await cancelResponse(response);
+        throw new Error('Upstream redirect has no location');
+      }
+      let next: string;
+      try {
+        next = new URL(location, current).toString();
+      } catch {
+        await cancelResponse(response);
+        throw new Error('Upstream redirect has an invalid location');
+      }
+      await cancelResponse(response);
+      current = await validateUpstreamUrl(next, controller.signal);
+      if (!current) throw new Error('Unsafe upstream redirect');
+    }
   } finally {
     clearTimeout(timer);
   }
