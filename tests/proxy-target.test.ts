@@ -7,9 +7,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getUpstreamUrl } from '../server/fetch';
 
-function stubDoh(answers: Record<string, Array<string | { data: string; type: number }>>): void {
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+function stubDoh(
+  answers: Record<string, Array<string | { data: string; type: number }>>,
+  redirectModes: unknown[] = [],
+): void {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
+    if (url.hostname === 'cloudflare-dns.com') redirectModes.push(init?.redirect);
     const name = url.searchParams.get('name') ?? '';
     const type = url.searchParams.get('type') ?? '';
     const data = answers[`${name}:${type}`] ?? [];
@@ -84,6 +88,19 @@ describe('getUpstreamUrl: resolved DNS records', () => {
     expect(await getUpstreamUrl(reqUrl('http://example.com/feed.xml'))).toBe(
       'http://example.com/feed.xml',
     );
+  });
+
+  it('uses a supported non-following redirect mode for DoH lookups', async () => {
+    const redirectModes: unknown[] = [];
+    stubDoh({
+      'worker-compatible.example:A': ['93.184.216.34'],
+      'worker-compatible.example:AAAA': [],
+    }, redirectModes);
+
+    expect(await getUpstreamUrl(reqUrl('http://worker-compatible.example/feed.xml'))).toBe(
+      'http://worker-compatible.example/feed.xml',
+    );
+    expect(redirectModes).toEqual(['manual', 'manual']);
   });
 
   it('accepts a hostname whose DoH answer includes a CNAME record', async () => {
