@@ -37,7 +37,10 @@ Sift — a simple, slick, browser-first RSS reader.
 ## Git workflow
 
 - **Never push directly to `main`.** Create a feature branch (e.g., `feat/short-description`, `fix/short-description`), push it, and open a PR. PRs are how changes land on `main` — even for one-commit changes.
-- Before branching, ensure `main` is up to date with `git pull`.
+- Before branching, from the repository root worktree, switch to `main` and update it with `git pull --ff-only`.
+- Use `./.worktrees/<task-slug>` for new feature work so multiple agents can work in parallel. From the repository root worktree, create each task's isolated checkout with `git worktree add -b <type>/<task-slug> .worktrees/<task-slug> main`, then run all task commands from that worktree.
+- Every agent must use a unique worktree path and branch. Do not edit the repository root for feature work, share a worktree with another agent, or check out a branch already attached to another worktree. Worktree isolation prevents checkout collisions but does not prevent merge conflicts.
+- Confirm the active checkout with `git worktree list` before editing. After a branch is merged and no agent is using it, remove it from the repository root with `git worktree remove .worktrees/<task-slug>` and clear stale metadata with `git worktree prune`.
 - Use conventional commits for commit messages. Include the PR number in the body if applicable.
 
 ## OpenSpec
