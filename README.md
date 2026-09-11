@@ -2,9 +2,9 @@
 
 A simple, browser-first RSS reader. Feed parsing, item storage, and reading
 state run in the browser tab; the server proxies network requests (CORS-safe),
-uses a short-lived feed response cache to reduce duplicate upstream requests,
-serves the static app shell, and optionally provides multi-device sync and AI
-agent integration.
+uses short-lived feed caching and shared failure cooldown metadata to reduce
+duplicate upstream requests, serves the static app shell, and optionally
+provides multi-device sync and AI agent integration.
 
 - **Local-only**: subscriptions, items, read/starred state, and lifetime reading statistics live in IndexedDB.
 - **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based), including exact group read-once deduplication and approximate observed volume.
@@ -74,7 +74,12 @@ the upstream URL and return the body. Successful `/feed` responses may be
 held in a bounded cache for up to 15 minutes, keyed by the complete upstream
 URL. Node/Bun use process-local memory; Cloudflare Workers also use the
 Workers Cache API when available, with data-center-local, best-effort reuse.
-The cache is not part of sync or persistent storage. Worker cache hits still
+Upstream `4xx`/`5xx` and network failures are briefly cooled down, honoring a
+valid `Retry-After` value (capped at 24 hours) and otherwise waiting 30 minutes
+before another proxy attempt. Network failures are returned as `502`.
+The feed body cache is not part of sync or persistent storage. Cloudflare
+Workers also store hashed feed failure keys and cooldown timestamps in D1;
+they are not exposed through the sync API. Worker cache hits still
 count as Worker requests against the account plan limits. The proxy DOES NOT
 log upstream URLs anywhere persistent.
 

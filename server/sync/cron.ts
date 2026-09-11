@@ -4,6 +4,7 @@
  * - Deletes tombstoned feeds older than 30 days.
  * - Deletes expired pairing codes (older than 1 day past expiry).
  * - Deletes rate-limit rows outside the largest window.
+ * - Deletes expired shared feed failure rows.
  */
 
 import { currentMonotonicTime } from './monotonic';
@@ -26,6 +27,9 @@ export async function runSyncCron(db: D1Database, scheduledTime: number = Date.n
     db
       .prepare('DELETE FROM rate_limits WHERE window_start < ?')
       .bind(rateLimitCutoff),
+    db
+      .prepare('DELETE FROM feed_fetch_failures WHERE retry_at < ?')
+      .bind(now),
   ]);
 
   // Touch the monotonic counter so a long-idle DB doesn't serve a stale "0".

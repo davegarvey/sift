@@ -47,7 +47,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
       feedResult = await fetchFeedCached(upstream, {
         etag: inm ?? undefined,
         lastModified: ims ?? undefined,
-      });
+      }, db);
     } catch {
       return badGateway('Failed to fetch upstream feed');
     }

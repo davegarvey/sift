@@ -1,3 +1,5 @@
+import { clearSharedFeedFailure, getSharedFeedFailure, recordSharedFeedFailure } from './feed-state';
+
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 export const READER_USER_AGENT = 'sift/0.0 (+https://github.com/dave/sift)';
 export const FEED_CACHE_TTL_MS = 15 * 60_000;
@@ -50,9 +52,16 @@ type RevalidationResult =
   | { kind: 'response'; response: Response; state: 'bypass' };
 
 const WORKER_FETCHED_AT_HEADER = 'X-Sift-Cache-Fetched-At';
+const WORKER_RETRY_AT_HEADER = 'X-Sift-Cache-Retry-At';
 const feedCache = new Map<string, CachedFeed>();
 const feedRevalidations = new Map<string, Promise<RevalidationResult>>();
-const feedRetries = new Map<string, number>();
+
+interface FeedRetry {
+  status: number;
+  retryAt: number;
+}
+
+const feedRetries = new Map<string, FeedRetry>();
 
 function isDeniedHostname(hostname: string): boolean {
   const h = hostname.replace(/\.$/, '');
@@ -243,6 +252,10 @@ function retryDelayMs(response: Response): number {
   return Math.min(parsed ?? FEED_RETRY_FALLBACK_MS, FEED_RETRY_MAX_MS);
 }
 
+function isUpstreamFailureStatus(status: number): boolean {
+  return status >= 400 && status <= 599;
+}
+
 function normalizeEtag(value: string): string {
   return value.trim().replace(/^W\//i, '');
 }
@@ -381,9 +394,9 @@ function touchFeedCache(upstream: string, entry: CachedFeed): void {
   }
 }
 
-function recordFeedRetry(upstream: string, delayMs: number): void {
+function recordFeedRetry(upstream: string, retry: FeedRetry): void {
   feedRetries.delete(upstream);
-  feedRetries.set(upstream, Date.now() + delayMs);
+  feedRetries.set(upstream, retry);
   while (feedRetries.size > FEED_CACHE_MAX_ENTRIES) {
     const oldest = feedRetries.keys().next().value;
     if (oldest === undefined) break;
@@ -391,28 +404,95 @@ function recordFeedRetry(upstream: string, delayMs: number): void {
   }
 }
 
-function cooldownResponse(upstream: string): FeedCacheResult {
-  const retryAt = feedRetries.get(upstream) ?? Date.now();
-  const retryAfter = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
+function cooldownResponse(retry: FeedRetry): FeedCacheResult {
+  const retryAfter = Math.max(1, Math.ceil((retry.retryAt - Date.now()) / 1000));
+  const headers = new Headers({
+    'Retry-After': String(retryAfter),
+    'Cache-Control': 'no-store',
+    'X-Sift-Cache': 'cooldown',
+  });
   return {
     response: new Response(null, {
-      status: 429,
-      headers: {
-        'Retry-After': String(retryAfter),
-        'Cache-Control': 'no-store',
-        'X-Sift-Cache': 'cooldown',
-      },
+      status: retry.status,
+      headers,
     }),
     state: 'cooldown',
   };
 }
 
-async function revalidateFeed(upstream: string, previous: CachedFeed | undefined): Promise<RevalidationResult> {
+function workerFailureResponse(retry: FeedRetry): Response {
+  const retryAfter = Math.max(1, Math.ceil((retry.retryAt - Date.now()) / 1000));
+  return new Response(null, {
+    status: retry.status,
+    headers: {
+      'Cache-Control': `public, max-age=${retryAfter}`,
+      [WORKER_RETRY_AT_HEADER]: String(retry.retryAt),
+    },
+  });
+}
+
+async function getWorkerFeedRetry(cache: CacheApiLike, upstream: string): Promise<FeedRetry | undefined> {
+  try {
+    const response = await cache.match(workerCacheKey(upstream));
+    if (!response || !isUpstreamFailureStatus(response.status)) return undefined;
+    const retryAt = Number(response.headers.get(WORKER_RETRY_AT_HEADER));
+    if (!Number.isFinite(retryAt) || retryAt <= Date.now()) return undefined;
+    return { status: response.status, retryAt };
+  } catch {
+    return undefined;
+  }
+}
+
+async function storeFeedRetry(upstream: string, retry: FeedRetry): Promise<void> {
+  const cache = getWorkerCache();
+  if (!cache) return;
+  try {
+    await cache.put(workerCacheKey(upstream), workerFailureResponse(retry));
+  } catch {
+  }
+}
+
+async function rememberFeedRetry(upstream: string, retry: FeedRetry, db?: D1Database): Promise<void> {
+  recordFeedRetry(upstream, retry);
+  await storeFeedRetry(upstream, retry);
+  if (db) {
+    try {
+      await recordSharedFeedFailure(db, upstream, retry);
+    } catch {
+    }
+  }
+}
+
+async function clearFeedRetry(upstream: string, db?: D1Database): Promise<void> {
+  const hadRetry = feedRetries.delete(upstream);
+  if (db && hadRetry) {
+    try {
+      await clearSharedFeedFailure(db, upstream);
+    } catch {
+    }
+  }
+}
+
+async function revalidateFeed(
+  upstream: string,
+  previous: CachedFeed | undefined,
+  db?: D1Database,
+): Promise<RevalidationResult> {
   const headers = new Headers();
   if (previous?.etag) headers.set('If-None-Match', previous.etag);
   if (previous?.lastModified) headers.set('If-Modified-Since', previous.lastModified);
 
-  const response = await fetchUpstream(upstream, { headers });
+  let response: Response;
+  try {
+    response = await fetchUpstream(upstream, { headers });
+  } catch {
+    const retry: FeedRetry = {
+      status: 502,
+      retryAt: Date.now() + FEED_RETRY_FALLBACK_MS,
+    };
+    await rememberFeedRetry(upstream, retry, db);
+    return { kind: 'response', response: new Response(null, { status: retry.status }), state: 'bypass' };
+  }
   if (response.status === 304 && previous) {
     const entry: CachedFeed = {
       ...previous,
@@ -421,15 +501,21 @@ async function revalidateFeed(upstream: string, previous: CachedFeed | undefined
       fetchedAt: Date.now(),
     };
     await storeCachedFeed(upstream, entry);
-    feedRetries.delete(upstream);
+    await clearFeedRetry(upstream, db);
     return { kind: 'cached', entry, state: 'revalidated' };
   }
 
-  if (response.status === 429) {
+  if (isUpstreamFailureStatus(response.status)) {
     const delayMs = retryDelayMs(response);
-    recordFeedRetry(upstream, delayMs);
+    const retry: FeedRetry = {
+      status: response.status,
+      retryAt: Date.now() + delayMs,
+    };
+    await rememberFeedRetry(upstream, retry, db);
     const headers = new Headers(response.headers);
-    if (!headers.has('Retry-After')) headers.set('Retry-After', String(Math.ceil(delayMs / 1000)));
+    if ((response.status === 429 || response.status === 503) && !headers.has('Retry-After')) {
+      headers.set('Retry-After', String(Math.ceil(delayMs / 1000)));
+    }
     return {
       kind: 'response',
       response: new Response(response.body, { status: response.status, headers }),
@@ -466,13 +552,14 @@ async function revalidateFeed(upstream: string, previous: CachedFeed | undefined
     fetchedAt: Date.now(),
   };
   await storeCachedFeed(upstream, entry);
-  feedRetries.delete(upstream);
+  await clearFeedRetry(upstream, db);
   return { kind: 'cached', entry, state: previous ? 'revalidated' : 'miss' };
 }
 
 export async function fetchFeedCached(
   upstream: string,
   conditional: FeedConditionalHeaders = {},
+  db?: D1Database,
 ): Promise<FeedCacheResult> {
   const now = Date.now();
   const cached = await getCachedFeed(upstream);
@@ -483,13 +570,31 @@ export async function fetchFeedCached(
 
   const retryAt = feedRetries.get(upstream);
   if (retryAt !== undefined) {
-    if (retryAt > now) return cooldownResponse(upstream);
+    if (retryAt.retryAt > now) return cooldownResponse(retryAt);
     feedRetries.delete(upstream);
+  }
+
+  const workerCache = getWorkerCache();
+  const workerRetry = workerCache ? await getWorkerFeedRetry(workerCache, upstream) : undefined;
+  if (workerRetry) {
+    recordFeedRetry(upstream, workerRetry);
+    return cooldownResponse(workerRetry);
+  }
+
+  if (db) {
+    try {
+      const sharedRetry = await getSharedFeedFailure(db, upstream, now);
+      if (sharedRetry) {
+        recordFeedRetry(upstream, sharedRetry);
+        return cooldownResponse(sharedRetry);
+      }
+    } catch {
+    }
   }
 
   let revalidation = feedRevalidations.get(upstream);
   if (!revalidation) {
-    revalidation = revalidateFeed(upstream, cached);
+    revalidation = revalidateFeed(upstream, cached, db);
     feedRevalidations.set(upstream, revalidation);
   }
 
