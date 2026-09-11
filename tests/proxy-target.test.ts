@@ -102,6 +102,25 @@ describe('getUpstreamUrl: resolved DNS records', () => {
     );
   });
 
+  it('refuses a hostname with no terminal address', async () => {
+    stubDoh({
+      'cname-only.example:A': [{ type: 5, data: 'target.example.' }],
+      'cname-only.example:AAAA': [],
+    });
+    expect(await getUpstreamUrl(reqUrl('http://cname-only.example/feed.xml'))).toBeNull();
+  });
+
+  it('refuses malformed terminal A and AAAA records', async () => {
+    stubDoh({
+      'malformed-a.example:A': [{ type: 1, data: 'not-an-ip' }],
+      'malformed-a.example:AAAA': [],
+      'malformed-aaaa.example:A': [],
+      'malformed-aaaa.example:AAAA': [{ type: 28, data: 'not-an-ipv6' }],
+    });
+    expect(await getUpstreamUrl(reqUrl('http://malformed-a.example/feed.xml'))).toBeNull();
+    expect(await getUpstreamUrl(reqUrl('http://malformed-aaaa.example/feed.xml'))).toBeNull();
+  });
+
   it('fails closed when the DoH resolution errors', async () => {
     globalThis.fetch = (async () => {
       throw new Error('dns down');
