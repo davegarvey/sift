@@ -1,6 +1,7 @@
 # D1 migrations
 
-This directory contains SQL migrations for the device-sync D1 database.
+This directory contains SQL migrations for the D1 database used by device sync
+and shared feed failure state.
 Migrations are the single source of truth for schema changes.
 
 ## How migrations run
@@ -45,3 +46,8 @@ npx wrangler d1 migrations apply sift-sync --local
 
 The local DB persists across `wrangler dev` restarts as long as the
 `.wrangler/` directory is preserved.
+
+Migration `0006_feed_fetch_failures.sql` adds the shared feed failure table.
+It stores only a SHA-256 URL key, failure status, retry timestamp, and update
+timestamp; feed bodies and raw upstream URLs are never stored in this table.
+The existing daily Worker cleanup removes rows after their retry timestamp.

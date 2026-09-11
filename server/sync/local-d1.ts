@@ -694,6 +694,8 @@ export class LocalD1Database {
         return ['token_id'];
       case 'rate_limits':
         return ['scope', 'window_start'];
+      case 'feed_fetch_failures':
+        return ['feed_key'];
       case 'counters':
         return ['name'];
       default:

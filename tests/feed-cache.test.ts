@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearFeedCacheForTests, FEED_CACHE_TTL_MS, fetchFeedCached } from '../server/fetch';
+import { LocalD1Database } from '../server/sync/local-d1';
 
 let urlCounter = 0;
 
@@ -170,14 +171,14 @@ describe('shared feed cache', () => {
     expect(calls).toBe(2);
   });
 
-  it('uses the fallback cooldown when Retry-After is absent', async () => {
+  it('uses the fallback cooldown when Retry-After is absent or unusable', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const url = feedUrl();
     let calls = 0;
     vi.stubGlobal('fetch', (async () => {
       calls += 1;
-      return new Response('limited', { status: 429 });
+      return new Response('limited', { status: 429, headers: { 'Retry-After': 'not-a-delay' } });
     }) as typeof globalThis.fetch);
 
     await fetchFeedCached(url);
@@ -185,6 +186,201 @@ describe('shared feed cache', () => {
     expect(suppressed.response.status).toBe(429);
     expect(suppressed.response.headers.get('Retry-After')).toBe(String(30 * 60));
     expect(calls).toBe(1);
+  });
+
+  it('cools down generic upstream failures instead of retrying them immediately', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      return new Response('Sorry', { status: 419 });
+    }) as typeof globalThis.fetch);
+
+    const first = await fetchFeedCached(url);
+    const second = await fetchFeedCached(url);
+    expect(first.response.status).toBe(419);
+    expect(second.response.status).toBe(419);
+    expect(second.response.headers.get('X-Sift-Cache')).toBe('cooldown');
+    expect(calls).toBe(1);
+
+    vi.advanceTimersByTime(30 * 60_000);
+    await fetchFeedCached(url);
+    expect(calls).toBe(2);
+  });
+
+  it('represents network failures as 502 and cools them down', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      throw new Error('network unavailable');
+    }) as typeof globalThis.fetch);
+
+    const first = await fetchFeedCached(url);
+    const second = await fetchFeedCached(url);
+    expect(first.response.status).toBe(502);
+    expect(second.response.status).toBe(502);
+    expect(second.response.headers.get('Retry-After')).toBe(String(30 * 60));
+    expect(calls).toBe(1);
+  });
+
+  it('accepts HTTP-date Retry-After values and caps long delays', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    const dateUrl = feedUrl();
+    const cappedUrl = feedUrl();
+    let dateCalls = 0;
+    let cappedCalls = 0;
+    vi.stubGlobal('fetch', (async (input) => {
+      if (String(input) === dateUrl) {
+        dateCalls += 1;
+        return new Response('limited', {
+          status: 503,
+          headers: { 'Retry-After': new Date(Date.now() + 60_000).toUTCString() },
+        });
+      }
+      cappedCalls += 1;
+      return new Response('limited', { status: 503, headers: { 'Retry-After': '999999999' } });
+    }) as typeof globalThis.fetch);
+
+    await fetchFeedCached(dateUrl);
+    const dateSuppressed = await fetchFeedCached(dateUrl);
+    expect(dateSuppressed.response.headers.get('Retry-After')).toBe('60');
+    expect(dateCalls).toBe(1);
+
+    await fetchFeedCached(cappedUrl);
+    const cappedSuppressed = await fetchFeedCached(cappedUrl);
+    expect(cappedSuppressed.response.headers.get('Retry-After')).toBe(String(24 * 60 * 60));
+    expect(cappedCalls).toBe(1);
+  });
+
+  it('does not cool down redirects', async () => {
+    const url = feedUrl();
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      return new Response(null, { status: 302, headers: { Location: '/new-feed.xml' } });
+    }) as typeof globalThis.fetch);
+
+    const first = await fetchFeedCached(url);
+    const second = await fetchFeedCached(url);
+    expect(first.response.status).toBe(302);
+    expect(second.response.status).toBe(302);
+    expect(second.response.headers.get('X-Sift-Cache')).not.toBe('cooldown');
+    expect(calls).toBe(2);
+  });
+
+  it('shares generic failure cooldowns through the Worker cache', async () => {
+    const url = feedUrl();
+    const cache = testCache();
+    vi.stubGlobal('caches', { default: cache });
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      return new Response('Sorry', { status: 419 });
+    }) as typeof globalThis.fetch);
+
+    await fetchFeedCached(url);
+    clearFeedCacheForTests();
+    const suppressed = await fetchFeedCached(url);
+    expect(suppressed.response.status).toBe(419);
+    expect(suppressed.response.headers.get('X-Sift-Cache')).toBe('cooldown');
+    expect(calls).toBe(1);
+  });
+
+  it('shares generic failure cooldowns through D1', async () => {
+    const url = feedUrl();
+    const db = new LocalD1Database() as unknown as D1Database;
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      return new Response('Sorry', { status: 419 });
+    }) as typeof globalThis.fetch);
+
+    await fetchFeedCached(url, {}, db);
+    clearFeedCacheForTests();
+    const suppressed = await fetchFeedCached(url, {}, db);
+    expect(suppressed.response.status).toBe(419);
+    expect(suppressed.response.headers.get('X-Sift-Cache')).toBe('cooldown');
+    expect(calls).toBe(1);
+  });
+
+  it('continues fetching when D1 failure-state operations are unavailable', async () => {
+    const url = feedUrl();
+    const db = {
+      prepare() {
+        throw new Error('D1 unavailable');
+      },
+    } as unknown as D1Database;
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      return response('<rss>available</rss>');
+    }) as typeof globalThis.fetch);
+
+    const result = await fetchFeedCached(url, {}, db);
+    expect(result.response.status).toBe(200);
+    expect(await result.response.text()).toBe('<rss>available</rss>');
+    expect(calls).toBe(1);
+  });
+
+  it('retains the previous representation after a stale generic failure', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    let calls = 0;
+    vi.stubGlobal('fetch', (async (_input, init) => {
+      calls += 1;
+      if (calls === 1) return response('<rss>one</rss>', { ETag: '"one"' });
+      const headers = new Headers(init?.headers);
+      expect(headers.get('If-None-Match')).toBe('"one"');
+      if (calls === 2) return new Response('Sorry', { status: 419, headers: { 'X-Upstream': 'failure' } });
+      return new Response(null, { status: 304, headers: { ETag: '"one"' } });
+    }) as typeof globalThis.fetch);
+
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
+    const failed = await fetchFeedCached(url);
+    expect(failed.response.status).toBe(419);
+    expect(failed.response.headers.get('X-Upstream')).toBe('failure');
+    expect(await failed.response.text()).toBe('Sorry');
+
+    vi.advanceTimersByTime(30 * 60_000);
+    const recovered = await fetchFeedCached(url);
+    expect(recovered.response.status).toBe(200);
+    expect(await recovered.response.text()).toBe('<rss>one</rss>');
+    expect(calls).toBe(3);
+  });
+
+  it('does not write shared failure state during successful refreshes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    const local = new LocalD1Database();
+    const queries: string[] = [];
+    const db = {
+      prepare(sql: string) {
+        queries.push(sql);
+        return local.prepare(sql);
+      },
+    } as unknown as D1Database;
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      if (calls === 1) return response('<rss>one</rss>', { ETag: '"one"' });
+      return new Response(null, { status: 304, headers: { ETag: '"one"' } });
+    }) as typeof globalThis.fetch);
+
+    await fetchFeedCached(url, {}, db);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
+    await fetchFeedCached(url, {}, db);
+
+    expect(queries.some((sql) => /INSERT\s+INTO\s+feed_fetch_failures|DELETE\s+FROM\s+feed_fetch_failures/i.test(sql))).toBe(false);
+    expect(calls).toBe(2);
   });
 
   it('restores a cached representation after memory state is cleared', async () => {
