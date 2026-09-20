@@ -23,6 +23,19 @@ export function itemUrl(item: { id: string; title?: string }): string {
   return slug ? `/i/${h}/${slug}` : `/i/${h}`;
 }
 
+export function writeItemHistory(item: { id: string; title?: string }, replace = false): void {
+  const entry = { itemId: item.id };
+  const url = itemUrl(item);
+  if (replace) history.replaceState(entry, '', url);
+  else history.pushState(entry, '', url);
+}
+
+export function itemIdFromHistoryState(state: unknown, hash: string): string | null {
+  if (typeof state !== 'object' || state === null || !('itemId' in state)) return null;
+  const itemId = (state as { itemId?: unknown }).itemId;
+  return typeof itemId === 'string' && hashId(itemId) === hash ? itemId : null;
+}
+
 export function parseItemIdFromUrl(): string | null {
   const match = window.location.pathname.match(/^\/i\/([a-z0-9]+)/);
   return match?.[1] ?? null;

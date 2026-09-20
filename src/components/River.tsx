@@ -164,7 +164,7 @@ export function River() {
   });
 
   return (
-    <main class="river" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
+    <main class="river" id="article-list" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
       <div class="river-inner">
         <Show when={listState() === 'items'} fallback={listState() === 'loading' ? <LoadingMessage /> : <EmptyState />}>
           <For each={visibleItems()}>

@@ -111,9 +111,7 @@ a:hover { text-decoration: underline; }
   touch-action: manipulation;
 }
 
-/* App shell grid: sidebar | main. Sidebar becomes a drawer on mobile.
-   When the reading view is active, the sidebar is hidden and the reading
-   view fills the main cell. */
+/* App shell grid: sidebar | article list. The sidebar becomes a drawer on mobile. */
 .app-shell {
   display: grid;
   grid-template-areas: "sidebar main";
@@ -246,12 +244,134 @@ a:hover { text-decoration: underline; }
   grid-template-columns: 1fr;
 }
 
-.app-shell[data-reading="true"] .sidebar {
+.app-shell[data-reading="true"] .sidebar,
+.app-shell[data-reading="true"] .article-list-pane {
   display: none;
 }
 
-.app-shell[data-reading="true"] .river {
-  display: none;
+.article-list-pane {
+  grid-area: main;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: visible;
+}
+
+@media (min-width: 820px) {
+  .app-shell[data-reading="true"][data-focus-mode="false"] {
+    --reading-sidebar-width: min(var(--sidebar-width, 240px), max(180px, calc(100% - 1120px)));
+    grid-template-areas: "sidebar river reader";
+    grid-template-columns:
+      var(--reading-sidebar-width)
+      minmax(360px, min(var(--article-list-width, 720px), calc(100% - var(--reading-sidebar-width) - 400px)))
+      minmax(400px, 1fr);
+  }
+
+  .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-hidden="true"] {
+    --reading-sidebar-width: 44px;
+  }
+
+  .app-shell[data-reading="true"][data-focus-mode="false"] .sidebar {
+    display: flex;
+    grid-area: sidebar;
+    min-width: 0;
+  }
+
+  .app-shell[data-reading="true"][data-focus-mode="false"] .article-list-pane {
+    display: flex;
+    grid-area: river;
+  }
+
+  .app-shell[data-reading="true"] .reading {
+    grid-area: reader;
+    min-width: 0;
+  }
+
+  .app-shell[data-reading="true"][data-focus-mode="false"] .reading {
+    border-left: 1px solid var(--hairline);
+  }
+
+  .app-shell[data-reading="true"] .reading .back {
+    display: none;
+  }
+
+  .app-shell[data-reading="true"] .reading .focus-mode-toggle {
+    display: inline-flex;
+  }
+
+  .app-shell[data-reading="true"][data-focus-mode="true"] {
+    grid-template-areas: "reader";
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell[data-reading="true"][data-focus-mode="true"] .sidebar,
+  .app-shell[data-reading="true"][data-focus-mode="true"] .article-list-pane {
+    display: none;
+  }
+}
+
+@media (min-width: 820px) and (max-width: 1299px) {
+    .app-shell[data-reading="true"][data-focus-mode="false"] {
+      --reading-sidebar-width: 44px;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"] .sidebar {
+      overflow: visible;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"] .sidebar-header,
+    .app-shell[data-reading="true"][data-focus-mode="false"] .sidebar .section,
+    .app-shell[data-reading="true"][data-focus-mode="false"] .sidebar-actions-bottom,
+    .app-shell[data-reading="true"][data-focus-mode="false"] .sidebar-resizer {
+      display: none;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"] .sidebar .collapsed-rail {
+      display: flex;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: min(var(--sidebar-width, 240px), 80vw);
+      z-index: 50;
+      overflow-y: auto;
+      box-shadow: var(--shadow);
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar-backdrop {
+      display: block;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar-header,
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar .section,
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar-actions-bottom {
+      display: flex;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar .collapsed-rail {
+      display: none;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar .section {
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .app-shell[data-reading="true"][data-focus-mode="false"][data-sidebar-open="true"] .sidebar-actions-bottom {
+      flex-direction: column;
+    }
+}
+
+@media (max-width: 819px) {
+  .app-shell[data-reading="true"] .reading {
+    grid-area: main;
+  }
+
+  .app-shell[data-reading="true"] .reading .focus-mode-toggle {
+    display: none;
+  }
 }
 
 /* Lightweight backdrop that closes the drawer when tapping outside. */
@@ -340,8 +460,16 @@ a:hover { text-decoration: underline; }
     padding-top: 40px;
   }
 
-  .app-shell[data-reading="true"] .topbar {
-    display: none;
+  .app-shell[data-reading="true"] .reading {
+    padding-top: 40px;
+  }
+
+  .app-shell[data-reading="true"] .reading .reading-chrome {
+    top: 40px;
+  }
+
+  .app-shell[data-reading="true"] .sidebar {
+    display: flex;
   }
 
   .reading .reading-body {
@@ -449,6 +577,14 @@ a:hover { text-decoration: underline; }
   touch-action: none;
   user-select: none;
   z-index: 5;
+}
+
+.sidebar[data-collapsed="true"] .collapsed-rail {
+  display: flex;
+}
+
+.sidebar[data-collapsed="false"] .collapsed-rail {
+  display: none;
 }
 
 .sidebar-resizer:hover,
@@ -1323,11 +1459,42 @@ a:hover { text-decoration: underline; }
 
 /* River. */
 .river {
-  grid-area: main;
+  grid-area: auto;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   scroll-behavior: smooth;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.article-list-resizer {
+  position: absolute;
+  top: 0;
+  right: -8px;
+  bottom: 0;
+  z-index: 8;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  color: var(--overlay);
+  opacity: 0.55;
+  touch-action: none;
+  user-select: none;
+}
+
+.article-list-resizer:hover,
+.article-list-resizer:focus-visible {
+  background: var(--hairline);
+  opacity: 1;
+  outline: none;
+}
+
+.article-list-resizer svg {
+  pointer-events: none;
 }
 
 .river .river-inner {

@@ -3,6 +3,7 @@ import { useApp } from '../state';
 import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, MoreHorizontal, GripVertical, ChartNoAxesCombined } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../db/types';
+import { usesCollapsedFeedNavigation } from '../desktopLayout';
 import type { Feed } from '../db/types';
 import { feedsMatchingTags, refreshActionLabel } from '../feeds/scope';
 
@@ -10,7 +11,6 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   const ctx = useApp();
 
   const selectFeed = (feed: Feed) => {
-    ctx.clearTags();
     ctx.setRiverScope(feed.id);
     void ctx.saveSettingsPatch({ lastFeedUrl: feed.url });
     void ctx.reloadItems();
@@ -18,7 +18,6 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   };
 
   const selectAll = () => {
-    ctx.clearTags();
     ctx.setRiverScope(null);
     void ctx.saveSettingsPatch({ lastFeedUrl: null });
     void ctx.reloadItems();
@@ -36,6 +35,13 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   const refreshing = () => ctx.fetching() > 0;
   const refreshLabel = () => refreshActionLabel(ctx.state.riverScope, ctx.state.activeTags);
   const collapsed = () => ctx.state.sidebarHiddenDesktop;
+  const onCollapsedRailClick = () => {
+    if (typeof window !== 'undefined' && usesCollapsedFeedNavigation(window.innerWidth)) {
+      ctx.setState({ sidebarOpen: true, sidebarHiddenDesktop: false });
+    } else {
+      ctx.toggleSidebarDesktop();
+    }
+  };
   const sidebarWidth = () => ctx.state.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT;
   let resizing = false;
   let resizeStartX = 0;
@@ -114,7 +120,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
           <Show when={ctx.feeds().length > 0}>
             <div class="tag-chips">
               <button
-                class={`tag-chip ${ctx.state.view === 'river' && ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
+                class={`tag-chip ${ctx.state.view !== 'stats' && ctx.state.riverScope === null && !hasActiveTags() ? 'active' : ''}`}
                 onClick={selectAll}
                 type="button"
               >
@@ -132,7 +138,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
               <For each={ctx.allTags()}>
                 {(tag) => (
                   <button
-                    class={`tag-chip ${ctx.state.view === 'river' && ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
+                    class={`tag-chip ${ctx.state.activeTags.includes(tag) ? 'active' : ''}`}
                     onClick={() => ctx.toggleTag(tag)}
                     type="button"
                   >
@@ -150,7 +156,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
                     feed={feed}
                     errors={ctx.feedErrors()}
                     fetchingFeeds={ctx.fetchingFeeds()}
-                    active={ctx.state.view === 'river' && ctx.state.riverScope === feed.id}
+                    active={ctx.state.view !== 'stats' && ctx.state.riverScope === feed.id}
                     onClick={() => selectFeed(feed)}
                     onEdit={() =>
                       ctx.openModal({
@@ -222,8 +228,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
         </div>
       </Show>
 
-      <Show when={collapsed()}>
-        <div class="collapsed-rail" onClick={() => ctx.toggleSidebarDesktop()}>
+      <div class="collapsed-rail" onClick={onCollapsedRailClick}>
           <div class="collapsed-brand">
             <span class="sift-mark">s</span>
             <span class="expand-icon">
@@ -276,8 +281,7 @@ export function Sidebar(props: { onNavigate?: () => void }) {
               <HelpIcon />
             </button>
           </div>
-        </div>
-      </Show>
+      </div>
     </nav>
   );
 }

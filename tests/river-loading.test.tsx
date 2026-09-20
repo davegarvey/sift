@@ -38,6 +38,8 @@ function makeCtx() {
     currentItem: null,
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
+    articleListWidth: 720,
+    focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
     modal: { kind: 'none' },

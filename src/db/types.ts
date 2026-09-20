@@ -139,6 +139,9 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 export const SIDEBAR_WIDTH_MIN = 180;
 export const SIDEBAR_WIDTH_MAX = 420;
 export const SIDEBAR_WIDTH_DEFAULT = 240;
+export const ARTICLE_LIST_WIDTH_MIN = 360;
+export const ARTICLE_LIST_WIDTH_MAX = 720;
+export const ARTICLE_LIST_WIDTH_DEFAULT = 720;
 
 export interface AppSettings {
   theme: ThemePreference;
@@ -149,6 +152,8 @@ export interface AppSettings {
   readFilter?: 'unread' | 'all';
   mcpEnabled: boolean;
   sidebarWidth?: number;
+  articleListWidth?: number;
+  focusMode?: boolean;
   /** 128-bit sync key as base64url (22 chars). Null = sync not enabled. */
   syncKey?: string | null;
   /** Monotonic server timestamp of the last successful pull. */
@@ -172,6 +177,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastFeedUrl: null,
   mcpEnabled: false,
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
+  articleListWidth: ARTICLE_LIST_WIDTH_DEFAULT,
+  focusMode: false,
   syncKey: null,
   lastSyncAt: null,
   lastStatsSyncAt: null,
