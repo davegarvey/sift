@@ -1,9 +1,10 @@
 import { onMount, onCleanup, Show, type JSX } from 'solid-js';
 import { AppProvider, useApp } from './state';
-import { hashId, isStatsPath, parseItemIdFromUrl } from './routing';
+import { hashId, isStatsPath, itemIdFromHistoryState, parseItemIdFromUrl } from './routing';
+import { navigateReaderByOffset } from './readerNavigation';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
-import { River } from './components/River';
+import { ArticleListPane } from './components/ArticleListPane';
 import { ReadingView } from './components/ReadingView';
 import { CommandPalette } from './components/CommandPalette';
 import { AddFeedModal } from './components/AddFeedModal';
@@ -16,6 +17,7 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { FeedEditorModal } from './components/FeedEditorModal';
 import { Stats } from './components/Stats';
 import { SIDEBAR_WIDTH_DEFAULT } from './db/types';
+import { getItem } from './db/items';
 import './styles.css';
 
 function Shell() {
@@ -55,16 +57,10 @@ function Shell() {
         void ctx.refreshSelected();
       } else if (e.key === 'j') {
         e.preventDefault();
-        ctx.jumpTo(1);
-        const items = ctx.items();
-        const item = items[ctx.state.focusedIndex];
-        if (item) void ctx.openItem(item, true);
+        navigateReaderByOffset(ctx, 1);
       } else if (e.key === 'k') {
         e.preventDefault();
-        ctx.jumpTo(-1);
-        const items = ctx.items();
-        const item = items[ctx.state.focusedIndex];
-        if (item) void ctx.openItem(item, true);
+        navigateReaderByOffset(ctx, -1);
       } else if (e.key === 'o') {
         e.preventDefault();
         const item = ctx.state.currentItem;
@@ -118,7 +114,7 @@ function Shell() {
   };
 
   const onKey = (e: KeyboardEvent) => nav(e);
-  const onPop = () => {
+  const onPop = (event: PopStateEvent) => {
     const path = window.location.pathname;
     if (path === '/') {
       if (ctx.state.view === 'reading') ctx.closeReading();
@@ -135,8 +131,12 @@ function Shell() {
     } else {
       const hash = parseItemIdFromUrl();
       if (hash) {
-        const item = ctx.items().find(i => hashId(i.id) === hash);
-        if (item) ctx.openItem(item, true);
+        const cached = ctx.items().find(i => hashId(i.id) === hash);
+        const itemId = itemIdFromHistoryState(event.state, hash);
+        void (async () => {
+          const item = cached ?? (itemId ? await getItem(itemId) : undefined);
+          if (item) await ctx.openItem(item, true);
+        })();
       }
     }
   };
@@ -174,27 +174,31 @@ function Shell() {
 
   const reading = () => ctx.state.view === 'reading';
   const stats = () => ctx.state.view === 'stats';
-  const sidebarHiddenAttr = () => String(ctx.state.sidebarHiddenDesktop && !reading());
   const sidebarOpenAttr = () => String(ctx.state.sidebarOpen);
 
   return (
     <div
       class="app-shell"
-      style={{ '--sidebar-width': `${ctx.state.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT}px` }}
+      style={{
+        '--sidebar-width': `${ctx.state.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT}px`,
+        '--article-list-width': `${ctx.state.articleListWidth}px`,
+      }}
       data-reading={String(reading())}
-      data-sidebar-hidden={sidebarHiddenAttr()}
+      data-focus-mode={String(ctx.state.focusMode)}
+      data-sidebar-hidden={String(ctx.state.sidebarHiddenDesktop)}
       data-sidebar-open={sidebarOpenAttr()}
     >
       <TopBar />
-       <Show when={!reading()}>
-        <Sidebar onNavigate={() => ctx.setState({ sidebarOpen: false })} />
-        <div
-          class="sidebar-backdrop"
-          onClick={() => ctx.setState({ sidebarOpen: false })}
-        />
-         <Show when={!stats()} fallback={<Stats />}>
-           <River />
-         </Show>
+      <Sidebar onNavigate={() => ctx.setState({ sidebarOpen: false })} />
+      <div
+        class="sidebar-backdrop"
+        onClick={() => ctx.setState({ sidebarOpen: false })}
+      />
+      <Show when={!stats()}>
+        <ArticleListPane />
+      </Show>
+      <Show when={stats()}>
+        <Stats />
       </Show>
       <Show when={reading()}>
         <ReadingView />

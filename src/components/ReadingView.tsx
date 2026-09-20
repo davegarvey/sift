@@ -2,6 +2,8 @@ import { createSignal, createEffect, createMemo, Show, onMount, onCleanup } from
 import { useApp } from '../state';
 import { ArrowLeft, ChevronLeft, ChevronRight, CircleQuestionMark, ExternalLink, Star } from 'lucide-solid';
 import { openItemForReading } from '../articles/service';
+import { FocusModeToggle } from './FocusModeToggle';
+import { navigateReaderByOffset } from '../readerNavigation';
 import { humanRelativeTime } from '../util/time';
 import { SWIPE, swipeDirection, isVerticalDominant, clampTranslate } from '../util/swipe';
 
@@ -31,10 +33,7 @@ export function ReadingView() {
   });
 
   const navigate = (offset: number) => {
-    ctx.jumpTo(offset);
-    const items = ctx.items();
-    const item = items[ctx.state.focusedIndex];
-    if (item) void ctx.openItem(item, true);
+    navigateReaderByOffset(ctx, offset);
   };
 
   const feedName = () =>
@@ -175,6 +174,7 @@ export function ReadingView() {
                 {displayTitle()}
               </span>
             </span>
+            <FocusModeToggle />
             <button
               class="star desktop-only"
               onClick={() => void toggleStarClick()}

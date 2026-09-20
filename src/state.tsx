@@ -4,10 +4,11 @@ import { createStore } from 'solid-js/store';
 import { listFeeds } from './db/feeds';
 import { listItems, listItemsByFeed, listStarred, markRead, toggleStar as dbToggleStar } from './db/items';
 import type { Feed, Item } from './db/types';
-import { itemUrl, parseItemIdFromUrl, hashId, isStatsPath } from './routing';
+import { writeItemHistory, parseItemIdFromUrl, hashId, isStatsPath } from './routing';
 import { getMeta, setMeta } from './db/meta';
-import { DEFAULT_SETTINGS, DEFAULT_STATS_SORT, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
+import { ARTICLE_LIST_WIDTH_DEFAULT, DEFAULT_SETTINGS, DEFAULT_STATS_SORT, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
 import type { AppSettings, StatsSortColumn, StatsSortDirection, StatsSortPreference, ThemePreference } from './db/types';
+import { normalizeDesktopLayoutSettings, viewAfterScopeChange } from './desktopLayout';
 
 const SETTINGS_KEY = 'settings';
 
@@ -37,10 +38,12 @@ async function getSettings(): Promise<AppSettings> {
     ? stored.sidebarWidth
     : SIDEBAR_WIDTH_DEFAULT;
   const statsSort = normalizeStatsSort(stored.statsSort);
+  const desktopLayout = normalizeDesktopLayoutSettings(stored);
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
     sidebarWidth: Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, sidebarWidth)),
+    ...desktopLayout,
     statsSort,
   };
 }
@@ -85,6 +88,8 @@ export interface AppState {
   sidebarOpen: boolean;
   sidebarHiddenDesktop: boolean;
   sidebarWidth?: number;
+  articleListWidth: number;
+  focusMode: boolean;
   focusedIndex: number;
   /** When true, only starred items are shown. Orthogonal to riverScope/activeTags. */
   starredOnly: boolean;
@@ -159,6 +164,8 @@ export const AppProvider: ParentComponent = (props) => {
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
     sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
+    articleListWidth: ARTICLE_LIST_WIDTH_DEFAULT,
+    focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
     modal: { kind: 'none' },
@@ -334,7 +341,7 @@ export const AppProvider: ParentComponent = (props) => {
       const replacementId = `${replacementFeed.id}::${previousItem.guid}`;
       const replacementItem = { ...previousItem, id: replacementId, feedId: replacementFeed.id };
       setState({ currentItem: replacementItem, returnToItemId: replacementId });
-      if (state.view === 'reading') history.replaceState(null, '', itemUrl(replacementItem));
+      if (state.view === 'reading') writeItemHistory(replacementItem, true);
     }
     setStatsRevision((revision) => revision + 1);
     return next;
@@ -362,7 +369,8 @@ export const AppProvider: ParentComponent = (props) => {
 
   const setRiverScope = (feedId: string | null) => {
     if (state.view === 'stats') history.pushState(null, '', '/');
-    setState({ riverScope: feedId, activeTags: [], focusedIndex: -1, view: 'river' });
+    const view = viewAfterScopeChange(state.view, typeof window === 'undefined' ? 0 : window.innerWidth);
+    setState({ riverScope: feedId, activeTags: [], focusedIndex: -1, view });
   };
 
   const openStats = () => {
@@ -381,14 +389,15 @@ export const AppProvider: ParentComponent = (props) => {
 
   const toggleTag = (tag: string) => {
     if (state.view === 'stats') history.pushState(null, '', '/');
+    const view = viewAfterScopeChange(state.view, typeof window === 'undefined' ? 0 : window.innerWidth);
     const current = state.activeTags;
     const idx = current.indexOf(tag);
     if (idx >= 0) {
       const next = current.filter((t) => t !== tag);
-      setState({ activeTags: next, riverScope: null, focusedIndex: -1, view: 'river' });
+      setState({ activeTags: next, riverScope: null, focusedIndex: -1, view });
       if (next.length > 0) void reloadItems();
     } else {
-      setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: -1, view: 'river' });
+      setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: -1, view });
       void reloadItems();
     }
   };
@@ -407,11 +416,7 @@ export const AppProvider: ParentComponent = (props) => {
   const openItem = async (item: Item, replace = false) => {
     const idx = items().findIndex((i) => i.id === item.id);
     setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id, focusedIndex: idx });
-    if (replace) {
-      history.replaceState(null, '', itemUrl(item));
-    } else {
-      history.pushState(null, '', itemUrl(item));
-    }
+    writeItemHistory(item, replace);
     if (!item.read) {
       await markReadAndSync(item, true);
     }
@@ -705,13 +710,19 @@ export const AppProvider: ParentComponent = (props) => {
     await reloadFeeds();
     const matchingFeed = s.lastFeedUrl ? feeds().find((f) => f.url === s.lastFeedUrl) : undefined;
     const validFeedId = matchingFeed?.id ?? null;
-    setState({ riverScope: state.view === 'stats' ? null : validFeedId, sidebarWidth: s.sidebarWidth });
+    setState({
+      riverScope: state.view === 'stats' ? null : validFeedId,
+      sidebarWidth: s.sidebarWidth,
+      articleListWidth: s.articleListWidth ?? ARTICLE_LIST_WIDTH_DEFAULT,
+      focusMode: s.focusMode ?? false,
+    });
     await reloadItems();
     const hash = parseItemIdFromUrl();
     if (hash) {
       const item = items().find(i => hashId(i.id) === hash);
       if (item) {
         setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id });
+        writeItemHistory(item, true);
         if (!item.read) {
           await markReadAndSync(item, true);
         }

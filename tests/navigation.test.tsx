@@ -15,21 +15,30 @@ vi.mock('../src/state', () => ({
   },
 }));
 
-function makeContext(collapsed = false) {
+function makeContext(collapsed = false, view: 'river' | 'reading' = 'river') {
   const [state] = createStore<AppState>({
-    view: 'river',
-    riverScope: null,
+    view,
+    riverScope: view === 'reading' ? 'f1' : null,
     activeTags: [],
     currentItem: null,
     sidebarOpen: false,
     sidebarHiddenDesktop: collapsed,
+    articleListWidth: 720,
+    focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
     modal: { kind: 'none' },
     returnToItemId: null,
   });
-  const [feeds] = createSignal<Feed[]>([]);
+  const [feeds] = createSignal<Feed[]>([{
+    id: 'f1',
+    url: 'https://example.com/feed',
+    title: 'Example feed',
+    lastFetched: null,
+    learnedIntervalMs: 3_600_000,
+  }]);
   const openStats = vi.fn();
+  const setRiverScope = vi.fn();
   const ctx = {
     state,
     feeds,
@@ -42,7 +51,7 @@ function makeContext(collapsed = false) {
     fetchingFeeds: () => new Set<string>(),
     hydrated: () => true,
     clearTags: vi.fn(),
-    setRiverScope: vi.fn(),
+    setRiverScope,
     reloadItems: async () => {},
     saveSettingsPatch: async () => {},
     toggleStarFilter: vi.fn(),
@@ -51,7 +60,7 @@ function makeContext(collapsed = false) {
     toggleSidebarDesktop: vi.fn(),
     openStats,
   } as unknown as AppContext;
-  return { ctx, openStats };
+  return { ctx, openStats, setRiverScope };
 }
 
 describe('stats navigation', () => {
@@ -78,6 +87,17 @@ describe('stats navigation', () => {
     const dispose = render(() => <Sidebar />, document.body);
     const button = document.querySelector<HTMLButtonElement>('.collapsed-action[title="Reading statistics"]');
     expect(button).not.toBeNull();
+    dispose();
+  });
+
+  it('keeps feed scope visible and selectable while reading', () => {
+    const { ctx, setRiverScope } = makeContext(false, 'reading');
+    contextRef.value = ctx;
+    const dispose = render(() => <Sidebar />, document.body);
+    const feed = document.querySelector<HTMLElement>('.feed');
+    expect(feed?.classList.contains('active')).toBe(true);
+    feed?.click();
+    expect(setRiverScope).toHaveBeenCalledWith('f1');
     dispose();
   });
 });
