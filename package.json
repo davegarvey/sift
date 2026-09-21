@@ -54,7 +54,7 @@
     "typecheck": "tsc --noEmit"
   },
   "type": "module",
-  "version": "0.65.1",
+  "version": "0.65.2",
   "workspaces": [
     "packages/siftctl"
   ]
