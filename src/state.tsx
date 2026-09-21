@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createContext, useContext } from 'solid-js';
+import { createSignal, createMemo, createContext, useContext, onCleanup } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { listFeeds } from './db/feeds';
@@ -6,11 +6,15 @@ import { listItems, listItemsByFeed, listStarred, markRead, toggleStar as dbTogg
 import type { Feed, Item } from './db/types';
 import { writeItemHistory, parseItemIdFromUrl, hashId, isStatsPath } from './routing';
 import { getMeta, setMeta } from './db/meta';
-import { ARTICLE_LIST_WIDTH_DEFAULT, DEFAULT_SETTINGS, DEFAULT_STATS_SORT, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
+import { DEFAULT_SETTINGS, DEFAULT_STATS_SORT, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
 import type { AppSettings, StatsSortColumn, StatsSortDirection, StatsSortPreference, ThemePreference } from './db/types';
-import { normalizeDesktopLayoutSettings, viewAfterScopeChange } from './desktopLayout';
+import { defaultArticleListWidth, normalizeDesktopLayoutSettings, viewAfterScopeChange } from './desktopLayout';
 
 const SETTINGS_KEY = 'settings';
+
+function currentViewportWidth(): number {
+  return typeof window === 'undefined' ? 1440 : window.innerWidth;
+}
 
 function isStatsSortColumn(value: unknown): value is StatsSortColumn {
   return value === 'title'
@@ -38,7 +42,7 @@ async function getSettings(): Promise<AppSettings> {
     ? stored.sidebarWidth
     : SIDEBAR_WIDTH_DEFAULT;
   const statsSort = normalizeStatsSort(stored.statsSort);
-  const desktopLayout = normalizeDesktopLayoutSettings(stored);
+  const desktopLayout = normalizeDesktopLayoutSettings(stored, currentViewportWidth());
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
@@ -89,6 +93,7 @@ export interface AppState {
   sidebarHiddenDesktop: boolean;
   sidebarWidth?: number;
   articleListWidth: number;
+  articleListWidthCustomized: boolean;
   focusMode: boolean;
   focusedIndex: number;
   /** When true, only starred items are shown. Orthogonal to riverScope/activeTags. */
@@ -164,7 +169,8 @@ export const AppProvider: ParentComponent = (props) => {
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
     sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
-    articleListWidth: ARTICLE_LIST_WIDTH_DEFAULT,
+    articleListWidth: defaultArticleListWidth(currentViewportWidth()),
+    articleListWidthCustomized: false,
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
@@ -173,6 +179,16 @@ export const AppProvider: ParentComponent = (props) => {
   });
 
   const setState = (patch: Partial<AppState>) => setStateInternal(patch as Partial<AppState>);
+
+  if (typeof window !== 'undefined') {
+    const updateDefaultArticleListWidth = () => {
+      if (!state.articleListWidthCustomized) {
+        setState({ articleListWidth: defaultArticleListWidth(window.innerWidth) });
+      }
+    };
+    window.addEventListener('resize', updateDefaultArticleListWidth);
+    onCleanup(() => window.removeEventListener('resize', updateDefaultArticleListWidth));
+  }
 
   const [feeds, setFeeds] = createSignal<Feed[]>([]);
   const [manualFetching, setManualFetching] = createSignal(0);
@@ -713,7 +729,8 @@ export const AppProvider: ParentComponent = (props) => {
     setState({
       riverScope: state.view === 'stats' ? null : validFeedId,
       sidebarWidth: s.sidebarWidth,
-      articleListWidth: s.articleListWidth ?? ARTICLE_LIST_WIDTH_DEFAULT,
+      articleListWidth: s.articleListWidth ?? defaultArticleListWidth(currentViewportWidth()),
+      articleListWidthCustomized: s.articleListWidthCustomized ?? false,
       focusMode: s.focusMode ?? false,
     });
     await reloadItems();

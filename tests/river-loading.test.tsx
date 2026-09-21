@@ -39,6 +39,7 @@ function makeCtx() {
     sidebarOpen: false,
     sidebarHiddenDesktop: false,
     articleListWidth: 720,
+    articleListWidthCustomized: true,
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,

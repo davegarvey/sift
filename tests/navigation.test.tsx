@@ -24,6 +24,7 @@ function makeContext(collapsed = false, view: 'river' | 'reading' = 'river') {
     sidebarOpen: false,
     sidebarHiddenDesktop: collapsed,
     articleListWidth: 720,
+    articleListWidthCustomized: true,
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,

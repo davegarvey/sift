@@ -29,6 +29,7 @@ function makeContext() {
     sidebarHiddenDesktop: false,
     sidebarWidth: 240,
     articleListWidth: 640,
+    articleListWidthCustomized: false,
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
@@ -70,8 +71,9 @@ describe('article-list pane controls', () => {
     resizer?.dispatchEvent(pointerEvent('pointerdown', 100));
     resizer?.dispatchEvent(pointerEvent('pointermove', -200));
     expect(ctx.state.articleListWidth).toBe(360);
+    expect(ctx.state.articleListWidthCustomized).toBe(true);
     resizer?.dispatchEvent(pointerEvent('pointerup', -200));
-    expect(saveSettingsPatch).toHaveBeenCalledWith({ articleListWidth: 360 });
+    expect(saveSettingsPatch).toHaveBeenCalledWith({ articleListWidth: 360, articleListWidthCustomized: true });
     expect(ctx.state.sidebarWidth).toBe(240);
 
     resizer?.dispatchEvent(pointerEvent('pointerdown', 100));
@@ -91,8 +93,8 @@ describe('article-list pane controls', () => {
     expect(ctx.state.articleListWidth).toBe(360);
     resizer?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     expect(ctx.state.articleListWidth).toBe(368);
-    expect(saveSettingsPatch).toHaveBeenNthCalledWith(1, { articleListWidth: 360 });
-    expect(saveSettingsPatch).toHaveBeenNthCalledWith(2, { articleListWidth: 368 });
+    expect(saveSettingsPatch).toHaveBeenNthCalledWith(1, { articleListWidth: 360, articleListWidthCustomized: true });
+    expect(saveSettingsPatch).toHaveBeenNthCalledWith(2, { articleListWidth: 368, articleListWidthCustomized: true });
     dispose();
   });
 
