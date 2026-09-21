@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-21
+goal: Indicate active focus mode through the icon foreground rather than a
+  resting fill
