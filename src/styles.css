@@ -1905,8 +1905,7 @@ a:hover { text-decoration: underline; }
 }
 
 .reading .reading-chrome .focus-mode-toggle[aria-pressed="true"] {
-  background: var(--surface);
-  color: var(--text);
+  color: var(--accent-text);
 }
 
 .reading .reading-chrome .star:hover,
