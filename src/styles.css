@@ -460,12 +460,8 @@ a:hover { text-decoration: underline; }
     padding-top: 40px;
   }
 
-  .app-shell[data-reading="true"] .reading {
-    padding-top: 40px;
-  }
-
-  .app-shell[data-reading="true"] .reading .reading-chrome {
-    top: 40px;
+  .app-shell[data-reading="true"] .topbar {
+    display: none;
   }
 
   .app-shell[data-reading="true"] .sidebar {
