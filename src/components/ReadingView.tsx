@@ -166,7 +166,7 @@ export function ReadingView() {
     <main class="reading" ref={containerRef} tabindex="-1" onPointerDown={onSwipeStart}>
       <div class="reading-chrome">
           <div class="reading-chrome-inner">
-            <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)">
+            <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)" aria-label="Back">
               <ArrowLeft size={14} />
             </button>
             <span class="chrome-spacer">

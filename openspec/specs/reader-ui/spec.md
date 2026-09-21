@@ -126,7 +126,7 @@ On mobile viewports (≤768px), reading view SHALL display a fixed bottom action
 
 ### Requirement: Back CTA remains in the top-left chrome
 
-Reading view SHALL keep a back button as the leftmost element of the top chrome when the app uses the single-column reading flow and the article list is not visible. When the desktop reading workspace is visible, reading view SHALL NOT show a back CTA; the user can select another article from the adjacent list. In desktop focus mode, the focus-mode toggle SHALL remain available to restore the panes. No separate close-article CTA SHALL be shown in the desktop workspace.
+Reading view SHALL keep a back button as the leftmost element of the top chrome when the app uses the single-column reading flow and the article list is not visible. When the three-pane desktop reading workspace is visible, reading view SHALL NOT show a back CTA; the user can select another article from the adjacent list. In desktop focus mode, reading view SHALL show a back button that closes the article and returns to the river, and the focus-mode toggle SHALL remain available to restore the panes. No separate close-article CTA SHALL be shown while the three-pane workspace is visible.
 
 #### Scenario: Back button in top chrome
 - **WHEN** the user is in the single-column mobile reading flow
@@ -141,10 +141,15 @@ Reading view SHALL keep a back button as the leftmost element of the top chrome 
 - **THEN** the reading chrome does not display a back CTA
 - **AND** selecting another article replaces the current reader content in place
 
-#### Scenario: Focus mode remains reversible without a back CTA
+#### Scenario: Focus mode provides a back button and remains reversible
 - **WHEN** the user is reading in desktop focus mode
-- **THEN** the reading chrome does not display a back CTA or a separate close-article CTA
+- **THEN** the reading chrome displays a back button
 - **AND** the focus-mode toggle restores the feed navigation and article list
+
+#### Scenario: Back button returns to the river from focus mode
+- **WHEN** the user activates the back button in desktop focus mode
+- **THEN** the app closes the article and returns to the river view
+- **AND** the saved focus-mode preference remains enabled
 
 #### Scenario: Compact single-column fallback retains a way back
 - **WHEN** the viewport is too narrow to show the article list and reader as separate panes

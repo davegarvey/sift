@@ -292,7 +292,7 @@ a:hover { text-decoration: underline; }
     border-left: 1px solid var(--hairline);
   }
 
-  .app-shell[data-reading="true"] .reading .back {
+  .app-shell[data-reading="true"][data-focus-mode="false"] .reading .back {
     display: none;
   }
 

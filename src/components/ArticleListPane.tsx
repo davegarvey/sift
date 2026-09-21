@@ -15,7 +15,10 @@ export function ArticleListPane() {
 
   const width = () => ctx.state.articleListWidth;
   const clampWidth = (value: number) => Math.min(ARTICLE_LIST_WIDTH_MAX, Math.max(ARTICLE_LIST_WIDTH_MIN, value));
-  const saveWidth = () => void ctx.saveSettingsPatch({ articleListWidth: width() });
+  const saveWidth = () => void ctx.saveSettingsPatch({
+    articleListWidth: width(),
+    articleListWidthCustomized: true,
+  });
 
   const startResize = (event: PointerEvent) => {
     event.preventDefault();
@@ -27,7 +30,10 @@ export function ArticleListPane() {
 
   const resize = (event: PointerEvent) => {
     if (!resizing) return;
-    ctx.setState({ articleListWidth: clampWidth(resizeStartWidth + event.clientX - resizeStartX) });
+    ctx.setState({
+      articleListWidth: clampWidth(resizeStartWidth + event.clientX - resizeStartX),
+      articleListWidthCustomized: true,
+    });
   };
 
   const finishResize = (event: PointerEvent) => {
@@ -47,7 +53,7 @@ export function ArticleListPane() {
     else if (event.key === 'End') next = ARTICLE_LIST_WIDTH_MAX;
     else return;
     event.preventDefault();
-    ctx.setState({ articleListWidth: clampWidth(next) });
+    ctx.setState({ articleListWidth: clampWidth(next), articleListWidthCustomized: true });
     saveWidth();
   };
 

@@ -24,12 +24,27 @@ When the viewport has room for the desktop reading workspace, opening an article
 
 ### Requirement: Article-list pane has a bounded, persistent width
 
-The article-list pane SHALL be resizable independently of the feed navigation. Its initial desktop width SHALL be 720 CSS pixels, matching the current river content maximum, and its user-selected width SHALL be bounded between 360 and 720 CSS pixels. The selected width SHALL be saved locally and restored on later visits. When the viewport cannot fit the saved width alongside the other panes, the rendered width SHALL be constrained to preserve usable space for the reader without overwriting the saved preference.
+The article-list pane SHALL be resizable independently of the feed navigation. When the user has not selected a width, its default desktop width SHALL be 30% of the viewport width, bounded between 360 and 560 CSS pixels. A user-selected width SHALL be bounded between 360 and 720 CSS pixels, saved locally, and restored on later visits. When the viewport cannot fit the saved width alongside the other panes, the rendered width SHALL be constrained to preserve usable space for the reader without overwriting the saved preference. A saved width equal to the former 720 CSS pixel default SHALL be treated as an unset preference unless it was explicitly selected.
 
-#### Scenario: First use on a wide viewport
+#### Scenario: Default width adapts to a laptop viewport
 - **WHEN** the user has not previously resized the article-list pane
-- **AND** the viewport has room for its initial width
-- **THEN** the article-list pane is 720 CSS pixels wide
+- **AND** the viewport is 1280 CSS pixels wide
+- **THEN** the article-list pane is 384 CSS pixels wide
+
+#### Scenario: Default width adapts to a standard desktop viewport
+- **WHEN** the user has not previously resized the article-list pane
+- **AND** the viewport is 1440 CSS pixels wide
+- **THEN** the article-list pane is 432 CSS pixels wide
+
+#### Scenario: Default width is capped on a wide viewport
+- **WHEN** the user has not previously resized the article-list pane
+- **AND** the viewport is 1920 CSS pixels wide or wider
+- **THEN** the article-list pane is 560 CSS pixels wide
+
+#### Scenario: Default width does not fall below the minimum
+- **WHEN** the user has not previously resized the article-list pane
+- **AND** 30% of the viewport width is less than 360 CSS pixels
+- **THEN** the article-list pane is 360 CSS pixels wide
 
 #### Scenario: Resize the article list
 - **WHEN** the user resizes the article-list pane within its bounds
@@ -65,7 +80,7 @@ The desktop workspace SHALL keep the article list separate from both the feed na
 
 ### Requirement: Focus mode is an optional persistent desktop layout
 
-The desktop reader toolbar SHALL provide an icon-only focus-mode toggle. When focus mode is disabled, its tooltip SHALL read “Enable focus mode”; when enabled, its tooltip SHALL read “Disable focus mode”. Enabling focus mode SHALL hide the feed navigation and article list while keeping the current article open. Disabling focus mode SHALL restore the desktop panes without changing their saved widths. The focus-mode preference SHALL be saved locally until the user toggles it off. The focus-mode toggle SHALL NOT be shown in the mobile single-column flow, where article-only reading is already the default.
+The desktop reader toolbar SHALL provide an icon-only focus-mode toggle. When focus mode is disabled, its tooltip SHALL read “Enable focus mode”; when enabled, its tooltip SHALL read “Disable focus mode”. Enabling focus mode SHALL hide the feed navigation and article list while keeping the current article open. In focus mode, a back button SHALL close the article and return to the river without changing the saved focus-mode preference. Disabling focus mode SHALL restore the desktop panes without changing their saved widths. The focus-mode preference SHALL be saved locally until the user toggles it off. The focus-mode toggle SHALL NOT be shown in the mobile single-column flow, where article-only reading is already the default.
 
 #### Scenario: First desktop use defaults to panes visible
 - **WHEN** the user has no saved focus-mode preference
@@ -83,6 +98,11 @@ The desktop reader toolbar SHALL provide an icon-only focus-mode toggle. When fo
 - **THEN** the feed navigation and article list are restored
 - **AND** the current article remains open
 - **AND** the toggle tooltip reads “Enable focus mode”
+
+#### Scenario: Return to the river from focus mode
+- **WHEN** the user activates the back button while reading in focus mode
+- **THEN** the article closes and the river view appears
+- **AND** the saved focus-mode preference remains enabled
 
 #### Scenario: Restore focus preference on a later visit
 - **WHEN** the user previously enabled focus mode and returns to Sift on the same device

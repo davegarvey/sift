@@ -141,7 +141,7 @@ export const SIDEBAR_WIDTH_MAX = 420;
 export const SIDEBAR_WIDTH_DEFAULT = 240;
 export const ARTICLE_LIST_WIDTH_MIN = 360;
 export const ARTICLE_LIST_WIDTH_MAX = 720;
-export const ARTICLE_LIST_WIDTH_DEFAULT = 720;
+export const ARTICLE_LIST_WIDTH_DEFAULT = 432;
 
 export interface AppSettings {
   theme: ThemePreference;
@@ -153,6 +153,7 @@ export interface AppSettings {
   mcpEnabled: boolean;
   sidebarWidth?: number;
   articleListWidth?: number;
+  articleListWidthCustomized?: boolean;
   focusMode?: boolean;
   /** 128-bit sync key as base64url (22 chars). Null = sync not enabled. */
   syncKey?: string | null;
@@ -178,6 +179,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mcpEnabled: false,
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   articleListWidth: ARTICLE_LIST_WIDTH_DEFAULT,
+  articleListWidthCustomized: false,
   focusMode: false,
   syncKey: null,
   lastSyncAt: null,
