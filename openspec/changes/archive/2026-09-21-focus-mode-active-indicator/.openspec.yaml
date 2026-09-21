@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-09-21
+goal: Distinguish enabled and disabled focus mode with a persistent visual state
