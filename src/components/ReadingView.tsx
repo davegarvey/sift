@@ -77,12 +77,6 @@ export function ReadingView() {
     if (item && !loading()) setDisplayTitle(item.title);
   });
 
-  createEffect(() => {
-    const item = currentItem();
-    document.title = item ? `${item.title} — Sift` : 'Sift';
-  });
-  onCleanup(() => { document.title = 'Sift'; });
-
   const toggleStarClick = async () => {
     const item = currentItem();
     if (!item) return;

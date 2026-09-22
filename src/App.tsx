@@ -1,4 +1,4 @@
-import { onMount, onCleanup, Show, type JSX } from 'solid-js';
+import { createEffect, onMount, onCleanup, Show, type JSX } from 'solid-js';
 import { AppProvider, useApp } from './state';
 import { hashId, isStatsPath, itemIdFromHistoryState, parseItemIdFromUrl } from './routing';
 import { navigateReaderByOffset } from './readerNavigation';
@@ -22,6 +22,15 @@ import './styles.css';
 
 function Shell() {
   const ctx = useApp();
+
+  createEffect(() => {
+    const item = ctx.state.currentItem;
+    if (ctx.state.view === 'reading' && item) {
+      document.title = `${item.title} — Sift`;
+    } else {
+      document.title = window.location.pathname === '/' ? 'Sift RSS Reader' : 'Sift';
+    }
+  });
 
   const closeModalWithReturn = () => {
     const modal = ctx.state.modal;
