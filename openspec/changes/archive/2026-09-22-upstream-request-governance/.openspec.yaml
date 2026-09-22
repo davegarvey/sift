@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-22
+goal: Keep Sift below upstream rate limits and avoid repeated requests that can
+  trigger blocks.

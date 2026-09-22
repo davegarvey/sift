@@ -51,7 +51,7 @@ export interface FeedRefreshError {
   attempts: number;
   /** HTTP status of the last failure (0 = network error, 200 = parse failure). */
   lastStatus: number | null;
-  /** Upstream Retry-After delay in ms from the last 429, null if none. */
+  /** Upstream Retry-After delay in ms from the last 429/419 or local gate, null if none. */
   lastRetryAfter: number | null;
 }
 
@@ -128,9 +128,6 @@ export const MAX_LEARNED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const ERROR_RETRY_FLOOR_MS = 30 * 60 * 1000;
 /** Error-backoff ceiling for generic errors: guarantees ≥4 attempts/day while failing. */
 export const ERROR_RETRY_MAX_MS = 6 * 60 * 60 * 1000;
-/** Upper clamp for an honored upstream Retry-After (overrides the generic ceiling). */
-export const RETRY_AFTER_CLAMP_MS = 24 * 60 * 60 * 1000;
-
 export const STORAGE_SOFT_CAP_RATIO = 0.05;
 export const EVICTION_CHUNK_SIZE = 500;
 

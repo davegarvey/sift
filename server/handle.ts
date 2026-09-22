@@ -1,7 +1,7 @@
 import { Hono, type Env } from 'hono';
 import {
   getUpstreamUrl,
-  fetchUpstream,
+  fetchUpstreamWithPolicy,
   fetchFeedCached,
   badRequest,
   badGateway,
@@ -19,6 +19,15 @@ function responseHeadersWithoutRedirects(response: Response): Headers {
   const headers = new Headers(response.headers);
   for (const name of REDIRECT_HEADERS) headers.delete(name);
   return headers;
+}
+
+function proxyError(response: Response): Response {
+  const headers = new Headers({ 'Cache-Control': 'no-store' });
+  for (const name of ['Retry-After', 'X-Sift-Request-Source', 'X-Sift-Cache']) {
+    const value = response.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return new Response(response.body, { status: response.status, headers });
 }
 
 export interface CreateAppOptions {
@@ -71,15 +80,18 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
           'Last-Modified': upstreamRes.headers.get('Last-Modified') ?? '',
           Age: upstreamRes.headers.get('Age') ?? '0',
           'X-Sift-Cache': upstreamRes.headers.get('X-Sift-Cache') ?? feedResult.state,
+          'X-Sift-Request-Source': upstreamRes.headers.get('X-Sift-Request-Source') ?? 'feed-cache',
         },
       });
     }
 
     // For non-2xx (other than 304), return the upstream status to the client.
     if (upstreamRes.status < 200 || upstreamRes.status >= 300) {
+      const headers = responseHeadersWithoutRedirects(upstreamRes);
+      headers.set('Cache-Control', 'no-store');
       return new Response(upstreamRes.body, {
         status: upstreamRes.status,
-        headers: responseHeadersWithoutRedirects(upstreamRes),
+        headers,
       });
     }
 
@@ -88,6 +100,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     headers.set('Cache-Control', 'no-cache, no-store');
     headers.set('Age', upstreamRes.headers.get('Age') ?? '0');
     headers.set('X-Sift-Cache', upstreamRes.headers.get('X-Sift-Cache') ?? feedResult.state);
+    headers.set('X-Sift-Request-Source', upstreamRes.headers.get('X-Sift-Request-Source') ?? 'upstream');
     const etagHeader = upstreamRes.headers.get('ETag');
     if (etagHeader) headers.set('ETag', etagHeader);
     const lastModified = upstreamRes.headers.get('Last-Modified');
@@ -107,14 +120,20 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
     let upstreamRes: Response;
     try {
-      upstreamRes = await fetchUpstream(upstream);
+      upstreamRes = await fetchUpstreamWithPolicy(upstream, {}, { db, route: 'article' });
     } catch {
-      return badGateway('Failed to fetch upstream article');
+      const response = badGateway('Failed to fetch upstream article');
+      response.headers.set('Cache-Control', 'no-store');
+      response.headers.set('X-Sift-Request-Source', 'local-gate');
+      return response;
     }
+
+    if (upstreamRes.status < 200 || upstreamRes.status >= 300) return proxyError(upstreamRes);
 
     const headers = new Headers();
     headers.set('Content-Type', 'text/html; charset=utf-8');
     headers.set('Cache-Control', 'no-cache, no-store');
+    headers.set('X-Sift-Request-Source', upstreamRes.headers.get('X-Sift-Request-Source') ?? 'upstream');
     const etagHeader = upstreamRes.headers.get('ETag');
     if (etagHeader) headers.set('ETag', etagHeader);
     const lastModified = upstreamRes.headers.get('Last-Modified');
@@ -135,20 +154,26 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
     let upstreamRes: Response;
     try {
-      upstreamRes = await fetchUpstream(upstream);
+      upstreamRes = await fetchUpstreamWithPolicy(upstream, {}, { db, route: 'image' });
     } catch {
-      return badGateway('Failed to fetch upstream image');
+      const response = badGateway('Failed to fetch upstream image');
+      response.headers.set('Cache-Control', 'no-store');
+      response.headers.set('X-Sift-Request-Source', 'local-gate');
+      return response;
     }
+
+    if (upstreamRes.status < 200 || upstreamRes.status >= 300) return proxyError(upstreamRes);
 
     const headers = new Headers();
     const contentType = upstreamRes.headers.get('Content-Type');
     if (contentType) headers.set('Content-Type', contentType);
     headers.set('Cache-Control', 'public, max-age=2592000, immutable');
+    headers.set('X-Sift-Request-Source', upstreamRes.headers.get('X-Sift-Request-Source') ?? 'upstream');
     return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
   });
 
   if (mcpEnabled && relay) {
-    const mcpHttpHandler = createMcpHttpHandler(relay);
+    const mcpHttpHandler = createMcpHttpHandler(relay, { db });
 
     app.get('/api/capabilities', (c) => c.json({ mcp: true }));
 

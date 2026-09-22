@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../server/handle';
 import { clearFeedCacheForTests } from '../server/fetch';
+import { clearOriginGovernorForTests } from '../server/origin-governor';
 
 const PUBLIC_ORIGIN = 'http://93.184.216.34';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   clearFeedCacheForTests();
+  clearOriginGovernorForTests();
 });
 
 describe('upstream proxy redirect boundary', () => {
@@ -43,9 +45,25 @@ describe('upstream proxy redirect boundary', () => {
       const url = `${PUBLIC_ORIGIN}${endpoint}.xml`;
       const response = await createApp().request(`${endpoint}?url=${encodeURIComponent(url)}`);
       expect(response.status).toBe(419);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('Retry-After')).toBe(String(6 * 60 * 60));
       expect(response.headers.get('Location')).toBeNull();
       expect(response.headers.get('Refresh')).toBeNull();
       expect(response.headers.get('Content-Location')).toBeNull();
+      expect(response.headers.get('X-Sift-Request-Source')).toBe(endpoint === '/feed' ? 'upstream' : 'origin-cooldown');
     }
+  });
+
+  it('applies immutable caching to successful images only', async () => {
+    vi.stubGlobal('fetch', (async () => new Response('image', {
+      status: 200,
+      headers: { 'Content-Type': 'image/png' },
+    })) as typeof globalThis.fetch);
+
+    const response = await createApp().request(`/img?url=${encodeURIComponent(`${PUBLIC_ORIGIN}/image.png`)}`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=2592000, immutable');
+    expect(response.headers.get('X-Sift-Request-Source')).toBe('upstream');
   });
 });

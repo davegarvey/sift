@@ -1,4 +1,6 @@
 import { clearSharedFeedFailure, getSharedFeedFailure, recordSharedFeedFailure } from './feed-state';
+import { fetchOriginRequest, type OriginPolicyOptions } from './origin-governor';
+import { sha256Hex } from './sync/tokens';
 
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 export const READER_USER_AGENT = 'sift/0.0 (+https://github.com/dave/sift)';
@@ -57,6 +59,9 @@ const WORKER_FETCHED_AT_HEADER = 'X-Sift-Cache-Fetched-At';
 const WORKER_RETRY_AT_HEADER = 'X-Sift-Cache-Retry-At';
 const feedCache = new Map<string, CachedFeed>();
 const feedRevalidations = new Map<string, Promise<RevalidationResult>>();
+const upstreamRequests = new Map<string, Promise<Response>>();
+const databaseIds = new WeakMap<D1Database, number>();
+let nextDatabaseId = 1;
 
 interface FeedRetry {
   status: number;
@@ -266,8 +271,72 @@ async function cancelResponse(response: Response): Promise<void> {
 }
 
 export async function fetchUpstream(upstream: string, init: RequestInit = {}): Promise<Response> {
+  return fetchUpstreamWithPolicy(upstream, init, { route: 'feed' });
+}
+
+export function fetchUpstreamWithPolicy(
+  upstream: string,
+  init: RequestInit = {},
+  policy: OriginPolicyOptions = { route: 'feed' },
+): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set('User-Agent', READER_USER_AGENT);
+  const key = upstreamCoalescingKey(upstream, init, headers, policy.db);
+  if (!key) return performUpstreamWithPolicy(upstream, init, headers, policy);
+
+  const existing = upstreamRequests.get(key);
+  if (existing) return existing.then((response) => response.clone());
+
+  const request = performUpstreamWithPolicy(upstream, init, headers, policy).then((response) => response.clone());
+  upstreamRequests.set(key, request);
+  return request.then((response) => response.clone()).finally(() => {
+    if (upstreamRequests.get(key) === request) upstreamRequests.delete(key);
+  });
+}
+
+function databaseId(db: D1Database): number {
+  let id = databaseIds.get(db);
+  if (id === undefined) {
+    id = nextDatabaseId++;
+    databaseIds.set(db, id);
+  }
+  return id;
+}
+
+function upstreamCoalescingKey(
+  upstream: string,
+  init: RequestInit,
+  headers: Headers,
+  db?: D1Database,
+): string | null {
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (method !== 'GET' || init.body != null) return null;
+  let url: string;
+  try {
+    url = new URL(upstream).href;
+  } catch {
+    return null;
+  }
+  const headerPairs = Array.from(headers.entries()).sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify([
+    url,
+    method,
+    headerPairs,
+    init.cache ?? null,
+    init.credentials ?? null,
+    init.mode ?? null,
+    init.referrer ?? null,
+    init.integrity ?? null,
+    db ? databaseId(db) : 0,
+  ]);
+}
+
+async function performUpstreamWithPolicy(
+  upstream: string,
+  init: RequestInit,
+  headers: Headers,
+  policy: OriginPolicyOptions,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
@@ -275,12 +344,12 @@ export async function fetchUpstream(upstream: string, init: RequestInit = {}): P
     if (!current) throw new Error('Unsafe upstream URL');
 
     for (let redirects = 0; ; redirects += 1) {
-      const response = await fetch(current, {
+      const response = await fetchOriginRequest(current, {
         ...init,
         headers,
         redirect: 'manual',
         signal: controller.signal,
-      });
+      }, policy);
       if (response.status === 304 || response.status < 300 || response.status >= 400) {
         return response;
       }
@@ -322,6 +391,9 @@ function parseRetryAfter(header: string | null): number | undefined {
 
 function retryDelayMs(response: Response): number {
   const parsed = parseRetryAfter(response.headers.get('Retry-After'));
+  if (response.status === 429 || response.status === 419) {
+    return parsed ?? FEED_RETRY_FALLBACK_MS;
+  }
   return Math.min(parsed ?? FEED_RETRY_FALLBACK_MS, FEED_RETRY_MAX_MS);
 }
 
@@ -355,6 +427,7 @@ function responseHeaders(entry: CachedFeed, ageSeconds: number, state: FeedCache
     'Cache-Control': 'no-cache, no-store',
     Age: String(ageSeconds),
     'X-Sift-Cache': state,
+    'X-Sift-Request-Source': 'feed-cache',
   });
   if (entry.etag) headers.set('ETag', entry.etag);
   if (entry.lastModified) headers.set('Last-Modified', entry.lastModified);
@@ -396,6 +469,11 @@ function getWorkerCache(): CacheApiLike | null {
 
 function workerCacheKey(upstream: string): Request {
   return new Request(upstream, { method: 'GET' });
+}
+
+async function workerFailureKey(upstream: string): Promise<Request> {
+  const key = await sha256Hex(upstream);
+  return new Request(`https://sift.invalid/__feed_failures/${key}`, { method: 'GET' });
 }
 
 function workerCacheResponse(entry: CachedFeed): Response {
@@ -483,6 +561,7 @@ function cooldownResponse(retry: FeedRetry): FeedCacheResult {
     'Retry-After': String(retryAfter),
     'Cache-Control': 'no-store',
     'X-Sift-Cache': 'cooldown',
+    'X-Sift-Request-Source': 'url-cooldown',
   });
   return {
     response: new Response(null, {
@@ -506,7 +585,7 @@ function workerFailureResponse(retry: FeedRetry): Response {
 
 async function getWorkerFeedRetry(cache: CacheApiLike, upstream: string): Promise<FeedRetry | undefined> {
   try {
-    const response = await cache.match(workerCacheKey(upstream));
+    const response = await cache.match(await workerFailureKey(upstream));
     if (!response || !isUpstreamFailureStatus(response.status)) return undefined;
     const retryAt = Number(response.headers.get(WORKER_RETRY_AT_HEADER));
     if (!Number.isFinite(retryAt) || retryAt <= Date.now()) return undefined;
@@ -520,7 +599,7 @@ async function storeFeedRetry(upstream: string, retry: FeedRetry): Promise<void>
   const cache = getWorkerCache();
   if (!cache) return;
   try {
-    await cache.put(workerCacheKey(upstream), workerFailureResponse(retry));
+    await cache.put(await workerFailureKey(upstream), workerFailureResponse(retry));
   } catch {
   }
 }
@@ -557,14 +636,21 @@ async function revalidateFeed(
 
   let response: Response;
   try {
-    response = await fetchUpstream(upstream, { headers });
+    response = await fetchUpstreamWithPolicy(upstream, { headers }, { db, route: 'feed' });
   } catch {
     const retry: FeedRetry = {
       status: 502,
       retryAt: Date.now() + FEED_RETRY_FALLBACK_MS,
     };
     await rememberFeedRetry(upstream, retry, db);
-    return { kind: 'response', response: new Response(null, { status: retry.status }), state: 'bypass' };
+    return {
+      kind: 'response',
+      response: new Response(null, {
+        status: retry.status,
+        headers: { 'Cache-Control': 'no-store', 'X-Sift-Request-Source': 'local-gate' },
+      }),
+      state: 'bypass',
+    };
   }
   if (response.status === 304 && previous) {
     const entry: CachedFeed = {
@@ -586,7 +672,7 @@ async function revalidateFeed(
     };
     await rememberFeedRetry(upstream, retry, db);
     const headers = new Headers(response.headers);
-    if ((response.status === 429 || response.status === 503) && !headers.has('Retry-After')) {
+    if ((response.status === 429 || response.status === 419 || response.status === 503) && !headers.has('Retry-After')) {
       headers.set('Retry-After', String(Math.ceil(delayMs / 1000)));
     }
     return {
@@ -685,14 +771,21 @@ export async function fetchFeedCached(
 export function clearFeedCacheForTests(): void {
   feedCache.clear();
   feedRetries.clear();
+  feedRevalidations.clear();
 }
 
 export function badRequest(message: string): Response {
-  return new Response(message, { status: 400 });
+  return new Response(message, {
+    status: 400,
+    headers: { 'Cache-Control': 'no-store' },
+  });
 }
 
 export function badGateway(message: string): Response {
-  return new Response(message, { status: 502 });
+  return new Response(message, {
+    status: 502,
+    headers: { 'Cache-Control': 'no-store', 'X-Sift-Request-Source': 'local-gate' },
+  });
 }
 
 export { assertNoUrlLog } from './log';

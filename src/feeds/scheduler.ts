@@ -11,13 +11,13 @@ import {
   MIN_LEARNED_INTERVAL_MS,
   ERROR_RETRY_FLOOR_MS,
   ERROR_RETRY_MAX_MS,
-  RETRY_AFTER_CLAMP_MS,
 } from '../db/types';
 import { isIdle } from '../util/idle';
 import { ensureFeedStats, getFeedStats } from '../db/stats';
 import { enqueueStatsIfSync } from '../sync/queue';
 
 const TICK_MS = 5 * 60 * 1000;
+const FEED_JITTER_WINDOW_MS = 15 * 60 * 1000;
 
 const [inFlight, setInFlight] = createSignal(0);
 const [feedErrors, setFeedErrors] = createSignal<Record<string, string>>({});
@@ -25,6 +25,8 @@ const [fetchingFeeds, setFetchingFeeds] = createSignal<Set<string>>(new Set());
 const feedRefreshes = new Map<string, Promise<void>>();
 
 let tickTimer: ReturnType<typeof setInterval> | null = null;
+let dueTimer: ReturnType<typeof setTimeout> | null = null;
+let schedulerEpoch: number | null = null;
 let onRefresh: (() => void) | null = null;
 
 export function setOnRefresh(fn: (() => void) | null): void {
@@ -33,16 +35,21 @@ export function setOnRefresh(fn: (() => void) | null): void {
 
 export function startScheduler(): void {
   if (tickTimer) return;
+  schedulerEpoch = Date.now();
   void refreshStaleFeeds();
   tickTimer = setInterval(() => {
     if (document.visibilityState === 'hidden') return;
     void refreshStaleFeeds();
   }, TICK_MS);
+  void scheduleAutomaticRun();
 }
 
 export function stopScheduler(): void {
   if (tickTimer) clearInterval(tickTimer);
+  if (dueTimer) clearTimeout(dueTimer);
   tickTimer = null;
+  dueTimer = null;
+  schedulerEpoch = null;
 }
 
 export const fetchingState = {
@@ -65,16 +72,48 @@ export async function refreshStaleFeeds(options: RefreshOptions = {}): Promise<v
   const stale = feeds.filter((f) => {
     if (!f.url) return false;
     if (target !== undefined && !target.has(f.id)) return false;
+    if (f.refreshError && f.refreshError.retryAt > now) return false;
     if (forceAll) return true;
-    if (f.refreshError) return f.refreshError.retryAt <= now;
-    if (f.lastFetched == null) return true;
-    return f.lastFetched + f.learnedIntervalMs < now;
+    return scheduledFeedDueAt(f, schedulerEpoch, now) <= now;
   });
   await mapConcurrent(stale, (f) => refreshFeed(f), 4);
   void runEviction();
   if (!forceAll && stale.length > 0 && onRefresh && !isIdle()) {
     onRefresh();
   }
+  void scheduleAutomaticRun();
+}
+
+export function stableFeedJitter(feedId: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < feedId.length; index += 1) {
+    hash ^= feedId.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % FEED_JITTER_WINDOW_MS;
+}
+
+export function scheduledFeedDueAt(feed: Feed, startedAt: number | null, now = Date.now()): number {
+  const cadenceAt = feed.refreshError?.retryAt
+    ?? (feed.lastFetched == null ? (startedAt ?? now) : feed.lastFetched + feed.learnedIntervalMs);
+  const startupFloor = startedAt ?? cadenceAt;
+  return Math.max(cadenceAt, startupFloor) + (startedAt === null ? 0 : stableFeedJitter(feed.id));
+}
+
+async function scheduleAutomaticRun(): Promise<void> {
+  if (!tickTimer || schedulerEpoch === null) return;
+  if (dueTimer) clearTimeout(dueTimer);
+  const feeds = await listFeeds();
+  const nextAt = feeds
+    .filter((feed) => Boolean(feed.url))
+    .reduce((earliest, feed) => Math.min(earliest, scheduledFeedDueAt(feed, schedulerEpoch)), Number.POSITIVE_INFINITY);
+  if (!Number.isFinite(nextAt)) return;
+  dueTimer = setTimeout(() => {
+    dueTimer = null;
+    if (document.visibilityState !== 'hidden') {
+      void refreshStaleFeeds();
+    }
+  }, Math.max(0, nextAt - Date.now()));
 }
 
 async function mapConcurrent<T, R>(
@@ -96,9 +135,8 @@ async function mapConcurrent<T, R>(
 
 function nextRetryAt(status: number, retryAfterMs: number | undefined, attempts: number): number {
   const now = Date.now();
-  if (status === 429 && retryAfterMs !== undefined) {
-    const delay = Math.min(Math.max(0, retryAfterMs), RETRY_AFTER_CLAMP_MS);
-    return now + delay;
+  if ((status === 429 || status === 419) && retryAfterMs !== undefined) {
+    return now + Math.max(0, retryAfterMs);
   }
   const backoff = Math.min(ERROR_RETRY_FLOOR_MS * 2 ** (attempts - 1), ERROR_RETRY_MAX_MS);
   return now + backoff;
@@ -163,8 +201,9 @@ async function refreshFeedOnce(feed: Feed): Promise<void> {
       return;
     }
     const items = parsedToItems(parsed, feed.id);
+    let newItemIds: string[] = [];
     if (items.length > 0) {
-      await bulkUpsertItems(items);
+      newItemIds = await bulkUpsertItems(items);
     }
     const lastItemPublishedAt = items.length
       ? Math.max(...items.map((i) => i.publishedAt))
@@ -172,7 +211,7 @@ async function refreshFeedOnce(feed: Feed): Promise<void> {
     const learnedIntervalMs =
       feed.learnedIntervalMs > DEFAULT_LEARNED_INTERVAL_MS
         ? DEFAULT_LEARNED_INTERVAL_MS
-        : adaptInterval(feed, items, lastItemPublishedAt);
+        : adaptInterval(feed, newItemIds.length, Date.now() - (feed.lastFetched ?? Date.now()));
     const updatedFeed: Feed = {
       ...feed,
       title: feed.title || parsed.title,
@@ -206,11 +245,10 @@ async function refreshFeedOnce(feed: Feed): Promise<void> {
   }
 }
 
-function adaptInterval(feed: Feed, newItems: { publishedAt: number }[], latest: number | null): number {
-  const now = Date.now();
+function adaptInterval(feed: Feed, newItemCount: number, elapsedMs: number): number {
   const day = 24 * 60 * 60 * 1000;
-  if (newItems.length === 0 || latest == null) return feed.learnedIntervalMs;
-  const itemsPerDay = newItems.length / Math.max(1, (now - latest) / day);
+  if (feed.lastFetched == null || newItemCount === 0) return feed.learnedIntervalMs;
+  const itemsPerDay = newItemCount / Math.max(1 / 24, elapsedMs / day);
   if (itemsPerDay > 10) {
     return Math.max(MIN_LEARNED_INTERVAL_MS, Math.floor(feed.learnedIntervalMs / 2));
   }

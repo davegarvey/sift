@@ -31,8 +31,8 @@ export async function insertOrUpdateItem(item: Item): Promise<void> {
   await bulkUpsertItems([item]);
 }
 
-export async function bulkUpsertItems(items: Item[]): Promise<void> {
-  if (items.length === 0) return;
+export async function bulkUpsertItems(items: Item[]): Promise<string[]> {
+  if (items.length === 0) return [];
   const db = await getDb();
   const feedId = items[0].feedId;
 
@@ -50,6 +50,7 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
   const statsStore = tx.objectStore('feedStats');
   const markersStore = tx.objectStore('readMarkers');
   const statsByFeed = new Map<string, FeedStats>();
+  const insertedIds: string[] = [];
 
   const getStats = async (feedId: string): Promise<FeedStats> => {
     const cached = statsByFeed.get(feedId);
@@ -82,6 +83,7 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
       });
       existingByKey.set(item.id, merged);
     } else {
+      insertedIds.push(item.id);
       await itemsStore.put(item);
       const existingFlag = flagByKey.get(item.id);
       await flagsStore.put({
@@ -104,6 +106,7 @@ export async function bulkUpsertItems(items: Item[]): Promise<void> {
     await statsStore.put(stats);
   }
   await tx.done;
+  return insertedIds;
 }
 
 export async function getItem(id: string): Promise<Item | undefined> {

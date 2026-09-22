@@ -250,6 +250,57 @@ export class LocalD1Database {
     const pkCols = this._pkCols(tableName);
     const key = pkCols.map((c) => String(row[c] ?? '')).join('::');
 
+    if (tableName === 'upstream_origin_policy') {
+      const existing = table.get(key);
+      if (/cooldown_until\s*=\s*MAX/i.test(sql)) {
+        const now = Number(params[4]);
+        const status = Number(params[2]);
+        const challengeCount = Number(existing?.challenge_count) || 0;
+        const retryAfterProvided = Number(params[5]) === 1;
+        const challengeDelay = challengeCount === 0 ? Number(params[7])
+          : challengeCount === 1 ? Number(params[8]) : Number(params[9]);
+        const progressiveUntil = status === 419 && !retryAfterProvided ? now + challengeDelay : 0;
+        const candidateUntil = Math.max(Number(params[1]), progressiveUntil);
+        const oldUntil = Number(existing?.cooldown_until) || 0;
+        const stored = {
+          origin_key: row.origin_key,
+          next_request_at: Number(existing?.next_request_at) || 0,
+          cooldown_until: Math.max(oldUntil, candidateUntil),
+          cooldown_status: candidateUntil >= oldUntil ? status : existing?.cooldown_status ?? status,
+          challenge_count: challengeCount + (status === 419 ? 1 : 0),
+          updated_at: now,
+        };
+        table.set(key, stored);
+        this.lastChanges = 1;
+        return [stored];
+      }
+
+      if (existing) {
+        const now = Number(params[6]);
+        if (Number(existing.cooldown_until) > now || Number(existing.next_request_at) > Number(params[7])) return [];
+        const stored = {
+          ...existing,
+          next_request_at: Math.max(Number(existing.next_request_at) || 0, Number(params[3])) + Number(params[4]),
+          updated_at: Number(params[5]),
+        };
+        table.set(key, stored);
+        this.lastChanges = 1;
+        return [stored];
+      }
+
+      const stored = {
+        origin_key: row.origin_key,
+        next_request_at: Number(params[1]),
+        cooldown_until: 0,
+        cooldown_status: null,
+        challenge_count: 0,
+        updated_at: Number(params[2]),
+      };
+      table.set(key, stored);
+      this.lastChanges = 1;
+      return [stored];
+    }
+
     // Apply ALTER-added column defaults (e.g. pairing_codes.kind) to rows
     // that did not specify the column.
     const defaults = this.tableDefaults.get(tableName);
@@ -696,6 +747,8 @@ export class LocalD1Database {
         return ['scope', 'window_start'];
       case 'feed_fetch_failures':
         return ['feed_key'];
+      case 'upstream_origin_policy':
+        return ['origin_key'];
       case 'counters':
         return ['name'];
       default:

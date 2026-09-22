@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchUpstream } from '../server/fetch';
+import { clearOriginGovernorForTests } from '../server/origin-governor';
 
 const PUBLIC_ORIGIN = 'http://93.184.216.34';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  clearOriginGovernorForTests();
 });
 
 describe('fetchUpstream redirects', () => {
@@ -99,5 +101,5 @@ describe('fetchUpstream redirects', () => {
 
     await expect(fetchUpstream(`${PUBLIC_ORIGIN}/start`)).rejects.toThrow('excessive upstream redirect');
     expect(requests).toHaveLength(6);
-  });
+  }, 15_000);
 });

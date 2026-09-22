@@ -51,3 +51,8 @@ Migration `0006_feed_fetch_failures.sql` adds the shared feed failure table.
 It stores only a SHA-256 URL key, failure status, retry timestamp, and update
 timestamp; feed bodies and raw upstream URLs are never stored in this table.
 The existing daily Worker cleanup removes rows after their retry timestamp.
+
+Migration `0007_upstream_origin_policy.sql` adds shared per-origin request
+reservations and cooldown state. It stores only a SHA-256 origin key, request
+slot/cooldown timestamps, status, and challenge count. Expired idle rows are
+removed by the daily Worker cleanup.
