@@ -17,6 +17,8 @@ vi.stubGlobal('window', { addEventListener: () => {} });
 import 'fake-indexeddb/auto';
 import { getDb } from '../src/db/open';
 import { upsertFeed, getFeed } from '../src/db/feeds';
+import { bulkUpsertItems } from '../src/db/items';
+import { parseFeed, parsedToItems } from '../src/feeds/parse';
 
 beforeEach(async () => {
   const db = await getDb();
@@ -28,6 +30,12 @@ beforeEach(async () => {
 });
 
 const RSS = `<rss version="2.0"><channel><title>X</title><link>https://x.example</link><description>d</description></channel></rss>`;
+
+function rssWithItems(ids: string[]): string {
+  const date = new Date(Date.now() - 60_000).toUTCString();
+  const entries = ids.map((id) => `<item><guid>${id}</guid><title>${id}</title><link>https://x.example/${id}</link><pubDate>${date}</pubDate></item>`).join('');
+  return `<rss version="2.0"><channel><title>X</title><link>https://x.example</link><description>d</description>${entries}</channel></rss>`;
+}
 
 function stubFetch(status: number, body: string, headers?: Record<string, string>): void {
   // 304 is a null-body status; Response('', { status: 304 }) throws in Node.
@@ -192,6 +200,7 @@ describe('refreshFeed', () => {
       return new Response('', { status: 500 });
     }) as unknown as typeof globalThis.fetch;
     await refreshStaleFeeds();
+    await refreshStaleFeeds({ forceAll: true });
     expect(calls).toBe(0);
   });
 
@@ -236,7 +245,7 @@ describe('refreshFeed', () => {
     expect(feed.lastFetched).toBeNull();
   });
 
-  it('clamps an oversized Retry-After at 24h', async () => {
+  it('does not clamp an oversized Retry-After at 24h', async () => {
     const { refreshFeed } = await import('../src/feeds/scheduler');
     const id = 'feed-id-6';
     await upsertFeed({
@@ -250,8 +259,82 @@ describe('refreshFeed', () => {
     stubFetch(429, '', { 'Retry-After': String(48 * 3600) });
     await refreshFeed((await getFeed(id))!);
     const feed = (await getFeed(id))!;
-    expect(feed.refreshError?.retryAt).toBeGreaterThan(now + 24 * 3_600_000 - 5000);
-    expect(feed.refreshError?.retryAt).toBeLessThan(now + 24 * 3_600_000 + 5000);
+    expect(feed.refreshError?.retryAt).toBeGreaterThan(now + 48 * 3_600_000 - 5000);
+    expect(feed.refreshError?.retryAt).toBeLessThan(now + 48 * 3_600_000 + 5000);
+  });
+
+  it('honors Retry-After on a 419 response', async () => {
+    const { refreshFeed } = await import('../src/feeds/scheduler');
+    const id = 'feed-id-419';
+    await upsertFeed({
+      id,
+      url: 'https://x.example/feed.xml',
+      title: 'X',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+    const now = Date.now();
+    stubFetch(419, '', { 'Retry-After': String(48 * 3600) });
+    await refreshFeed((await getFeed(id))!);
+    const feed = (await getFeed(id))!;
+    expect(feed.refreshError?.lastStatus).toBe(419);
+    expect(feed.refreshError?.retryAt).toBeGreaterThan(now + 48 * 3_600_000 - 5000);
+    expect(feed.refreshError?.retryAt).toBeLessThan(now + 48 * 3_600_000 + 5000);
+  });
+
+  it('does not relearn a shorter cadence from an unchanged large snapshot', async () => {
+    const { refreshFeed } = await import('../src/feeds/scheduler');
+    const id = 'unchanged-snapshot';
+    const body = rssWithItems(Array.from({ length: 20 }, (_, index) => `item-${index}`));
+    const parsed = parseFeed(body, 'https://x.example/feed.xml')!;
+    await upsertFeed({
+      id,
+      url: 'https://x.example/feed.xml',
+      title: 'X',
+      learnedIntervalMs: 60 * 60_000,
+      lastFetched: Date.now() - 4 * 60 * 60_000,
+    });
+    await bulkUpsertItems(parsedToItems(parsed, id));
+    stubFetch(200, body);
+
+    await refreshFeed((await getFeed(id))!);
+
+    expect((await getFeed(id))!.learnedIntervalMs).toBe(60 * 60_000);
+  });
+
+  it('learns cadence from new IDs and respects the minimum interval', async () => {
+    const { refreshFeed } = await import('../src/feeds/scheduler');
+    const id = 'new-arrivals';
+    await upsertFeed({
+      id,
+      url: 'https://x.example/feed.xml',
+      title: 'X',
+      learnedIntervalMs: 31 * 60_000,
+      lastFetched: Date.now() - 4 * 60 * 60_000,
+    });
+    stubFetch(200, rssWithItems(Array.from({ length: 20 }, (_, index) => `new-${index}`)));
+
+    await refreshFeed((await getFeed(id))!);
+
+    expect((await getFeed(id))!.learnedIntervalMs).toBe(30 * 60_000);
+  });
+
+  it('uses stable jitter without scheduling before the learned interval', async () => {
+    const { scheduledFeedDueAt, stableFeedJitter } = await import('../src/feeds/scheduler');
+    const startedAt = 1_000_000;
+    const feed = {
+      id: 'stable-jitter',
+      url: 'https://x.example/feed.xml',
+      title: 'X',
+      learnedIntervalMs: 60 * 60_000,
+      lastFetched: startedAt - 2 * 60 * 60_000,
+    };
+    const due = scheduledFeedDueAt(feed, startedAt, startedAt);
+
+    expect(stableFeedJitter(feed.id)).toBe(stableFeedJitter(feed.id));
+    expect(due).toBe(startedAt + stableFeedJitter(feed.id));
+    expect(due).toBeGreaterThanOrEqual(feed.lastFetched + feed.learnedIntervalMs);
+    expect(due).toBeLessThan(startedAt + 15 * 60_000);
   });
 
   it('escalates generic errors exponentially from 30min to a 6h ceiling', async () => {

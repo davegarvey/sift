@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearFeedCacheForTests, FEED_CACHE_TTL_MS, fetchFeedCached } from '../server/fetch';
+import { clearOriginGovernorForTests } from '../server/origin-governor';
 import { LocalD1Database } from '../server/sync/local-d1';
 
 let urlCounter = 0;
@@ -42,6 +43,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   clearFeedCacheForTests();
+  clearOriginGovernorForTests();
 });
 
 describe('shared feed cache', () => {
@@ -141,7 +143,7 @@ describe('shared feed cache', () => {
     vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
     const first = fetchFeedCached(url);
     const second = fetchFeedCached(url, { etag: '"other"' });
-    for (let i = 0; i < 5 && calls < 2; i += 1) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(calls).toBe(2);
     release(response('<rss>two</rss>', { ETag: '"two"' }));
     expect((await first).response.status).toBe(200);
@@ -171,6 +173,23 @@ describe('shared feed cache', () => {
     expect(calls).toBe(2);
   });
 
+  it('does not shorten a 429 Retry-After longer than 24 hours', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      return new Response('limited', { status: 429, headers: { 'Retry-After': String(48 * 60 * 60) } });
+    }) as typeof globalThis.fetch);
+
+    const first = await fetchFeedCached(url);
+    const suppressed = await fetchFeedCached(url);
+    expect(first.response.headers.get('Retry-After')).toBe(String(48 * 60 * 60));
+    expect(suppressed.response.headers.get('Retry-After')).toBe(String(48 * 60 * 60));
+    expect(calls).toBe(1);
+  });
+
   it('uses the fallback cooldown when Retry-After is absent or unusable', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
@@ -188,7 +207,7 @@ describe('shared feed cache', () => {
     expect(calls).toBe(1);
   });
 
-  it('cools down generic upstream failures instead of retrying them immediately', async () => {
+  it('applies the initial six-hour origin cooldown to a headerless challenge response', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const url = feedUrl();
@@ -205,7 +224,9 @@ describe('shared feed cache', () => {
     expect(second.response.headers.get('X-Sift-Cache')).toBe('cooldown');
     expect(calls).toBe(1);
 
-    vi.advanceTimersByTime(30 * 60_000);
+    expect(first.response.headers.get('Retry-After')).toBe(String(6 * 60 * 60));
+
+    vi.advanceTimersByTime(6 * 60 * 60_000);
     await fetchFeedCached(url);
     expect(calls).toBe(2);
   });
@@ -228,7 +249,7 @@ describe('shared feed cache', () => {
     expect(calls).toBe(1);
   });
 
-  it('accepts HTTP-date Retry-After values and caps long delays', async () => {
+  it('accepts HTTP-date Retry-After values and caps long non-rate-limit delays', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     const dateUrl = feedUrl();
@@ -252,6 +273,7 @@ describe('shared feed cache', () => {
     expect(dateSuppressed.response.headers.get('Retry-After')).toBe('60');
     expect(dateCalls).toBe(1);
 
+    await vi.advanceTimersByTimeAsync(1_000);
     await fetchFeedCached(cappedUrl);
     const cappedSuppressed = await fetchFeedCached(cappedUrl);
     expect(cappedSuppressed.response.headers.get('Retry-After')).toBe(String(24 * 60 * 60));
@@ -293,6 +315,24 @@ describe('shared feed cache', () => {
     expect(suppressed.response.status).toBe(419);
     expect(suppressed.response.headers.get('X-Sift-Cache')).toBe('cooldown');
     expect(calls).toBe(1);
+  });
+
+  it('keeps a stale success representation when storing a Worker cooldown marker', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    const cache = testCache();
+    vi.stubGlobal('caches', { default: cache });
+    vi.stubGlobal('fetch', (async () => response('<rss>cached</rss>', { ETag: '"cached"' })) as typeof globalThis.fetch);
+    await fetchFeedCached(url);
+
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
+    vi.stubGlobal('fetch', (async () => new Response('challenge', { status: 419 })) as typeof globalThis.fetch);
+    await fetchFeedCached(url);
+
+    expect(cache.entries.size).toBe(2);
+    expect(cache.entries.get(url)?.status).toBe(200);
+    expect(cache.entries.get(url)?.headers.get('ETag')).toBe('"cached"');
   });
 
   it('shares generic failure cooldowns through D1', async () => {
@@ -352,7 +392,7 @@ describe('shared feed cache', () => {
     expect(failed.response.headers.get('X-Upstream')).toBe('failure');
     expect(await failed.response.text()).toBe('Sorry');
 
-    vi.advanceTimersByTime(30 * 60_000);
+    vi.advanceTimersByTime(6 * 60 * 60_000);
     const recovered = await fetchFeedCached(url);
     expect(recovered.response.status).toBe(200);
     expect(await recovered.response.text()).toBe('<rss>one</rss>');

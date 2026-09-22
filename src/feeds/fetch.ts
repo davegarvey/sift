@@ -15,9 +15,13 @@ export type FeedFetchResult =
 
 function parseRetryAfter(header: string | null): number | undefined {
   if (header == null) return undefined;
-  const secs = Number.parseInt(header, 10);
-  if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
-  const dateMs = Date.parse(header);
+  const value = header.trim();
+  if (/^\d+$/.test(value)) {
+    const secs = Number(value);
+    if (Number.isSafeInteger(secs)) return Math.min(secs * 1000, Number.MAX_SAFE_INTEGER - Date.now());
+    return undefined;
+  }
+  const dateMs = Date.parse(value);
   if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
   return undefined;
 }
@@ -46,7 +50,9 @@ export async function fetchFeed(
       kind: 'error',
       status: res.status,
       message: `HTTP ${res.status}`,
-      retryAfterMs: res.status === 429 ? parseRetryAfter(res.headers.get('Retry-After')) : undefined,
+      retryAfterMs: res.status === 429 || res.status === 419
+        ? parseRetryAfter(res.headers.get('Retry-After'))
+        : undefined,
     };
   }
 

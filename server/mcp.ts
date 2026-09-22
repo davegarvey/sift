@@ -1,7 +1,7 @@
 import { Server, createMcpHandler, type CallToolResult, type Tool } from '@modelcontextprotocol/server';
 import pkg from '../package.json';
 import { Relay } from './relay';
-import { fetchUpstream } from './fetch';
+import { fetchUpstreamWithPolicy } from './fetch';
 import { parseFeed } from '../src/feeds/parse';
 import { findAlternateFeeds } from '../src/feeds/discover';
 import type { Feed } from '../src/db/types';
@@ -81,7 +81,11 @@ function textResult(content: string, isError?: boolean): CallToolResult {
   return { content: [{ type: 'text' as const, text: content }], ...(isError ? { isError: true } : {}) };
 }
 
-export function createMcpServer(relay: Relay): Server {
+export interface McpFetchOptions {
+  db?: D1Database;
+}
+
+export function createMcpServer(relay: Relay, options: McpFetchOptions = {}): Server {
   const server = new Server(
     { name: 'sift-mcp', version: pkg.version },
     { capabilities: { tools: {} } },
@@ -101,13 +105,13 @@ export function createMcpServer(relay: Relay): Server {
         case 'get_feed':
           return handleGetFeed(relay, args ?? {});
         case 'discover_feed':
-          return await handleDiscoverFeed(args ?? {});
+          return await handleDiscoverFeed(args ?? {}, options);
         case 'add_feed':
-          return await handleAddFeed(relay, args ?? {});
+          return await handleAddFeed(relay, args ?? {}, options);
         case 'remove_feed':
           return await handleRemoveFeed(relay, args ?? {});
         case 'get_feed_items':
-          return await handleGetFeedItems(args ?? {});
+          return await handleGetFeedItems(args ?? {}, options);
         default:
           return textResult(`Unknown tool: ${name}`, true);
       }
@@ -119,8 +123,8 @@ export function createMcpServer(relay: Relay): Server {
   return server;
 }
 
-export function createMcpHttpHandler(relay: Relay) {
-  return createMcpHandler(() => createMcpServer(relay));
+export function createMcpHttpHandler(relay: Relay, options: McpFetchOptions = {}) {
+  return createMcpHandler(() => createMcpServer(relay, options));
 }
 
 function handleGetFeed(relay: Relay, args: Record<string, unknown>): CallToolResult {
@@ -131,20 +135,20 @@ function handleGetFeed(relay: Relay, args: Record<string, unknown>): CallToolRes
   return textResult(JSON.stringify(feed, null, 2));
 }
 
-async function handleDiscoverFeed(args: Record<string, unknown>): Promise<CallToolResult> {
+async function handleDiscoverFeed(args: Record<string, unknown>, options: McpFetchOptions): Promise<CallToolResult> {
   const url = String(args.url ?? '');
   if (!url) return textResult('url is required', true);
 
-  const discovered = await discover(url);
+  const discovered = await discover(url, options);
   if (!discovered) return textResult(`Could not find a feed at: ${url}`, true);
   return textResult(JSON.stringify(discovered, null, 2));
 }
 
-async function handleAddFeed(relay: Relay, args: Record<string, unknown>): Promise<CallToolResult> {
+async function handleAddFeed(relay: Relay, args: Record<string, unknown>, options: McpFetchOptions): Promise<CallToolResult> {
   const url = String(args.url ?? '');
   if (!url) return textResult('url is required', true);
 
-  const discovered = await discover(url);
+  const discovered = await discover(url, options);
   if (!discovered) return textResult(`Could not find a feed at: ${url}`, true);
 
   const feed: Feed = {
@@ -169,14 +173,14 @@ async function handleRemoveFeed(relay: Relay, args: Record<string, unknown>): Pr
   return textResult(`Unsubscribed from: ${url}`);
 }
 
-async function handleGetFeedItems(args: Record<string, unknown>): Promise<CallToolResult> {
+async function handleGetFeedItems(args: Record<string, unknown>, options: McpFetchOptions): Promise<CallToolResult> {
   const url = String(args.url ?? '');
   if (!url) return textResult('url is required', true);
   const limit = typeof args.limit === 'number' ? args.limit : 20;
 
   let res: Response;
   try {
-    res = await fetchUpstream(url);
+    res = await fetchUpstreamWithPolicy(url, {}, { db: options.db, route: 'mcp' });
   } catch {
     return textResult(`Failed to fetch feed: ${url}`, true);
   }
@@ -197,13 +201,13 @@ async function handleGetFeedItems(args: Record<string, unknown>): Promise<CallTo
   return textResult(JSON.stringify({ title: parsed.title, items }, null, 2));
 }
 
-async function discover(url: string): Promise<Discovered | null> {
-  const direct = await tryParse(url);
+async function discover(url: string, options: McpFetchOptions): Promise<Discovered | null> {
+  const direct = await tryParse(url, options);
   if (direct) return { url, title: direct.title, htmlUrl: direct.htmlUrl, samples: firstThree(direct) };
 
   let html: string;
   try {
-    const res = await fetchUpstream(url);
+    const res = await fetchUpstreamWithPolicy(url, {}, { db: options.db, route: 'discovery' });
     if (!res.ok) return null;
     html = await res.text();
   } catch {
@@ -212,7 +216,7 @@ async function discover(url: string): Promise<Discovered | null> {
 
   const candidates = findAlternateFeeds(html, url);
   for (const candidate of candidates) {
-    const parsed = await tryParse(candidate);
+    const parsed = await tryParse(candidate, options);
     if (parsed) {
       return { url: candidate, title: parsed.title, htmlUrl: parsed.htmlUrl, samples: firstThree(parsed) };
     }
@@ -221,10 +225,10 @@ async function discover(url: string): Promise<Discovered | null> {
   return null;
 }
 
-async function tryParse(url: string) {
+async function tryParse(url: string, options: McpFetchOptions) {
   let res: Response;
   try {
-    res = await fetchUpstream(url);
+    res = await fetchUpstreamWithPolicy(url, {}, { db: options.db, route: 'discovery' });
   } catch {
     return null;
   }

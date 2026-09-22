@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpHttpHandler } from '../server/mcp';
 import { Relay } from '../server/relay';
+import { clearOriginGovernorForTests } from '../server/origin-governor';
 
 const PUBLIC_ORIGIN = 'http://93.184.216.34';
 const ACCEPT = 'application/json, text/event-stream';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  clearOriginGovernorForTests();
 });
 
 async function callTool(name: string, args: Record<string, unknown>): Promise<Response> {

@@ -78,16 +78,30 @@ failure and are not passed to the browser. Successful `/feed` responses may be
 held in a bounded cache for up to 15 minutes, keyed by the complete upstream
 URL. Node/Bun use process-local memory; Cloudflare Workers also use the
 Workers Cache API when available, with data-center-local, best-effort reuse.
-Upstream `4xx`/`5xx` and network failures are briefly cooled down, honoring a
-valid `Retry-After` value (capped at 24 hours) and otherwise waiting 30 minutes
-before another proxy attempt. Network failures are returned as `502`.
+Requests to the same origin are spaced at least one second apart and limited
+to four in flight per runtime. Workers reserve those slots and share `429` and
+`419` cooldowns through D1 using only a SHA-256 origin key; Node/Bun and local
+development use process-local state. If D1 is unavailable, the Worker falls
+back to its runtime-local gate. Queue waits are bounded and an overloaded
+origin receives a local `429` with `Retry-After` instead of another upstream
+request. Redirect destinations use the same policy. A valid upstream
+`Retry-After` is honored without shortening it; absent `429` headers use a
+30-minute fallback, while headerless `419` responses back off for 6, 12, then
+24 hours. Other upstream errors use a 30-minute fallback capped at 24 hours.
+All proxy errors are `no-store`; `/img` uses immutable caching only for
+successful images. Response headers identify whether a response came from the
+upstream, a feed cache, a URL cooldown, an origin cooldown, or the local gate.
+
 The feed body cache is not part of sync or persistent storage. Cloudflare
-Workers also store hashed feed failure keys and cooldown timestamps in D1;
-they are not exposed through the sync API. Worker cache hits still
-count as Worker requests against the account plan limits. The proxy DOES NOT
-log upstream URLs anywhere persistent. Target checks are application-level
-filtering and do not pin a hostname to one DNS answer for the lifetime of a
-connection.
+Workers store hashed feed failure keys and hashed origin reservation/cooldown
+metadata in D1; neither is exposed through the sync API. Successful bodies and
+validators use the existing cache layers, with failure markers stored under
+separate keys. Diagnostics contain only a hashed origin, route, status,
+retry timing, and a short allowlist of response metadata. The proxy does not
+persist upstream URLs, query strings, response bodies, or article IDs. Worker
+cache hits still count as Worker requests against the account plan limits.
+Target checks are application-level filtering and do not pin a hostname to
+one DNS answer for the lifetime of a connection.
 
 The `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged
