@@ -612,6 +612,12 @@ export const AppProvider: ParentComponent = (props) => {
       await reloadFeeds();
       await reloadItems();
     }
+    const pairedFeedIds = feeds().map((feed) => feed.id);
+    if (pairedFeedIds.length > 0) {
+      void refreshFeeds(pairedFeedIds).catch((e: unknown) => {
+        console.error('Failed to fetch feeds after pairing:', e);
+      });
+    }
   };
 
   const regenerateSyncKey = async () => {
@@ -780,16 +786,12 @@ export const AppProvider: ParentComponent = (props) => {
       let message = '';
       try {
         const key = await redeemCode(pairCode);
-        await setStoredSyncKey(key);
-        await updateSettingsWith({ syncKey: key });
-        await triggerFirstTime();
+        await pairSyncWithKey(key);
         success = true;
         message = 'Paired successfully';
       } catch (e) {
         message = e instanceof Error ? e.message : 'Pairing failed';
       }
-      await reloadFeeds();
-      await reloadItems();
       history.replaceState(null, '', window.location.pathname);
       openModal({ kind: 'pair-result', success, message });
     }
