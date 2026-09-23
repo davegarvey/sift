@@ -1,8 +1,10 @@
 # device-sync Specification
 
 ## Purpose
-TBD - created by archiving change add-device-sync. Update Purpose after archive.
+Defines browser device sync behavior, including key management, pairing, data reconciliation, and sync API interactions.
+
 ## Requirements
+
 ### Requirement: Sync key generation and storage
 
 When the user enables device sync, the system SHALL generate a 128-bit cryptographically random sync key, encode it as URL-safe base64 (22 characters), and persist it in the browser's IndexedDB. The sync key SHALL be the user's identity for sync purposes; no account, email, or password is required.
@@ -1201,3 +1203,17 @@ The client SHALL maintain a server-clock offset, measured on every successful pu
 
 - **WHEN** `GET /sync/status` is called without a valid master key or agent token
 - **THEN** the server SHALL return 401
+
+### Requirement: First-time pairing refreshes synchronized feeds immediately
+
+After a device completes first-time pairing and applies the synchronized subscription state, the client SHALL immediately start refreshing every active feed in its local feed list. The initial refresh SHALL begin without waiting for the background scheduler's normal cadence.
+
+#### Scenario: New device joins a sync group with feeds
+
+- **WHEN** first-time pairing succeeds and the resulting local feed list contains one or more active subscriptions
+- **THEN** the client SHALL start a refresh for every active subscription before the normal background scheduler would next refresh them
+
+#### Scenario: New device joins an empty sync group
+
+- **WHEN** first-time pairing succeeds and the resulting local feed list is empty
+- **THEN** the client SHALL NOT start any feed requests

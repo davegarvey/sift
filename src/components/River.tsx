@@ -162,11 +162,18 @@ export function River() {
     if (ctx.state.riverScope == null) return fetching.size > 0 ? 'loading' : 'empty';
     return fetching.has(ctx.state.riverScope) ? 'loading' : 'empty';
   });
+  const loadingMessage = () => {
+    const fetching = ctx.fetchingFeeds();
+    const isFetchingVisibleFeeds = ctx.state.riverScope == null
+      ? fetching.size > 0
+      : fetching.has(ctx.state.riverScope);
+    return isFetchingVisibleFeeds ? 'Fetching your feeds…' : 'Loading…';
+  };
 
   return (
     <main class="river" id="article-list" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
       <div class="river-inner">
-        <Show when={listState() === 'items'} fallback={listState() === 'loading' ? <LoadingMessage /> : <EmptyState />}>
+        <Show when={listState() === 'items'} fallback={listState() === 'loading' ? <LoadingMessage message={loadingMessage()} /> : <EmptyState />}>
           <For each={visibleItems()}>
             {(item, idx) => (
             <div class="swipe-container">
@@ -242,15 +249,15 @@ export function River() {
   );
 }
 
-function LoadingMessage() {
+function LoadingMessage(props: { message: string }) {
   const [show, setShow] = createSignal(false);
   createEffect(() => {
     const t = setTimeout(() => setShow(true), 500);
     onCleanup(() => clearTimeout(t));
   });
   return (
-    <div class="loading-message" classList={{ visible: show() }}>
-      Loading…
+    <div class="loading-message" classList={{ visible: show() }} role="status" aria-live="polite">
+      {props.message}
     </div>
   );
 }
