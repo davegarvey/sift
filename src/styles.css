@@ -21,6 +21,7 @@
   --serif-stack: Charter, "Iowan Old Style", Georgia, serif;
   --sans-stack: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --measure: 65ch;
+  color-scheme: light;
 }
 
 :root[data-theme="dark"], :root[data-theme="mocha"] {
@@ -39,6 +40,7 @@
   --accent-text: #f5c2e7;
   --hairline: rgba(205, 214, 244, 0.08);
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,6 +59,7 @@
     --accent-text: #f5c2e7;
     --hairline: rgba(205, 214, 244, 0.08);
     --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
   }
 }
 
@@ -514,21 +517,17 @@ a:hover { text-decoration: underline; }
   overflow-y: auto;
 }
 
-.sidebar::-webkit-scrollbar,
-.sidebar .feed-list::-webkit-scrollbar {
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results)::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-.sidebar::-webkit-scrollbar-track,
-.sidebar .feed-list::-webkit-scrollbar-track,
-.sidebar::-webkit-scrollbar-corner,
-.sidebar .feed-list::-webkit-scrollbar-corner {
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results)::-webkit-scrollbar-track,
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results)::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-.sidebar::-webkit-scrollbar-thumb,
-.sidebar .feed-list::-webkit-scrollbar-thumb {
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results)::-webkit-scrollbar-thumb {
   background-color: transparent;
   background-clip: padding-box;
   border: 2px solid transparent;
@@ -536,25 +535,19 @@ a:hover { text-decoration: underline; }
   transition: background-color 150ms ease;
 }
 
-.sidebar:hover::-webkit-scrollbar-thumb,
-.sidebar:focus-within::-webkit-scrollbar-thumb,
-.sidebar .feed-list:hover::-webkit-scrollbar-thumb,
-.sidebar .feed-list:focus-within::-webkit-scrollbar-thumb {
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results):is(:hover, :focus-within)::-webkit-scrollbar-thumb {
   background-color: var(--overlay);
 }
 
-.sidebar::-webkit-scrollbar-thumb:hover,
-.sidebar .feed-list::-webkit-scrollbar-thumb:hover {
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results)::-webkit-scrollbar-thumb:hover {
   background-color: var(--subtext);
 }
 
-.sidebar::-webkit-scrollbar-thumb:active,
-.sidebar .feed-list::-webkit-scrollbar-thumb:active {
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results)::-webkit-scrollbar-thumb:active {
   background-color: var(--text);
 }
 
-.sidebar::-webkit-scrollbar-button,
-.sidebar .feed-list::-webkit-scrollbar-button {
+:is(.sidebar, .sidebar .feed-list, .river, .reading, .stats-view, .tag-suggestions, .modal .modal-body, .palette .palette-results)::-webkit-scrollbar-button {
   display: none;
 }
 
