@@ -68,6 +68,16 @@ export function ReadingView() {
     onCleanup(() => observer.disconnect());
   });
 
+  onMount(() => {
+    const el = containerRef;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const syncLeft = () => el.style.setProperty('--reading-left', `${el.getBoundingClientRect().left}px`);
+    const observer = new ResizeObserver(syncLeft);
+    observer.observe(el);
+    syncLeft();
+    onCleanup(() => observer.disconnect());
+  });
+
   createEffect(() => {
     if (loading()) setShowChromeTitle(false);
   });
