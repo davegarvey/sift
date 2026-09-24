@@ -1924,7 +1924,7 @@ a:hover { text-decoration: underline; }
   }
 
   .reading .reading-zone-prev {
-    left: 0;
+    left: var(--reading-left, 0px);
   }
 
   .reading .reading-zone-next {
