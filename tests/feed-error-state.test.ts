@@ -44,7 +44,7 @@ describe('refreshError lifecycle', () => {
     expect(feed.refreshError).toBeNull();
   });
 
-  it('a sync pull drops the local refreshError', async () => {
+  it('a sync pull drops the local refreshError and keeps refresh status', async () => {
     const id = 'feed-id';
     const now = Date.now();
     await upsertFeed({
@@ -53,6 +53,8 @@ describe('refreshError lifecycle', () => {
       title: 'X',
       learnedIntervalMs: 3_600_000,
       lastFetched: now - 60_000,
+      sourceFetchedAt: now - 30_000,
+      nextCheckAt: now + 600_000,
       refreshError: { retryAt: now + 3_600_000, attempts: 3, lastStatus: 429, lastRetryAfter: 3600 },
     });
     const payload: RemotePayload = {
@@ -72,6 +74,8 @@ describe('refreshError lifecycle', () => {
     await applyRemoteState(payload);
     const feed = (await getFeed(id))!;
     expect(feed.refreshError).toBeUndefined();
+    expect(feed.sourceFetchedAt).toBe(now - 30_000);
+    expect(feed.nextCheckAt).toBe(now + 600_000);
     expect(feed.url).toBe('https://x.example/feed.xml');
   });
 });

@@ -74,9 +74,16 @@ the upstream URL and return the body. Only absolute HTTP(S) URLs whose literal
 or resolved target passes the public-target safety checks are requested. Normal
 public redirects are followed for up to five hops with each destination checked
 again; unsafe, malformed, or excessive redirects return a generic upstream
-failure and are not passed to the browser. Successful `/feed` responses may be
-held in a bounded cache for up to 15 minutes, keyed by the complete upstream
-URL. Node/Bun use process-local memory; Cloudflare Workers also use the
+failure and are not passed to the browser. Successful `/feed` responses are
+held in a bounded cache keyed by the complete upstream URL, including responses
+that set cookies (the proxy never forwards them). Each copy is fresh for the
+longer of 15 minutes and the upstream's own hints (`Cache-Control`, `Expires`,
+RSS `<ttl>`, `sy:updatePeriod`), capped at 24 hours, and is kept for a further
+24 hours. While an upstream is rate limiting, challenging, timing out or
+returning server errors, the proxy serves that retained copy with
+`X-Sift-Cache: stale` and `X-Sift-Retry-After` instead of the failure, and the
+browser does not flag the feed unless it has not been received for 24 hours.
+Node/Bun use process-local memory; Cloudflare Workers also use the
 Workers Cache API when available, with data-center-local, best-effort reuse.
 Requests to the same origin are spaced at least one second apart and limited
 to four in flight per runtime. Workers reserve those slots and share `429` and

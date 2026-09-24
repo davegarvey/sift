@@ -2,6 +2,7 @@ import { createSignal, Show, onCleanup } from 'solid-js';
 import { useApp } from '../state';
 import { updateFeedMeta, changeFeedUrl } from '../feeds/service';
 import { TagInput } from './TagInput';
+import { humanRelativeTime } from '../util/time';
 
 export function FeedEditorModal() {
   const ctx = useApp();
@@ -18,6 +19,15 @@ export function FeedEditorModal() {
   const [urlError, setUrlError] = createSignal<string | null>(null);
 
   const allTags = () => ctx.allTags();
+
+  const refreshStatus = () => {
+    const f = feed();
+    if (!f?.sourceFetchedAt) return null;
+    const updated = `Updated ${humanRelativeTime(new Date(f.sourceFetchedAt))}`;
+    if (!f.nextCheckAt || f.nextCheckAt <= Date.now()) return updated;
+    const nextCheck = new Date(f.nextCheckAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${updated} · next check ${nextCheck}`;
+  };
 
   let titleTimer: ReturnType<typeof setTimeout> | null = null;
   let tagsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -129,6 +139,9 @@ export function FeedEditorModal() {
           Tags
         </label>
         <TagInput allTags={allTags()} value={localTags()} onChange={(tags) => { setLocalTags(tags); scheduleTagsSave(tags); }} placeholder="Add tag…" />
+        <Show when={refreshStatus()}>
+          <span class="feed-refresh-status" style={{ display: 'block', 'font-size': '12px', 'margin-top': '12px', color: 'var(--subtext)' }}>{refreshStatus()}</span>
+        </Show>
       </div>
       <div class="modal-footer" style={{ 'justify-content': 'space-between' }}>
         <button class="btn danger" onClick={() => void handleUnsubscribe()}>

@@ -2,7 +2,7 @@ import { createSignal } from 'solid-js';
 import { listFeeds, updateFeed, upsertFeed } from '../db/feeds';
 import { bulkUpsertItems } from '../db/items';
 import { runEviction } from '../articles/eviction';
-import { fetchFeed } from './fetch';
+import { fetchFeed, type FeedSourceStatus } from './fetch';
 import { parseFeed, parsedToItems } from './parse';
 import type { RefreshTarget } from './scope';
 import type { Feed, FeedRefreshError } from '../db/types';
@@ -17,6 +17,8 @@ import { ensureFeedStats, getFeedStats } from '../db/stats';
 import { enqueueStatsIfSync } from '../sync/queue';
 
 const TICK_MS = 5 * 60 * 1000;
+const QUIET_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const TRANSIENT_FAILURE_STATUSES = new Set([0, 408, 419, 425, 429]);
 const FEED_JITTER_WINDOW_MS = 15 * 60 * 1000;
 
 const [inFlight, setInFlight] = createSignal(0);
@@ -142,8 +144,25 @@ function nextRetryAt(status: number, retryAfterMs: number | undefined, attempts:
   return now + backoff;
 }
 
+export function isQuietFeedFailure(feed: Feed, status: number, now = Date.now()): boolean {
+  const transient = TRANSIENT_FAILURE_STATUSES.has(status) || (status >= 500 && status <= 599);
+  const receivedAt = feed.sourceFetchedAt ?? feed.lastFetched;
+  return transient && receivedAt != null && now - receivedAt < QUIET_FAILURE_WINDOW_MS;
+}
+
+function sourceFields(status: FeedSourceStatus, now: number): Pick<Feed, 'sourceFetchedAt' | 'nextCheckAt'> {
+  return {
+    sourceFetchedAt: now - status.sourceAgeMs,
+    nextCheckAt: status.nextCheckInMs === undefined ? null : now + status.nextCheckInMs,
+  };
+}
+
 async function recordFeedError(feed: Feed, message: string, status: number, retryAfterMs?: number): Promise<void> {
-  setFeedErrors((prev) => ({ ...prev, [feed.id]: message }));
+  if (isQuietFeedFailure(feed, status)) {
+    clearFeedError(feed);
+  } else {
+    setFeedErrors((prev) => ({ ...prev, [feed.id]: message }));
+  }
   const attempts = (feed.refreshError?.attempts ?? 0) + 1;
   const refreshError: FeedRefreshError = {
     retryAt: nextRetryAt(status, retryAfterMs, attempts),
@@ -187,8 +206,10 @@ async function refreshFeedOnce(feed: Feed): Promise<void> {
       return;
     }
     if (result.kind === 'not-modified') {
+      const now = Date.now();
       await updateFeed(feed.id, {
-        lastFetched: Date.now(),
+        lastFetched: now,
+        ...sourceFields(result, now),
         lastError: null,
         refreshError: null,
       });
@@ -218,6 +239,7 @@ async function refreshFeedOnce(feed: Feed): Promise<void> {
       htmlUrl: feed.htmlUrl ?? parsed.htmlUrl,
       htmlUrlAt: feed.htmlUrlAt ?? (feed.htmlUrl == null && parsed.htmlUrl ? Date.now() : undefined),
       lastFetched: Date.now(),
+      ...sourceFields(result, Date.now()),
       etag: result.etag ?? null,
       lastModified: result.lastModified ?? null,
       lastItemPublishedAt,

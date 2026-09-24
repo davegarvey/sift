@@ -5,6 +5,8 @@ import { sha256Hex } from './sync/tokens';
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 export const READER_USER_AGENT = 'sift/0.0 (+https://github.com/dave/sift)';
 export const FEED_CACHE_TTL_MS = 15 * 60_000;
+export const FEED_CACHE_MAX_FRESHNESS_MS = 24 * 60 * 60_000;
+export const FEED_STALE_RETENTION_MS = 24 * 60 * 60_000;
 export const FEED_CACHE_MAX_ENTRIES = 256;
 export const FEED_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
 export const FEED_RETRY_FALLBACK_MS = 30 * 60_000;
@@ -16,6 +18,15 @@ const DOH_TIMEOUT_MS = 5_000;
 const TARGET_CACHE_TTL_MS = 5 * 60_000;
 const MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const TRANSIENT_FAILURE_STATUSES = new Set([408, 419, 425, 429]);
+const FEED_HINT_SCAN_BYTES = 64 * 1024;
+const SYNDICATION_PERIOD_MS: Record<string, number> = {
+  hourly: 60 * 60_000,
+  daily: 24 * 60 * 60_000,
+  weekly: 7 * 24 * 60 * 60_000,
+  monthly: 30 * 24 * 60 * 60_000,
+  yearly: 365 * 24 * 60 * 60_000,
+};
 
 const targetCache = new Map<string, { decision: boolean; at: number }>();
 
@@ -24,6 +35,7 @@ interface CachedFeed {
   etag: string | null;
   lastModified: string | null;
   fetchedAt: number;
+  freshUntil: number;
 }
 
 interface FeedRepresentationStore {
@@ -47,16 +59,17 @@ interface FeedConditionalHeaders {
 
 interface FeedCacheResult {
   response: Response;
-  state: 'hit' | 'miss' | 'revalidated' | 'cooldown' | 'bypass';
+  state: 'hit' | 'miss' | 'revalidated' | 'stale' | 'cooldown' | 'bypass';
   ageSeconds?: number;
 }
 
 type RevalidationResult =
   | { kind: 'cached'; entry: CachedFeed; state: 'miss' | 'revalidated' }
-  | { kind: 'response'; response: Response; state: 'bypass' };
+  | { kind: 'response'; response: Response; state: 'bypass'; retryAt?: number };
 
 const WORKER_FETCHED_AT_HEADER = 'X-Sift-Cache-Fetched-At';
 const WORKER_RETRY_AT_HEADER = 'X-Sift-Cache-Retry-At';
+const WORKER_FRESH_UNTIL_HEADER = 'X-Sift-Cache-Fresh-Until';
 const feedCache = new Map<string, CachedFeed>();
 const feedRevalidations = new Map<string, Promise<RevalidationResult>>();
 const upstreamRequests = new Map<string, Promise<Response>>();
@@ -401,6 +414,51 @@ function isUpstreamFailureStatus(status: number): boolean {
   return status >= 400 && status <= 599;
 }
 
+function isTransientFailureStatus(status: number): boolean {
+  return TRANSIENT_FAILURE_STATUSES.has(status) || (status >= 500 && status <= 599);
+}
+
+function headerFreshnessMs(headers: Headers): number | undefined {
+  const cacheControl = headers.get('Cache-Control') ?? '';
+  const directive = (name: string): number | undefined => {
+    const match = new RegExp(`(?:^|,)\\s*${name}\\s*=\\s*"?(\\d+)"?`, 'i').exec(cacheControl);
+    return match ? Number(match[1]) * 1000 : undefined;
+  };
+  const maxAge = directive('s-maxage') ?? directive('max-age');
+  if (maxAge !== undefined) return maxAge;
+  const expires = headers.get('Expires');
+  if (!expires) return undefined;
+  const expiresAt = Date.parse(expires);
+  if (!Number.isFinite(expiresAt)) return undefined;
+  const date = Date.parse(headers.get('Date') ?? '');
+  return expiresAt - (Number.isFinite(date) ? date : Date.now());
+}
+
+function bodyFreshnessMs(body: Uint8Array): number | undefined {
+  const text = new TextDecoder().decode(body.subarray(0, FEED_HINT_SCAN_BYTES));
+  const hints: number[] = [];
+  const ttl = /<ttl>\s*(\d+)\s*<\/ttl>/i.exec(text);
+  if (ttl) hints.push(Number(ttl[1]) * 60_000);
+  const period = /<sy:updatePeriod>\s*([a-z]+)\s*<\/sy:updatePeriod>/i.exec(text);
+  const periodMs = period ? SYNDICATION_PERIOD_MS[period[1].toLowerCase()] : undefined;
+  if (periodMs !== undefined) {
+    const frequency = /<sy:updateFrequency>\s*(\d+)\s*<\/sy:updateFrequency>/i.exec(text);
+    const perPeriod = frequency ? Number(frequency[1]) : 1;
+    if (perPeriod > 0) hints.push(periodMs / perPeriod);
+  }
+  return hints.length > 0 ? Math.max(...hints) : undefined;
+}
+
+export function feedFreshnessMs(headers: Headers, body: Uint8Array): number {
+  const hints = [headerFreshnessMs(headers), bodyFreshnessMs(body)]
+    .filter((hint): hint is number => hint !== undefined && Number.isFinite(hint));
+  return Math.min(Math.max(FEED_CACHE_TTL_MS, ...hints), FEED_CACHE_MAX_FRESHNESS_MS);
+}
+
+function isRetained(entry: CachedFeed, now: number): boolean {
+  return now < entry.freshUntil + FEED_STALE_RETENTION_MS;
+}
+
 function normalizeEtag(value: string): string {
   return value.trim().replace(/^W\//i, '');
 }
@@ -438,9 +496,13 @@ function responseFromEntry(
   entry: CachedFeed,
   conditional: FeedConditionalHeaders,
   state: FeedCacheResult['state'],
+  retryAt?: number,
 ): FeedCacheResult {
   const ageSeconds = Math.max(0, Math.floor((Date.now() - entry.fetchedAt) / 1000));
   const headers = responseHeaders(entry, ageSeconds, state);
+  if (retryAt !== undefined) {
+    headers.set('X-Sift-Retry-After', String(Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))));
+  }
   if (isNotModified(entry, conditional)) {
     return { response: new Response(null, { status: 304, headers }), state, ageSeconds };
   }
@@ -454,7 +516,12 @@ function responseFromEntry(
 const memoryFeedStore: FeedRepresentationStore = {
   async get(upstream) {
     const entry = feedCache.get(upstream);
-    if (entry) touchFeedCache(upstream, entry);
+    if (!entry) return undefined;
+    if (!isRetained(entry, Date.now())) {
+      feedCache.delete(upstream);
+      return undefined;
+    }
+    touchFeedCache(upstream, entry);
     return entry;
   },
   async put(upstream, entry) {
@@ -477,10 +544,12 @@ async function workerFailureKey(upstream: string): Promise<Request> {
 }
 
 function workerCacheResponse(entry: CachedFeed): Response {
+  const retainSeconds = Math.max(1, Math.ceil((entry.freshUntil + FEED_STALE_RETENTION_MS - Date.now()) / 1000));
   const headers = new Headers({
     'Content-Type': 'application/xml; charset=utf-8',
-    'Cache-Control': `public, max-age=${Math.floor(FEED_CACHE_TTL_MS / 1000)}`,
+    'Cache-Control': `public, max-age=${retainSeconds}`,
     [WORKER_FETCHED_AT_HEADER]: String(entry.fetchedAt),
+    [WORKER_FRESH_UNTIL_HEADER]: String(entry.freshUntil),
   });
   if (entry.etag) headers.set('ETag', entry.etag);
   if (entry.lastModified) headers.set('Last-Modified', entry.lastModified);
@@ -494,16 +563,19 @@ function workerFeedStore(cache: CacheApiLike): FeedRepresentationStore {
         const response = await cache.match(workerCacheKey(upstream));
         if (!response || response.status !== 200) return undefined;
         const fetchedAt = Number(response.headers.get(WORKER_FETCHED_AT_HEADER));
+        const freshUntil = Number(response.headers.get(WORKER_FRESH_UNTIL_HEADER));
         if (!Number.isFinite(fetchedAt) || fetchedAt < 0) return undefined;
-        if (Date.now() - fetchedAt >= FEED_CACHE_TTL_MS) return undefined;
+        if (!response.headers.has(WORKER_FRESH_UNTIL_HEADER) || !Number.isFinite(freshUntil)) return undefined;
         const body = new Uint8Array(await response.arrayBuffer());
         if (body.byteLength > FEED_CACHE_MAX_BODY_BYTES) return undefined;
-        return {
+        const entry: CachedFeed = {
           body,
           etag: response.headers.get('ETag'),
           lastModified: response.headers.get('Last-Modified'),
           fetchedAt,
+          freshUntil,
         };
+        return isRetained(entry, Date.now()) ? entry : undefined;
       } catch {
         return undefined;
       }
@@ -650,14 +722,17 @@ async function revalidateFeed(
         headers: { 'Cache-Control': 'no-store', 'X-Sift-Request-Source': 'local-gate' },
       }),
       state: 'bypass',
+      retryAt: retry.retryAt,
     };
   }
   if (response.status === 304 && previous) {
+    const fetchedAt = Date.now();
     const entry: CachedFeed = {
       ...previous,
       etag: response.headers.get('ETag') ?? previous.etag,
       lastModified: response.headers.get('Last-Modified') ?? previous.lastModified,
-      fetchedAt: Date.now(),
+      fetchedAt,
+      freshUntil: fetchedAt + feedFreshnessMs(response.headers, previous.body),
     };
     await storeCachedFeed(upstream, entry);
     await clearFeedRetry(upstream, db);
@@ -679,6 +754,7 @@ async function revalidateFeed(
       kind: 'response',
       response: new Response(response.body, { status: response.status, headers }),
       state: 'bypass',
+      retryAt: retry.retryAt,
     };
   }
 
@@ -687,11 +763,7 @@ async function revalidateFeed(
   }
 
   const contentLength = Number(response.headers.get('Content-Length') ?? '');
-  if (
-    response.headers.has('Set-Cookie') ||
-    response.headers.get('Vary')?.trim() === '*' ||
-    (Number.isFinite(contentLength) && contentLength > FEED_CACHE_MAX_BODY_BYTES)
-  ) {
+  if (Number.isFinite(contentLength) && contentLength > FEED_CACHE_MAX_BODY_BYTES) {
     return { kind: 'response', response, state: 'bypass' };
   }
 
@@ -704,11 +776,13 @@ async function revalidateFeed(
     };
   }
 
+  const fetchedAt = Date.now();
   const entry: CachedFeed = {
     body: bytes,
     etag: response.headers.get('ETag'),
     lastModified: response.headers.get('Last-Modified'),
-    fetchedAt: Date.now(),
+    fetchedAt,
+    freshUntil: fetchedAt + feedFreshnessMs(response.headers, bytes),
   };
   await storeCachedFeed(upstream, entry);
   await clearFeedRetry(upstream, db);
@@ -722,14 +796,18 @@ export async function fetchFeedCached(
 ): Promise<FeedCacheResult> {
   const now = Date.now();
   const cached = await getCachedFeed(upstream);
-  if (cached && now - cached.fetchedAt < FEED_CACHE_TTL_MS) {
-    touchFeedCache(upstream, cached);
+  if (cached && now < cached.freshUntil) {
     return responseFromEntry(cached, conditional, 'hit');
   }
 
+  const duringCooldown = (retry: FeedRetry): FeedCacheResult =>
+    cached && isTransientFailureStatus(retry.status)
+      ? responseFromEntry(cached, conditional, 'stale', retry.retryAt)
+      : cooldownResponse(retry);
+
   const retryAt = feedRetries.get(upstream);
   if (retryAt !== undefined) {
-    if (retryAt.retryAt > now) return cooldownResponse(retryAt);
+    if (retryAt.retryAt > now) return duringCooldown(retryAt);
     feedRetries.delete(upstream);
   }
 
@@ -737,7 +815,7 @@ export async function fetchFeedCached(
   const workerRetry = workerCache ? await getWorkerFeedRetry(workerCache, upstream) : undefined;
   if (workerRetry) {
     recordFeedRetry(upstream, workerRetry);
-    return cooldownResponse(workerRetry);
+    return duringCooldown(workerRetry);
   }
 
   if (db) {
@@ -745,7 +823,7 @@ export async function fetchFeedCached(
       const sharedRetry = await getSharedFeedFailure(db, upstream, now);
       if (sharedRetry) {
         recordFeedRetry(upstream, sharedRetry);
-        return cooldownResponse(sharedRetry);
+        return duringCooldown(sharedRetry);
       }
     } catch {
     }
@@ -760,6 +838,9 @@ export async function fetchFeedCached(
   try {
     const result = await revalidation;
     if (result.kind === 'response') {
+      if (cached && isTransientFailureStatus(result.response.status)) {
+        return responseFromEntry(cached, conditional, 'stale', result.retryAt ?? feedRetries.get(upstream)?.retryAt);
+      }
       return { response: result.response, state: result.state };
     }
     return responseFromEntry(result.entry, conditional, result.state);

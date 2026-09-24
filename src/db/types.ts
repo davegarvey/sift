@@ -38,6 +38,10 @@ export interface Feed {
   lastError?: string | null;
   /** Local-only error-backoff state for refresh attempts. Never synced. Null when healthy. */
   refreshError?: FeedRefreshError | null;
+  /** Local-only epoch ms at which the server last received this feed from its source. Never synced. */
+  sourceFetchedAt?: number | null;
+  /** Local-only epoch ms at which the server will next contact the source while serving a retained copy. Never synced. */
+  nextCheckAt?: number | null;
   /** ISO timestamp of the most recent item observed, for cadence learning. */
   lastItemPublishedAt?: number | null;
   /** Daily publish count observations used by the cadence-learning heuristic. */

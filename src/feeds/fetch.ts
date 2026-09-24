@@ -8,9 +8,14 @@ export interface ConditionalHeaders {
   lastModified?: string | null;
 }
 
+export interface FeedSourceStatus {
+  sourceAgeMs: number;
+  nextCheckInMs?: number;
+}
+
 export type FeedFetchResult =
-  | { kind: 'not-modified' }
-  | { kind: 'modified'; body: string; etag?: string | null; lastModified?: string | null }
+  | ({ kind: 'not-modified' } & FeedSourceStatus)
+  | ({ kind: 'modified'; body: string; etag?: string | null; lastModified?: string | null } & FeedSourceStatus)
   | { kind: 'error'; status: number; message: string; retryAfterMs?: number };
 
 function parseRetryAfter(header: string | null): number | undefined {
@@ -24,6 +29,16 @@ function parseRetryAfter(header: string | null): number | undefined {
   const dateMs = Date.parse(value);
   if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
   return undefined;
+}
+
+function sourceStatus(headers: Headers): FeedSourceStatus {
+  const age = Number(headers.get('Age'));
+  const retry = headers.get('X-Sift-Retry-After');
+  const retrySeconds = retry == null ? NaN : Number(retry);
+  return {
+    sourceAgeMs: Number.isFinite(age) && age > 0 ? age * 1000 : 0,
+    nextCheckInMs: Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds * 1000 : undefined,
+  };
 }
 
 export async function fetchFeed(
@@ -43,7 +58,7 @@ export async function fetchFeed(
   }
 
   if (res.status === 304) {
-    return { kind: 'not-modified' };
+    return { kind: 'not-modified', ...sourceStatus(res.headers) };
   }
   if (res.status < 200 || res.status >= 300) {
     return {
@@ -62,6 +77,7 @@ export async function fetchFeed(
     body,
     etag: res.headers.get('ETag'),
     lastModified: res.headers.get('Last-Modified'),
+    ...sourceStatus(res.headers),
   };
 }
 

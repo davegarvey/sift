@@ -72,17 +72,18 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     const upstreamRes = feedResult.response;
 
     // Pass through 304 with no body.
+    const retryAfter = upstreamRes.headers.get('X-Sift-Retry-After');
+
     if (upstreamRes.status === 304) {
-      return new Response(null, {
-        status: 304,
-        headers: {
-          ETag: upstreamRes.headers.get('ETag') ?? '',
-          'Last-Modified': upstreamRes.headers.get('Last-Modified') ?? '',
-          Age: upstreamRes.headers.get('Age') ?? '0',
-          'X-Sift-Cache': upstreamRes.headers.get('X-Sift-Cache') ?? feedResult.state,
-          'X-Sift-Request-Source': upstreamRes.headers.get('X-Sift-Request-Source') ?? 'feed-cache',
-        },
+      const headers = new Headers({
+        ETag: upstreamRes.headers.get('ETag') ?? '',
+        'Last-Modified': upstreamRes.headers.get('Last-Modified') ?? '',
+        Age: upstreamRes.headers.get('Age') ?? '0',
+        'X-Sift-Cache': upstreamRes.headers.get('X-Sift-Cache') ?? feedResult.state,
+        'X-Sift-Request-Source': upstreamRes.headers.get('X-Sift-Request-Source') ?? 'feed-cache',
       });
+      if (retryAfter) headers.set('X-Sift-Retry-After', retryAfter);
+      return new Response(null, { status: 304, headers });
     }
 
     // For non-2xx (other than 304), return the upstream status to the client.
@@ -105,6 +106,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     if (etagHeader) headers.set('ETag', etagHeader);
     const lastModified = upstreamRes.headers.get('Last-Modified');
     if (lastModified) headers.set('Last-Modified', lastModified);
+    if (retryAfter) headers.set('X-Sift-Retry-After', retryAfter);
     return new Response(upstreamRes.body, { status: 200, headers });
   });
 

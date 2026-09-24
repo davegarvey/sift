@@ -161,6 +161,8 @@ export async function applyRemoteState(
       lastModified: local?.lastModified,
       learnedIntervalMs: local?.learnedIntervalMs ?? 60 * 60 * 1000,
       lastError: local?.lastError,
+      sourceFetchedAt: local?.sourceFetchedAt,
+      nextCheckAt: local?.nextCheckAt,
       lastItemPublishedAt: local?.lastItemPublishedAt,
       recentPublishCounts: local?.recentPublishCounts,
     };
