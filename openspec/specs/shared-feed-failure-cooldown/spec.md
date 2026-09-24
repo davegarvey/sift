@@ -38,8 +38,10 @@ accepted, the resulting delay SHALL be capped at 24 hours, and an absent or
 unusable value SHALL use a 30-minute delay.
 
 Requests for the same URL received while its cooldown is active SHALL NOT
-contact the upstream server. They SHALL return the recorded failure status
-with a `Retry-After` value describing the remaining delay.
+contact the upstream server. When the cooldown status is transient and a
+retained successful representation exists, they SHALL receive that
+representation. Otherwise they SHALL return the recorded failure status with a
+`Retry-After` value describing the remaining delay.
 
 #### Scenario: Failure provides a retry delay
 
@@ -55,9 +57,17 @@ with a `Retry-After` value describing the remaining delay.
 #### Scenario: Request arrives during cooldown
 
 - **WHEN** a request for a URL arrives before its recorded cooldown expires
+- **AND** no retained successful representation exists
 - **THEN** the proxy SHALL return the recorded failure status
 - **AND** the proxy SHALL not contact the upstream server
 - **AND** the response SHALL include `Retry-After`
+
+#### Scenario: Request arrives during a transient cooldown with a retained representation
+
+- **WHEN** a request for a URL arrives before its recorded `429` cooldown expires
+- **AND** a retained successful representation exists
+- **THEN** the proxy SHALL return the retained representation
+- **AND** the proxy SHALL not contact the upstream server
 
 ### Requirement: Share failure cooldown metadata across Worker users
 

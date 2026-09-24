@@ -430,3 +430,63 @@ describe('refreshFeed', () => {
   });
 
 });
+
+describe('refresh status', () => {
+  async function seed(id: string, sourceFetchedAt: number | null): Promise<void> {
+    await upsertFeed({
+      id,
+      url: `https://${id}.example/feed.xml`,
+      title: 'Feed',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+      sourceFetchedAt,
+    });
+  }
+
+  it('records when the server received the feed and its next check', async () => {
+    const { refreshFeed } = await import('../src/feeds/scheduler');
+    await seed('status-feed', null);
+    stubFetch(200, RSS, { Age: '2400', 'X-Sift-Retry-After': '900' });
+    const now = Date.now();
+    await refreshFeed((await getFeed('status-feed'))!);
+    const feed = (await getFeed('status-feed'))!;
+    expect(feed.sourceFetchedAt).toBeGreaterThan(now - 2_400_000 - 5000);
+    expect(feed.sourceFetchedAt).toBeLessThan(now - 2_400_000 + 5000);
+    expect(feed.nextCheckAt).toBeGreaterThan(now + 895_000);
+    expect(feed.nextCheckAt).toBeLessThan(now + 905_000);
+
+    stubFetch(304, '');
+    await refreshFeed(feed);
+    const refreshed = (await getFeed('status-feed'))!;
+    expect(refreshed.nextCheckAt).toBeNull();
+    expect(refreshed.sourceFetchedAt).toBeGreaterThanOrEqual(now);
+  });
+
+  it('keeps a rate limit on a recently received feed quiet but still backs off', async () => {
+    const { refreshFeed, fetchingState } = await import('../src/feeds/scheduler');
+    await seed('quiet-feed', Date.now() - 2 * 3_600_000);
+    stubFetch(429, '', { 'Retry-After': '600' });
+    await refreshFeed((await getFeed('quiet-feed'))!);
+    expect(fetchingState.feedErrors()['quiet-feed']).toBeUndefined();
+    expect((await getFeed('quiet-feed'))!.refreshError?.lastStatus).toBe(429);
+  });
+
+  it('shows non-transient and prolonged failures', async () => {
+    const { refreshFeed, fetchingState } = await import('../src/feeds/scheduler');
+    await seed('gone-feed', Date.now() - 60_000);
+    stubFetch(404, 'missing');
+    await refreshFeed((await getFeed('gone-feed'))!);
+    expect(fetchingState.feedErrors()['gone-feed']).toBe('HTTP 404');
+
+    await seed('prolonged-feed', Date.now() - 25 * 3_600_000);
+    stubFetch(429, '');
+    await refreshFeed((await getFeed('prolonged-feed'))!);
+    expect(fetchingState.feedErrors()['prolonged-feed']).toBe('HTTP 429');
+
+    await seed('new-feed', null);
+    stubFetch(503, '');
+    await refreshFeed((await getFeed('new-feed'))!);
+    expect(fetchingState.feedErrors()['new-feed']).toBe('HTTP 503');
+  });
+});
+

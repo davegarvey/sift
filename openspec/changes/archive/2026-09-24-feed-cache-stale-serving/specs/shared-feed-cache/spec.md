@@ -1,10 +1,4 @@
-# shared-feed-cache Specification
-
-## Purpose
-
-This capability reduces duplicate upstream feed requests through Sift's shared proxy while preserving browser-local parsing, storage, synchronization, and HTTP validator semantics.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Cache successful feed representations by complete URL
 
@@ -38,39 +32,6 @@ A representation SHALL be fresh from the most recent upstream `200` response or 
 - **WHEN** a cached representation is served repeatedly before its freshness ends
 - **THEN** each cache hit SHALL retain the original freshness time
 - **AND** repeated hits SHALL not create a sliding cache window
-
-### Requirement: Revalidate with shared validators and client-specific responses
-
-When a cached representation is stale, the proxy SHALL revalidate upstream using the cached representation's validators rather than forwarding an individual client's validators upstream. The proxy SHALL evaluate the requesting client's `If-None-Match` and `If-Modified-Since` headers against the resulting cached representation when constructing the response.
-
-The proxy SHALL honor normal GET conditional semantics: `If-None-Match` takes precedence over `If-Modified-Since`, and a matching validator SHALL produce `304 Not Modified` without a body.
-
-#### Scenario: Client with an older ETag receives the cached update
-
-- **WHEN** the cache contains representation ETag `"v2"` and a client sends `If-None-Match: "v1"`
-- **THEN** the client SHALL receive `200 OK` with the cached body and ETag `"v2"`
-
-#### Scenario: Client with the current ETag receives 304
-
-- **WHEN** the cache contains representation ETag `"v2"` and a client sends `If-None-Match: "v2"`
-- **THEN** the client SHALL receive `304 Not Modified`
-- **AND** the response SHALL contain no feed body
-
-#### Scenario: Stale cache revalidation uses the cache ETag
-
-- **WHEN** a stale cached representation has ETag `"v1"` and a client sends a different ETag
-- **THEN** the upstream revalidation request SHALL use `If-None-Match: "v1"`
-- **AND** the client's different validator SHALL not be used as the upstream cache validator
-
-### Requirement: Coalesce concurrent revalidation
-
-The proxy SHALL coalesce concurrent stale or missing requests for the same complete feed URL into one upstream revalidation within the running server instance. All waiting requests SHALL independently receive `200` or `304` based on their own conditional headers.
-
-#### Scenario: Concurrent stale requests share one upstream fetch
-
-- **WHEN** multiple requests for the same stale feed URL arrive before revalidation completes
-- **THEN** the proxy SHALL make no more than one upstream revalidation for that URL
-- **AND** each waiting client SHALL receive the resulting representation or conditional response
 
 ### Requirement: Suppress repeated upstream requests after 429
 
@@ -120,36 +81,7 @@ Successful `/feed` responses SHALL expose the cached representation age through 
 - **THEN** the response SHALL include `X-Sift-Cache: stale`
 - **AND** it SHALL include `X-Sift-Retry-After` with the remaining cooldown in seconds
 
-### Requirement: Preserve feed proxy and sync boundaries
-
-The shared cache SHALL apply only to `/feed` responses. It SHALL not cache `/article`, `/img`, or `/sync/*` responses, and it SHALL not store feed XML, parsed items, or read/starred state in the sync service.
-
-#### Scenario: Sync behavior remains browser-local for feed content
-
-- **WHEN** one synchronized device refreshes a feed through `/feed`
-- **THEN** the shared cache MAY make the resulting representation available to another device's later `/feed` request
-- **AND** the sync service SHALL not receive or return the feed XML or parsed item records
-
-#### Scenario: Other proxy endpoints remain uncached
-
-- **WHEN** a request targets `/article` or `/img`
-- **THEN** the request SHALL retain its existing passthrough behavior
-- **AND** it SHALL not populate or read the shared feed cache
-
-### Requirement: Keep cooldown markers separate from successful feed representations
-
-Worker Cache API entries for upstream failure cooldowns SHALL use a distinct cache key or namespace from successful feed representations. Recording a cooldown SHALL preserve any previously cached successful body and validators for a later revalidation.
-
-#### Scenario: A 419 follows a cached feed response
-
-- **WHEN** a stale successful feed representation is present and its upstream revalidation returns `419`
-- **THEN** the cooldown marker SHALL be stored separately from the successful representation
-- **AND** the successful body and validators SHALL remain available after the cooldown expires
-
-#### Scenario: Cooldown marker expires
-
-- **WHEN** an origin or URL cooldown marker expires
-- **THEN** the successful representation cache entry SHALL remain independently readable until its own freshness policy expires
+## ADDED Requirements
 
 ### Requirement: Derive freshness from upstream hints
 

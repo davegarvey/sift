@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clearFeedCacheForTests, FEED_CACHE_TTL_MS, fetchFeedCached } from '../server/fetch';
+import {
+  clearFeedCacheForTests,
+  FEED_CACHE_MAX_FRESHNESS_MS,
+  FEED_CACHE_TTL_MS,
+  FEED_STALE_RETENTION_MS,
+  fetchFeedCached,
+} from '../server/fetch';
 import { clearOriginGovernorForTests } from '../server/origin-governor';
 import { LocalD1Database } from '../server/sync/local-d1';
 
@@ -388,9 +394,9 @@ describe('shared feed cache', () => {
     await fetchFeedCached(url);
     vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
     const failed = await fetchFeedCached(url);
-    expect(failed.response.status).toBe(419);
-    expect(failed.response.headers.get('X-Upstream')).toBe('failure');
-    expect(await failed.response.text()).toBe('Sorry');
+    expect(failed.response.status).toBe(200);
+    expect(failed.response.headers.get('X-Sift-Cache')).toBe('stale');
+    expect(await failed.response.text()).toBe('<rss>one</rss>');
 
     vi.advanceTimersByTime(6 * 60 * 60_000);
     const recovered = await fetchFeedCached(url);
@@ -506,5 +512,253 @@ describe('shared feed cache', () => {
     const result = await fetchFeedCached(url);
     expect(await result.response.text()).toBe('<rss>miss</rss>');
     expect(calls).toBe(1);
+  });
+});
+
+describe('feed cache freshness and stale serving', () => {
+  function countingFetch(handler: (call: number) => Response | Promise<Response>): () => number {
+    let calls = 0;
+    vi.stubGlobal('fetch', (async () => {
+      calls += 1;
+      return handler(calls);
+    }) as typeof globalThis.fetch);
+    return () => calls;
+  }
+
+  function fetchUngoverned(url: string) {
+    clearOriginGovernorForTests();
+    return fetchFeedCached(url);
+  }
+
+  it('caches responses that set cookies or vary on everything', async () => {
+    const url = feedUrl();
+    const calls = countingFetch(() => response('<rss>cookie</rss>', { 'Set-Cookie': 'session=abc', Vary: '*' }));
+
+    await fetchFeedCached(url);
+    const hit = await fetchFeedCached(url);
+    expect(hit.response.headers.get('X-Sift-Cache')).toBe('hit');
+    expect(hit.response.headers.has('Set-Cookie')).toBe(false);
+    expect(calls()).toBe(1);
+  });
+
+  it('extends freshness to an upstream max-age', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    const calls = countingFetch(() => response('<rss>one</rss>', { 'Cache-Control': 'public, max-age=3600' }));
+
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(60 * 60_000 - 1000);
+    expect((await fetchFeedCached(url)).response.headers.get('X-Sift-Cache')).toBe('hit');
+    vi.advanceTimersByTime(2000);
+    await fetchFeedCached(url);
+    expect(calls()).toBe(2);
+  });
+
+  it('prefers s-maxage and falls back to Expires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const shared = feedUrl();
+    const expiring = feedUrl();
+    let sharedCalls = 0;
+    let expiringCalls = 0;
+    vi.stubGlobal('fetch', (async (input) => {
+      if (String(input) === shared) {
+        sharedCalls += 1;
+        return response('<rss/>', { 'Cache-Control': 'max-age=60, s-maxage=7200' });
+      }
+      expiringCalls += 1;
+      return response('<rss/>', {
+        Date: new Date(0).toUTCString(),
+        Expires: new Date(3 * 60 * 60_000).toUTCString(),
+      });
+    }) as typeof globalThis.fetch);
+
+    await fetchUngoverned(shared);
+    await fetchUngoverned(expiring);
+    vi.advanceTimersByTime(2 * 60 * 60_000 - 1000);
+    await fetchUngoverned(shared);
+    await fetchUngoverned(expiring);
+    expect(sharedCalls).toBe(1);
+    expect(expiringCalls).toBe(1);
+  });
+
+  it('uses feed ttl and syndication hints', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const ttlUrl = feedUrl();
+    const syUrl = feedUrl();
+    let ttlCalls = 0;
+    let syCalls = 0;
+    vi.stubGlobal('fetch', (async (input) => {
+      if (String(input) === ttlUrl) {
+        ttlCalls += 1;
+        return response('<rss><channel><ttl>120</ttl></channel></rss>');
+      }
+      syCalls += 1;
+      return response('<rss><channel><sy:updatePeriod>daily</sy:updatePeriod><sy:updateFrequency>4</sy:updateFrequency></channel></rss>');
+    }) as typeof globalThis.fetch);
+
+    await fetchUngoverned(ttlUrl);
+    await fetchUngoverned(syUrl);
+    vi.advanceTimersByTime(2 * 60 * 60_000 - 1000);
+    await fetchUngoverned(ttlUrl);
+    await fetchUngoverned(syUrl);
+    expect(ttlCalls).toBe(1);
+    expect(syCalls).toBe(1);
+    vi.advanceTimersByTime(2000);
+    await fetchUngoverned(ttlUrl);
+    expect(ttlCalls).toBe(2);
+    vi.advanceTimersByTime(4 * 60 * 60_000);
+    await fetchUngoverned(syUrl);
+    expect(syCalls).toBe(2);
+  });
+
+  it('bounds short and excessive hints', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const short = feedUrl();
+    const long = feedUrl();
+    let shortCalls = 0;
+    let longCalls = 0;
+    vi.stubGlobal('fetch', (async (input) => {
+      if (String(input) === short) {
+        shortCalls += 1;
+        return response('<rss/>', { 'Cache-Control': 'max-age=0' });
+      }
+      longCalls += 1;
+      return response('<rss/>', { 'Cache-Control': 'max-age=31536000' });
+    }) as typeof globalThis.fetch);
+
+    await fetchUngoverned(short);
+    await fetchUngoverned(long);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS - 1000);
+    await fetchUngoverned(short);
+    expect(shortCalls).toBe(1);
+    vi.advanceTimersByTime(FEED_CACHE_MAX_FRESHNESS_MS);
+    await fetchUngoverned(long);
+    expect(longCalls).toBe(2);
+  });
+
+  it('recomputes freshness after a 304 revalidation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    const calls = countingFetch((call) => call === 1
+      ? response('<rss/>', { ETag: '"one"' })
+      : new Response(null, { status: 304, headers: { ETag: '"one"', 'Cache-Control': 'max-age=7200' } }));
+
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(2 * 60 * 60_000 - 1000);
+    expect((await fetchFeedCached(url)).response.headers.get('X-Sift-Cache')).toBe('hit');
+    expect(calls()).toBe(2);
+  });
+
+  it('serves the retained copy to other clients during a rate-limit cooldown', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    const calls = countingFetch((call) => call === 1
+      ? response('<rss>kept</rss>', { ETag: '"kept"' })
+      : new Response('limited', { status: 429, headers: { 'Retry-After': '600' } }));
+
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 60_000);
+    const first = await fetchFeedCached(url);
+    expect(first.response.status).toBe(200);
+    expect(first.response.headers.get('X-Sift-Cache')).toBe('stale');
+    expect(first.response.headers.get('X-Sift-Retry-After')).toBe('600');
+    expect(first.response.headers.get('Age')).toBe(String((FEED_CACHE_TTL_MS + 60_000) / 1000));
+
+    vi.advanceTimersByTime(100_000);
+    const other = await fetchFeedCached(url);
+    expect(await other.response.text()).toBe('<rss>kept</rss>');
+    expect(other.response.headers.get('X-Sift-Retry-After')).toBe('500');
+    const current = await fetchFeedCached(url, { etag: '"kept"' });
+    expect(current.response.status).toBe(304);
+    expect(current.response.headers.get('X-Sift-Cache')).toBe('stale');
+    expect(calls()).toBe(2);
+  });
+
+  it('serves the retained copy on server errors and network failures', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    countingFetch((call) => {
+      if (call === 1) return response('<rss>kept</rss>');
+      throw new Error('network unavailable');
+    });
+
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
+    const result = await fetchFeedCached(url);
+    expect(result.response.status).toBe(200);
+    expect(result.response.headers.get('X-Sift-Cache')).toBe('stale');
+  });
+
+  it('returns non-transient failures even when a copy is retained', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    countingFetch((call) => call === 1 ? response('<rss>kept</rss>') : new Response('gone', { status: 410 }));
+
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
+    expect((await fetchFeedCached(url)).response.status).toBe(410);
+    expect((await fetchFeedCached(url)).response.status).toBe(410);
+  });
+
+  it('stops serving the retained copy after the retention window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    countingFetch((call) => call === 1
+      ? response('<rss>kept</rss>')
+      : new Response('limited', { status: 429, headers: { 'Retry-After': '60' } }));
+
+    await fetchFeedCached(url);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + FEED_STALE_RETENTION_MS + 1);
+    const result = await fetchFeedCached(url);
+    expect(result.response.status).toBe(429);
+  });
+
+  it('serves a Worker-cached retained copy during a shared cooldown after memory loss', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const url = feedUrl();
+    const cache = testCache();
+    vi.stubGlobal('caches', { default: cache });
+    const calls = countingFetch((call) => call === 1
+      ? response('<rss>worker</rss>')
+      : new Response('limited', { status: 429, headers: { 'Retry-After': '600' } }));
+
+    await fetchFeedCached(url);
+    const stored = cache.entries.get(url);
+    expect(stored?.headers.get('Cache-Control')).toBe(`public, max-age=${(FEED_CACHE_TTL_MS + FEED_STALE_RETENTION_MS) / 1000}`);
+    vi.advanceTimersByTime(FEED_CACHE_TTL_MS + 1);
+    await fetchFeedCached(url);
+    clearFeedCacheForTests();
+    clearOriginGovernorForTests();
+
+    const result = await fetchFeedCached(url);
+    expect(await result.response.text()).toBe('<rss>worker</rss>');
+    expect(result.response.headers.get('X-Sift-Cache')).toBe('stale');
+    expect(calls()).toBe(2);
+  });
+
+  it('treats Worker cache entries without freshness metadata as misses', async () => {
+    const url = feedUrl();
+    const cache = testCache();
+    cache.entries.set(url, new Response('<rss>legacy</rss>', {
+      headers: { 'X-Sift-Cache-Fetched-At': String(Date.now()) },
+    }));
+    vi.stubGlobal('caches', { default: cache });
+    const calls = countingFetch(() => response('<rss>fresh</rss>'));
+
+    const result = await fetchFeedCached(url);
+    expect(await result.response.text()).toBe('<rss>fresh</rss>');
+    expect(calls()).toBe(1);
   });
 });
