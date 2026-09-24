@@ -6,7 +6,7 @@ TBD - created by archiving change reader-nav-chevrons. Update Purpose after arch
 ## Requirements
 
 ### Requirement: Desktop chevron navigation
-Reading view SHALL display ◀ and ▶ chevrons in the left and right margin gutters respectively when there are prev/next articles available. Chevrons SHALL be vertically centered in the viewport. The entire margin strip from viewport edge to content edge SHALL act as the click/tap hit zone. Chevrons SHALL be non-interactive (ghosted) at the first/last boundary and SHALL NOT appear when there is only one item in results.
+Reading view SHALL display ◀ and ▶ chevrons in the left and right margin gutters respectively when there are prev/next articles available. Chevrons SHALL be vertically centered in the viewport. The margin strip from the reader pane's edge to the content edge SHALL act as the click/tap hit zone. Hit zones SHALL NOT extend beyond the reader pane or intercept input to adjacent panes such as the sidebar or article list. Chevrons SHALL be non-interactive (ghosted) at the first/last boundary and SHALL NOT appear when there is only one item in results.
 
 #### Scenario: Chevrons appear in margins when prev/next articles exist
 - **WHEN** user opens an article in reading view and there are items on both sides in the filtered results
@@ -31,6 +31,11 @@ Reading view SHALL display ◀ and ▶ chevrons in the left and right margin gut
 #### Scenario: Clicking chevron navigates to prev/next article
 - **WHEN** user clicks a non-ghosted chevron
 - **THEN** the article SHALL navigate to the corresponding prev/next item using the same path as j/k keyboard navigation
+
+#### Scenario: Hit zone stays within the reader in the desktop workspace
+- **GIVEN** the sidebar and article list are shown beside the reader
+- **WHEN** user clicks or hovers anywhere in the sidebar or article list
+- **THEN** the input SHALL reach that pane and SHALL NOT trigger chevron navigation
 
 ### Requirement: Mobile chevron navigation
 Reading view SHALL display ◀ and ▶ chevrons in the sticky chrome on mobile/touch viewports when there are prev/next articles available. Chevrons SHALL be placed between the back arrow and the action buttons. Chevrons SHALL be ghosted at boundaries.
