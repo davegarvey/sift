@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import * as esbuild from 'esbuild';
+import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
 
 // Bundle the minimal sync-only worker — no frontend code, fast.
@@ -942,6 +943,102 @@ describe('sync D1 time consistency', () => {
       const live = await d1.prepare('SELECT COUNT(*) AS n FROM feeds WHERE sync_key = ? AND deleted = 0').bind(key).first<{ n: number }>();
       expect(total?.n).toBe(5);
       expect(live?.n).toBe(2);
+    } finally {
+      await mf.dispose();
+    }
+  });
+});
+
+const migrationsDir = path.resolve(__dirname, '../server/migrations');
+const migrationFiles = readdirSync(migrationsDir).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+
+type MigrationDb = Awaited<ReturnType<Miniflare['getD1Database']>>;
+
+async function applyMigrations(db: MigrationDb, files: string[]): Promise<void> {
+  for (const file of files) {
+    const sql = readFileSync(path.join(migrationsDir, file), 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n');
+    const statements = sql.split(';').map((s) => s.trim()).filter(Boolean);
+    await db.batch(statements.map((s) => db.prepare(s)));
+  }
+}
+
+async function pullAll(mf: Miniflare, key: string): Promise<{ feeds: Array<Record<string, unknown>>; flags: Array<Record<string, unknown>> }> {
+  const res = await mf.dispatchFetch('http://localhost/sync/pull?since=0', {
+    headers: { 'X-Sync-Key': key },
+  });
+  expect(res.status).toBe(200);
+  const body = await res.json() as { feeds: Array<Record<string, unknown>>; flags: Array<Record<string, unknown>> };
+  return { feeds: body.feeds, flags: body.flags };
+}
+
+async function columns(db: MigrationDb, table: string): Promise<string[]> {
+  const res = await db.prepare(`SELECT name FROM pragma_table_info('${table}') ORDER BY cid`).all<{ name: string }>();
+  return res.results.map((r) => r.name);
+}
+
+describe('sync D1 migrations', () => {
+  const beforeFeedId = migrationFiles.filter((f) => f < '0008');
+
+  it('a database built only from migrations serves the sync routes', async () => {
+    const mf = await createMf();
+    try {
+      const db = await mf.getD1Database('DB');
+      await applyMigrations(db, beforeFeedId);
+      const broken = await mf.dispatchFetch('http://localhost/sync/register', {
+        method: 'POST',
+        headers: { 'X-Sync-Key': makeSyncKey('mig-only--') },
+      });
+      expect(broken.status).toBe(500);
+
+      await db.prepare("INSERT INTO feeds (sync_key, feed_url, row_at) VALUES ('legacy', 'https://ex.com/legacy', 1)").run();
+      await applyMigrations(db, migrationFiles.filter((f) => f >= '0008'));
+      expect(await db.prepare('SELECT COUNT(*) AS n FROM feeds').first<{ n: number }>()).toEqual({ n: 0 });
+
+      const key = await setupKey(mf, 'mig-only--');
+      const feedId = 'mig-only-feed';
+      const itemId = `${encodeURIComponent(feedId)}::article-1`;
+      expect(await push(mf, key, {
+        feeds: [feedPayload(feedId, 'https://ex.com/feed', { htmlUrl: 'https://ex.com/' })],
+        flags: [{ itemId, feedId, read: 1 }],
+      })).toBe(204);
+      const pulled = await pullAll(mf, key);
+      expect(pulled.feeds).toMatchObject([{ feed_id: feedId, feed_url: 'https://ex.com/feed', html_url: 'https://ex.com/' }]);
+      expect(pulled.flags).toMatchObject([{ item_id: itemId, feed_id: feedId, read: 1 }]);
+    } finally {
+      await mf.dispose();
+    }
+  });
+
+  it('0008 preserves rows in a runtime-bootstrapped feed_id schema', async () => {
+    const mf = await createMf();
+    try {
+      const db = await mf.getD1Database('DB');
+      await applyMigrations(db, beforeFeedId);
+      await db.batch([db.prepare('DROP TABLE feeds'), db.prepare('DROP TABLE flags')]);
+
+      const key = await setupKey(mf, 'mig-runtime');
+      const feedId = 'runtime-feed';
+      const itemId = `${encodeURIComponent(feedId)}::article-1`;
+      expect(await push(mf, key, {
+        feeds: [feedPayload(feedId, 'https://ex.com/rt', { htmlUrl: 'https://ex.com/rt.html', tags: ['a'] })],
+        flags: [{ itemId, feedId, read: 1, starred: 1 }],
+      })).toBe(204);
+      const before = await pullAll(mf, key);
+      expect(before.feeds).toHaveLength(1);
+      expect(before.flags).toHaveLength(1);
+      const feedColumns = await columns(db, 'feeds');
+      const flagColumns = await columns(db, 'flags');
+
+      await applyMigrations(db, migrationFiles.filter((f) => f >= '0008'));
+      expect(await pullAll(mf, key)).toEqual(before);
+      expect(await columns(db, 'feeds')).toEqual(feedColumns);
+      expect(await columns(db, 'flags')).toEqual(flagColumns);
+
+      await applyMigrations(db, migrationFiles.filter((f) => f >= '0008'));
+      expect(await pullAll(mf, key)).toEqual(before);
     } finally {
       await mf.dispose();
     }
