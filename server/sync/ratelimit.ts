@@ -61,6 +61,7 @@ export const RATE_LIMITS = {
   rotate: { windowSeconds: 3600, limit: 20 },
   statsPush: { windowSeconds: 60, limit: 60 },
   statsPull: { windowSeconds: 60, limit: 60 },
+  itemsPull: { windowSeconds: 60, limit: 120 },
 } as const;
 
 /**

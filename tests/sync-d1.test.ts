@@ -996,6 +996,7 @@ describe('sync D1 migrations', () => {
       await db.prepare("INSERT INTO feeds (sync_key, feed_url, row_at) VALUES ('legacy', 'https://ex.com/legacy', 1)").run();
       await applyMigrations(db, migrationFiles.filter((f) => f >= '0008'));
       expect(await db.prepare('SELECT COUNT(*) AS n FROM feeds').first<{ n: number }>()).toEqual({ n: 0 });
+      expect(await columns(db, 'users')).toContain('last_active_at');
 
       const key = await setupKey(mf, 'mig-only--');
       const feedId = 'mig-only-feed';
@@ -1032,12 +1033,12 @@ describe('sync D1 migrations', () => {
       const feedColumns = await columns(db, 'feeds');
       const flagColumns = await columns(db, 'flags');
 
-      await applyMigrations(db, migrationFiles.filter((f) => f >= '0008'));
+      await applyMigrations(db, migrationFiles.filter((f) => f === '0008_feed_id_schema.sql'));
       expect(await pullAll(mf, key)).toEqual(before);
       expect(await columns(db, 'feeds')).toEqual(feedColumns);
       expect(await columns(db, 'flags')).toEqual(flagColumns);
 
-      await applyMigrations(db, migrationFiles.filter((f) => f >= '0008'));
+      await applyMigrations(db, migrationFiles.filter((f) => f === '0008_feed_id_schema.sql'));
       expect(await pullAll(mf, key)).toEqual(before);
     } finally {
       await mf.dispose();

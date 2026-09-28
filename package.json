@@ -43,8 +43,8 @@
   "private": true,
   "scripts": {
     "build": "vite build",
-    "deploy": "git pull --ff-only && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler deploy",
-    "deploy:ci": "wrangler d1 migrations apply sift-sync --remote && wrangler deploy",
+    "deploy": "git pull --ff-only && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler d1 migrations apply sift-poll --remote && wrangler deploy",
+    "deploy:ci": "wrangler d1 migrations apply sift-sync --remote && wrangler d1 migrations apply sift-poll --remote && wrangler deploy",
     "dev": "vite",
     "lint": "eslint . --max-warnings=0",
     "preview": "vite preview",

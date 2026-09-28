@@ -26,9 +26,12 @@ import { ensureSchema } from './schema';
 import { assertNoKeyLog, assertNoUserDataLog, assertNoUrlLog } from '../log';
 import { decodeItemId } from '../../src/sync/itemId';
 import { generateToken, generateTokenId, sha256Hex, tokenFingerprint, syncKeyFingerprint } from './tokens';
+import { MAX_POLLED_FEEDS_PER_ACCOUNT, registerPolledFeeds } from '../poll-registry';
 
 const PAIRING_TTL_SECONDS = 5 * 60;
 const MAX_USERS = 100_000;
+const ITEMS_PAGE_SIZE = 200;
+const ACTIVITY_WRITE_INTERVAL_SECONDS = 60 * 60;
 
 interface FeedPayload {
   feedId: string;
@@ -218,11 +221,21 @@ function jsonError(message: string, fieldName?: string, fieldValue?: unknown): R
 
 export interface SyncRoutesOptions {
   nowSeconds?: () => number;
+  /** Poll database; server-side feed polling and /sync/items are enabled only when present. */
+  pollDb?: D1Database;
+}
+
+function parseCursor(raw: string | undefined): number | null {
+  if (raw === undefined || raw === '' || raw === 'null') return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.floor(n);
 }
 
 export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): Hono<SyncKeyEnv> {
   const app = new Hono<SyncKeyEnv>();
   const now = opts.nowSeconds ?? (() => Math.floor(Date.now() / 1000));
+  const pollDb = opts.pollDb;
 
   // Reject CORS preflight on all sync routes.
   app.options('*', (c) => c.text('Forbidden', 403));
@@ -236,7 +249,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
   });
 
   // Capabilities — public, no auth.
-  app.get('/sync/capabilities', (c) => c.json({ sync: true, stats: true }));
+  app.get('/sync/capabilities', (c) => c.json({ sync: true, stats: true, items: pollDb !== undefined }));
 
   // POST /sync/register — explicit user creation.
   app.post('/sync/register', async (c) => {
@@ -312,6 +325,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
   app.use('/sync/pull', pullAuth);
   app.use('/sync/stats/push', masterAuth);
   app.use('/sync/stats/pull', pullAuth);
+  if (pollDb) app.use('/sync/items', pullAuth);
   app.use('/sync/status', auth);
   app.use('/sync/tokens', masterAuth);
   app.use('/sync/rotate', masterAuth);
@@ -867,6 +881,15 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     }
 
     await db.batch(stmts);
+
+    const subscribedUrls = feeds.flatMap((f) => (f.deleted === 0 && f.feedUrl ? [f.feedUrl] : []));
+    if (pollDb && subscribedUrls.length > 0 && projectedFeeds <= MAX_POLLED_FEEDS_PER_ACCOUNT) {
+      try {
+        await registerPolledFeeds(pollDb, subscribedUrls);
+      } catch {
+        // The daily poll maintenance registers the URL instead.
+      }
+    }
     return c.body(null, 204);
   });
 
@@ -897,6 +920,14 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
         return jsonError('Invalid `since` query parameter', 'since');
       }
       since = Math.floor(n);
+    }
+
+    if (pollDb) {
+      const nowSeconds = now();
+      await db
+        .prepare('UPDATE users SET last_active_at = ? WHERE sync_key = ? AND (last_active_at IS NULL OR last_active_at <= ?)')
+        .bind(nowSeconds, syncKey, nowSeconds - ACTIVITY_WRITE_INTERVAL_SECONDS)
+        .run();
     }
 
     const [feedsRes, flagsRes, serverTime] = await Promise.all([
@@ -1039,6 +1070,62 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       currentMonotonicTime(db),
     ]);
     return c.json({ serverTime, stats: statsRes.results, markers: markersRes.results });
+  });
+
+  // GET /sync/items?after=<seq> — retained server-polled items for the
+  // caller's live subscriptions (up to the per-account polling cap),
+  // paginated by insertion sequence. Only available with a poll database.
+  app.get('/sync/items', async (c) => {
+    if (!pollDb) return c.text('Not Found', 404);
+    c.header('Cache-Control', 'no-store');
+    const { syncKey } = getSyncKeyContext(c);
+    const rl = await checkRateLimit(
+      db,
+      `items-pull:${syncKey}`,
+      RATE_LIMITS.itemsPull.windowSeconds,
+      RATE_LIMITS.itemsPull.limit,
+      now(),
+    );
+    if (!rl.ok) return rateLimitResponse(`items-pull:${syncKey}`, syncKey, rl.retryAfter);
+
+    const after = parseCursor(c.req.query('after'));
+    if (after === null) return jsonError('Invalid `after` query parameter', 'after');
+
+    const [feedsRes, maxRow] = await Promise.all([
+      db
+        .prepare(
+          `SELECT feed_id, feed_url FROM feeds
+           WHERE sync_key = ? AND deleted = 0 AND feed_url IS NOT NULL AND feed_url != ''
+           ORDER BY feed_id LIMIT ?`,
+        )
+        .bind(syncKey, MAX_POLLED_FEEDS_PER_ACCOUNT)
+        .all<{ feed_id: string; feed_url: string }>(),
+      pollDb
+        .prepare('SELECT COALESCE(MAX(seq), 0) AS max_seq FROM polled_items')
+        .first<{ max_seq: number }>(),
+    ]);
+    const maxSeq = maxRow?.max_seq ?? 0;
+    const feedIdByUrl = new Map<string, string>();
+    for (const row of feedsRes.results) {
+      if (!feedIdByUrl.has(row.feed_url)) feedIdByUrl.set(row.feed_url, row.feed_id);
+    }
+    if (feedIdByUrl.size === 0) return c.json({ items: [], cursor: maxSeq, more: false });
+
+    const from = after > maxSeq ? 0 : after;
+    const res = await pollDb
+      .prepare(
+        `SELECT seq, feed_url, guid, title, link, author, published_at, excerpt, html, thumbnail, first_seen_at
+         FROM polled_items
+         WHERE feed_url IN (SELECT value FROM json_each(?)) AND seq > ? AND seq <= ?
+         ORDER BY seq ASC
+         LIMIT ?`,
+      )
+      .bind(JSON.stringify([...feedIdByUrl.keys()]), from, maxSeq, ITEMS_PAGE_SIZE)
+      .all<{ seq: number; feed_url: string } & Record<string, unknown>>();
+    const items = res.results.map(({ feed_url: feedUrl, ...item }) => ({ ...item, feed_id: feedIdByUrl.get(feedUrl) }));
+    const more = items.length === ITEMS_PAGE_SIZE;
+    const cursor = more ? items[items.length - 1].seq : maxSeq;
+    return c.json({ items, cursor, more });
   });
 
   return app;

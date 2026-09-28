@@ -1,16 +1,27 @@
 import { listFeeds } from '../db/feeds';
-import { listItems } from '../db/items';
+import { bulkUpsertItems, listItems } from '../db/items';
 import { getItemFlags, type ItemFlag } from '../db/flags';
-import { listFeedStats, listPendingReadMarkers, applyRemoteStatistics } from '../db/stats';
-import { enqueueFeed, enqueueFlag, enqueueStats, enqueueReadMarker, clearAllDirty } from './queue';
+import { getFeedStats, listFeedStats, listPendingReadMarkers, applyRemoteStatistics } from '../db/stats';
+import { enqueueFeed, enqueueFlag, enqueueStats, enqueueReadMarker, enqueueStatsIfSync, clearAllDirty } from './queue';
 import { flushNow, scheduleFlush } from './push';
-import { pullSince, pullStatsSince, register, type PullPayload, type StatsPullPayload } from './client';
+import { pullItemsAfter, pullSince, pullStatsSince, register, type PullPayload, type StatsPullPayload } from './client';
 import { applyRemoteState, canonicalizeLocalFeedIds, type RemotePayload, type RemoteFeed, type RemoteFlag } from './apply';
-import { getStoredLastStatsSyncAt, getStoredLastSyncAt, setStoredLastStatsSyncAt, setStoredLastSyncAt, setStoredServerOffset } from './key';
+import {
+  getStoredLastItemsCursor,
+  getStoredLastStatsSyncAt,
+  getStoredLastSyncAt,
+  setStoredLastItemsCursor,
+  setStoredLastStatsSyncAt,
+  setStoredLastSyncAt,
+  setStoredServerOffset,
+} from './key';
 import { decodeItemId } from './itemId';
 import { markPullSuccess, markError } from './status';
 import type { Feed, Item } from '../db/types';
-import { isStatsSyncAvailable } from './capabilities';
+import { isItemSyncAvailable, isStatsSyncAvailable } from './capabilities';
+import { parsedItemToItem } from '../feeds/parse';
+
+export const MAX_ITEM_PAGES_PER_PULL = 50;
 
 let onSync: (() => void) | null = null;
 
@@ -113,6 +124,78 @@ export async function runStatsPull(sinceOverride?: number): Promise<number | nul
   return next;
 }
 
+export function toServerItems(rows: readonly unknown[], localFeedIds: ReadonlySet<string>): Item[] {
+  return rows.flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const row = value as Record<string, unknown>;
+    if (typeof row.feed_id !== 'string' || !localFeedIds.has(row.feed_id)) return [];
+    if (typeof row.guid !== 'string' || !row.guid || typeof row.first_seen_at !== 'number') return [];
+    const text = (v: unknown): string | undefined => (typeof v === 'string' && v.length > 0 ? v : undefined);
+    return [parsedItemToItem({
+      guid: row.guid,
+      title: text(row.title) ?? '(untitled)',
+      link: text(row.link),
+      author: text(row.author),
+      publishedAt: typeof row.published_at === 'number' ? row.published_at : null,
+      excerpt: typeof row.excerpt === 'string' ? row.excerpt : '',
+      html: text(row.html),
+      thumbnail: text(row.thumbnail) ?? null,
+    }, row.feed_id, row.first_seen_at)];
+  });
+}
+
+/**
+ * Pulls server-polled items after the sync pull has applied feeds and
+ * flags, inserting only items this device does not already hold. Returns
+ * the number of items inserted.
+ */
+export async function runItemsPull(afterOverride?: number): Promise<number> {
+  if (!await isItemSyncAvailable()) return 0;
+  let cursor = afterOverride ?? (await getStoredLastItemsCursor()) ?? 0;
+  const feeds = await listFeeds();
+  const feedsById = new Map(feeds.map((feed) => [feed.id, feed]));
+  const localFeedIds = new Set(feedsById.keys());
+  const touched = new Set<string>();
+  let inserted = 0;
+  for (let page = 0; page < MAX_ITEM_PAGES_PER_PULL; page++) {
+    const result = await pullItemsAfter(cursor);
+    const byFeed = new Map<string, Item[]>();
+    for (const item of toServerItems(result.items, localFeedIds)) {
+      const group = byFeed.get(item.feedId) ?? [];
+      group.push(item);
+      byFeed.set(item.feedId, group);
+    }
+    for (const [feedId, group] of byFeed) {
+      const ids = await bulkUpsertItems(group, { insertOnly: true });
+      if (ids.length > 0) touched.add(feedId);
+      inserted += ids.length;
+    }
+    cursor = result.cursor;
+    await setStoredLastItemsCursor(cursor);
+    if (!result.more) break;
+  }
+  for (const feedId of touched) {
+    const feed = feedsById.get(feedId);
+    const stats = await getFeedStats(feedId);
+    await enqueueStatsIfSync({
+      feedId,
+      totalSeen: stats?.totalSeen ?? 0,
+      feedUrl: feed?.url,
+      title: feed?.title,
+    });
+  }
+  if (touched.size > 0) scheduleFlush();
+  return inserted;
+}
+
+async function pullItemsAndNotify(afterOverride?: number): Promise<void> {
+  try {
+    if (await runItemsPull(afterOverride) > 0) onSync?.();
+  } catch (e) {
+    console.error('Failed to pull server-polled items:', e);
+  }
+}
+
 function toRawFlagId(itemId: string): string {
   const parsed = decodeItemId(itemId);
   return parsed ? `${parsed.feedId}::${parsed.guid}` : itemId;
@@ -205,6 +288,7 @@ export async function runFirstTimeSetup(): Promise<number> {
     const existingFlags = await getItemFlags();
     await pushLocalDiff(existingFeeds, existingFlags, payload.feeds, payload.flags);
     await mergePayload(payload, pull.serverTime, canonicalFeedIds);
+    await pullItemsAndNotify(0);
     if (statsPull) {
       await applyStatsPayload(statsPull);
       await setStoredLastStatsSyncAt(statsPull.serverTime);
@@ -239,6 +323,7 @@ export async function runPull(): Promise<number | null> {
       scheduleFlush();
       onSync?.();
     }
+    await pullItemsAndNotify();
     await runStatsPull();
     markPullSuccess();
     return Math.max(since, pull.serverTime);

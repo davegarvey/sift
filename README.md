@@ -8,6 +8,7 @@ provides multi-device sync and AI agent integration.
 
 - **Local-only**: subscriptions, items, read/starred state, and lifetime reading statistics live in IndexedDB.
 - **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based), including exact group read-once deduplication and approximate observed volume.
+- **Server-side polling**: on Workers, synced subscriptions are polled every 30 minutes, so items published while no device is open still arrive.
 - **AI agent integration**: built-in MCP server for AI tool access to feeds.
 - **Portable**: import/export your subscription list as OPML.
 - **Offline**: installable PWA; works offline against cached data.
@@ -35,12 +36,29 @@ bun server/bun.ts   # bun runtime
 ### Cloudflare Workers
 
 ```sh
-npm run deploy    # git pull + vite build + d1 migrations apply + wrangler deploy
+npm run deploy    # pull + build + apply sift-sync and sift-poll migrations + deploy
 ```
 
 Migrations are applied as part of the deploy, immediately before the
 Worker ships. Workers Builds uses `npm run deploy:ci` (same sequence,
 no `git pull`) as its deploy command.
+
+Polling uses a separate D1 database named `sift-poll`, bound as `POLL_DB`, so
+its item store cannot fill the sync database. Create and bind it once before
+deploying:
+
+```sh
+npx wrangler d1 create sift-poll
+```
+
+Copy the returned database ID into the `POLL_DB` entry in `wrangler.toml`.
+Polling runs only when `FEED_POLLING = "true"` and the binding is present.
+The Worker checks for due feeds every 10 minutes; each feed is normally
+scheduled every 30 minutes. The default batch is 50 feeds per run, enough for
+about 150 distinct feeds at that interval. A full batch measured about 255 D1
+queries and 555 subrequests, within Workers Paid limits but above the Free
+plan's 50 subrequests per invocation. Remove `FEED_POLLING` to disable polling;
+browsers continue fetching feeds either way.
 
 ### Docker
 
@@ -55,6 +73,16 @@ Copy `.env.example` to `.env` and set:
 
 - `MCP_ENABLED=true` — enable the MCP server and SSE relay at `/mcp` and `/api/events`
 
+Cloudflare Workers variables (`wrangler.toml` `[vars]`):
+
+- `FEED_POLLING=true` — poll synced subscriptions on the 10-minute cron and serve `/sync/items`
+- `FEED_POLL_BATCH` — maximum feeds fetched per polling run (default 50, maximum 500)
+- `POLL_DB_MAX_BYTES` — pause polling above this poll-database size in bytes (default 8 GiB)
+
+Polling covers at most 500 feeds per account. Accounts with more feeds still
+fetch the rest in their browsers. Daily maintenance rebuilds the URL registry
+from accounts active in the last 14 days and deletes items older than 7 days.
+
 ## Scripts
 
 - `npm run dev` — Vite dev server with HMR and the Hono proxy mounted as middleware
@@ -64,7 +92,7 @@ Copy `.env.example` to `.env` and set:
 - `npm run lint` — eslint
 - `npm test` — vitest unit/integration tests
 - `npm run test:smoke` — Playwright smoke tests (requires `npm run dev`)
-- `npm run deploy` — `git pull && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler deploy`
+- `npm run deploy` — `git pull --ff-only && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler d1 migrations apply sift-poll --remote && wrangler deploy`
 - `npm run deploy:ci` — same, without `git pull` (Workers Builds deploy command)
 
 ## Privacy
@@ -101,14 +129,31 @@ upstream, a feed cache, a URL cooldown, an origin cooldown, or the local gate.
 
 The feed body cache is not part of sync or persistent storage. Cloudflare
 Workers store hashed feed failure keys and hashed origin reservation/cooldown
-metadata in D1; neither is exposed through the sync API. Successful bodies and
-validators use the existing cache layers, with failure markers stored under
-separate keys. Diagnostics contain only a hashed origin, route, status,
-retry timing, and a short allowlist of response metadata. The proxy does not
-persist upstream URLs, query strings, response bodies, or article IDs. Worker
-cache hits still count as Worker requests against the account plan limits.
-Target checks are application-level filtering and do not pin a hostname to
-one DNS answer for the lifetime of a connection.
+metadata in the sync D1 database; neither is exposed through the sync API.
+Successful proxy bodies and validators use the existing cache layers, with
+failure markers stored under separate keys. Diagnostics contain only a hashed
+origin, route, status, retry timing, and a short allowlist of response
+metadata. The ordinary proxy does not persist upstream URLs, query strings,
+response bodies, or article IDs. Worker cache hits still count as Worker
+requests against the account plan limits. Target checks are application-level
+filtering and do not pin a hostname to one DNS answer for the lifetime of a
+connection.
+
+When `FEED_POLLING=true`, the Worker polls each distinct feed URL subscribed
+by a synced group that has pulled within the last 14 days, through the same
+cache, cooldowns and request governor as `/feed`. It stores, per feed URL and
+without any sync key, each new entry's title, link, author, date, excerpt,
+thumbnail URL and feed HTML when that is at most 64 KiB, together with the
+URL's validators and next poll time. Entries are deleted 7 days after they
+were first seen, and polling state is deleted once no group subscribes to
+the URL. `/sync/pull` records when a group was last active, at most once an
+hour. Devices fetch these entries with `/sync/items` and keep only entries
+they do not already hold. The full feed URL is stored in `POLL_DB`, including
+any access token embedded in a private-feed URL. `/sync/items` returns entries
+only to accounts that currently subscribe to that exact URL. Enable polling
+only if you are comfortable storing those URLs and feed entries on the server.
+If `FEED_POLLING` is not `true` or `POLL_DB` is not bound, the server stores
+no polled feed entries.
 
 The `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged
@@ -251,10 +296,10 @@ them:
 ## Known v0 limitations
 
 - **Sync is Workers-only.** The `/sync/*` routes require Cloudflare D1; the Node/Bun adapters don't include them.
-- **No push notifications.** Refresh runs only while the app is open.
+- **No push notifications.** Browser refresh runs only while the app is open; on Workers with polling enabled, synced devices receive items polled in the meantime on their next sync.
 - **No bulk "mark all read" or multi-select.** Reading is the marking mechanism.
 - **No per-feed customization** (colors, sort overrides, custom refresh intervals).
-- **Service Worker background sync is not used** — feeds don't refresh when the tab is closed.
+- **Service Worker background sync is not used** — without server-side polling, feeds don't refresh when the tab is closed.
 - **Search** searches only items currently in IndexedDB (not historical items that
   may have been evicted).
 - **OPML import/export covers only the subscription list.** Read/starred state is

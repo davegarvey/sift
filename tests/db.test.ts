@@ -14,7 +14,7 @@ import {
   deleteItemsByFeed,
 } from '../src/db/items';
 import { runEviction } from '../src/articles/eviction';
-import { getFlag } from '../src/db/flags';
+import { getFlag, setFlag } from '../src/db/flags';
 import { getFeedStats, listReadMarkers } from '../src/db/stats';
 import type { Feed, Item } from '../src/db/types';
 
@@ -224,6 +224,26 @@ describe('items store', () => {
     ]);
     const stats = await getFeedStats(feedId);
     expect(stats?.totalSeen).toBe(2);
+  });
+
+  it('applies a flag synced before the item arrived to the new item', async () => {
+    const item = makeItem({ feedId: 'feed-early-flag', guid: 'early' });
+    await setFlag({ id: item.id, feedId: item.feedId, read: 1, starred: 1 });
+    await bulkUpsertItems([item]);
+    expect(await getItem(item.id)).toMatchObject({ read: true, starred: true });
+    expect(await getFlag(item.id)).toMatchObject({ read: 1, starred: 1 });
+  });
+
+  it('leaves existing items untouched in insert-only mode', async () => {
+    const feedId = 'feed-insert-only';
+    await bulkUpsertItems([makeItem({ feedId, guid: 'kept', title: 'Local' })]);
+    const inserted = await bulkUpsertItems(
+      [makeItem({ feedId, guid: 'kept', title: 'Server' }), makeItem({ feedId, guid: 'new' })],
+      { insertOnly: true },
+    );
+    expect(inserted).toEqual([`${feedId}::new`]);
+    expect((await getItem(`${feedId}::kept`))?.title).toBe('Local');
+    expect((await getFeedStats(feedId))?.totalSeen).toBe(2);
   });
 
   it('counts a first read once and keeps it through unread and reread', async () => {

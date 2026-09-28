@@ -7,6 +7,7 @@
  * - `redeemCode()` — POST /sync/redeem, returns the sync key.
  * - `pushDirty()` — POST /sync/push, returns ok or error.
  * - `pullSince()` — GET /sync/pull?since=…, returns server payload.
+ * - `pullItemsAfter()` — GET /sync/items?after=…, returns one page of server-polled items.
  *
  * Registration is explicit (pairing, enabling sync, rotation). A 401 is
  * never auto-recovered — a rotated or revoked key stays dead by design.
@@ -33,6 +34,12 @@ export interface StatsPullPayload {
   serverTime: number;
   stats: unknown[];
   markers: unknown[];
+}
+
+export interface ItemsPage {
+  items: unknown[];
+  cursor: number;
+  more: boolean;
 }
 
 export class SyncClientError extends Error {
@@ -338,6 +345,25 @@ export async function pullStatsSince(since: number): Promise<StatsPullPayload> {
     }
     if (!res.ok) throw new SyncClientError(`Statistics pull failed: ${res.status}`, res.status);
     return (await res.json()) as StatsPullPayload;
+  }, (err) => err instanceof SyncClientError && err.status === 429);
+}
+
+export async function pullItemsAfter(after: number): Promise<ItemsPage> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(
+      `/sync/items?after=${encodeURIComponent(String(after))}`,
+      { method: 'GET', headers: { 'X-Sync-Key': key } },
+      PULL_TIMEOUT_MS,
+    );
+    if (res.status === 429) {
+      const ra = Number(res.headers.get('Retry-After') ?? '60');
+      await sleep(ra * 1000);
+      throw new SyncClientError('Items pull rate-limited', 429, ra);
+    }
+    if (!res.ok) throw new SyncClientError(`Items pull failed: ${res.status}`, res.status);
+    return (await res.json()) as ItemsPage;
   }, (err) => err instanceof SyncClientError && err.status === 429);
 }
 
