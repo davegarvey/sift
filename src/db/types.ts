@@ -162,6 +162,8 @@ export interface AppSettings {
   lastSyncAt?: number | null;
   /** Monotonic server timestamp of the last successful statistics pull. */
   lastStatsSyncAt?: number | null;
+  /** Insertion sequence of the last server-polled item received. */
+  lastItemsCursor?: number | null;
   /** Server-clock offset (serverTime - Date.now()) measured at the last successful pull. */
   serverOffset?: number | null;
   statsSort?: StatsSortPreference;
@@ -185,6 +187,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   syncKey: null,
   lastSyncAt: null,
   lastStatsSyncAt: null,
+  lastItemsCursor: null,
   serverOffset: null,
   statsSort: DEFAULT_STATS_SORT,
 };

@@ -235,27 +235,28 @@ function parseDate(value: string | undefined, now = Date.now()): number | null {
  */
 export function parsedToItems(parsed: ParsedFeed, feedId: string): Item[] {
   const now = Date.now();
-  return parsed.items.map((p) => {
-    const id = `${feedId}::${p.guid}`;
-    const fallback = p.publishedAt == null;
-    return {
-      id,
-      feedId,
-      guid: p.guid,
-      title: p.title,
-      author: p.author,
-      link: p.link,
-      publishedAt: p.publishedAt ?? now,
-      updatedAt: p.publishedAt ?? now,
-      excerpt: p.excerpt,
-      html: p.html,
-      thumbnail: p.thumbnail ?? null,
-      extractedHtml: null,
-      firstOpenedAt: null,
-      read: false,
-      starred: false,
-      createdAt: now,
-      dateFallback: fallback || undefined,
-    } satisfies Item;
-  });
+  return parsed.items.map((p) => parsedItemToItem(p, feedId, now));
+}
+
+export function parsedItemToItem(p: ParsedItem, feedId: string, now: number): Item {
+  const fallback = p.publishedAt == null;
+  return {
+    id: `${feedId}::${p.guid}`,
+    feedId,
+    guid: p.guid,
+    title: p.title,
+    author: p.author,
+    link: p.link,
+    publishedAt: p.publishedAt ?? now,
+    updatedAt: p.publishedAt ?? now,
+    excerpt: p.excerpt,
+    html: p.html,
+    thumbnail: p.thumbnail ?? null,
+    extractedHtml: null,
+    firstOpenedAt: null,
+    read: false,
+    starred: false,
+    createdAt: now,
+    dateFallback: fallback || undefined,
+  } satisfies Item;
 }

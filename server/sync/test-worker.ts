@@ -8,11 +8,14 @@ import { createSyncRoutes } from './routes';
 
 interface Env {
   DB: D1Database;
+  POLL_DB?: D1Database;
+  FEED_POLLING?: string;
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const app = createSyncRoutes(env.DB);
+    const pollDb = env.FEED_POLLING === 'true' ? env.POLL_DB : undefined;
+    const app = createSyncRoutes(env.DB, { pollDb });
     return app.fetch(request, env);
   },
 };

@@ -91,6 +91,17 @@ export async function setStoredLastStatsSyncAt(value: number | null): Promise<vo
   await setMeta(SETTINGS_KEY, { ...stored, lastStatsSyncAt: value });
 }
 
+export async function getStoredLastItemsCursor(): Promise<number | null> {
+  const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
+  const v = stored.lastItemsCursor;
+  return typeof v === 'number' ? v : null;
+}
+
+export async function setStoredLastItemsCursor(value: number | null): Promise<void> {
+  const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
+  await setMeta(SETTINGS_KEY, { ...stored, lastItemsCursor: value });
+}
+
 export async function getStoredServerOffset(): Promise<number> {
   const stored = await getMeta<Partial<AppSettings>>(SETTINGS_KEY, {});
   const v = stored.serverOffset;

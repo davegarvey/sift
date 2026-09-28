@@ -7,6 +7,7 @@
 export interface SyncCapabilities {
   sync: boolean;
   stats: boolean;
+  items: boolean;
 }
 
 let cached: SyncCapabilities | null = null;
@@ -16,14 +17,14 @@ export async function getSyncCapabilities(fetchImpl: typeof fetch = fetch): Prom
   try {
     const res = await fetchImpl('/sync/capabilities', { method: 'GET' });
     if (!res.ok) {
-      cached = { sync: false, stats: false };
+      cached = { sync: false, stats: false, items: false };
       return cached;
     }
-    const body = (await res.json()) as { sync?: boolean; stats?: boolean };
-    cached = { sync: body.sync === true, stats: body.stats === true };
+    const body = (await res.json()) as { sync?: boolean; stats?: boolean; items?: boolean };
+    cached = { sync: body.sync === true, stats: body.stats === true, items: body.items === true };
     return cached;
   } catch {
-    cached = { sync: false, stats: false };
+    cached = { sync: false, stats: false, items: false };
     return cached;
   }
 }
@@ -35,6 +36,11 @@ export async function isSyncAvailable(fetchImpl: typeof fetch = fetch): Promise<
 export async function isStatsSyncAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
   const capabilities = await getSyncCapabilities(fetchImpl);
   return capabilities.sync && capabilities.stats;
+}
+
+export async function isItemSyncAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  const capabilities = await getSyncCapabilities(fetchImpl);
+  return capabilities.sync && capabilities.items;
 }
 
 export function resetSyncCapabilityCache(): void {

@@ -17,5 +17,14 @@ database_name = "sift-sync"
 database_id = "00d4053d-2d65-4f56-991b-e0804046bb13"
 migrations_dir = "server/migrations"
 
+[[d1_databases]]
+binding = "POLL_DB"
+database_name = "sift-poll"
+database_id = "52c8076e-5053-4425-aadf-0526a8482f54"
+migrations_dir = "server/migrations-poll"
+
+[vars]
+FEED_POLLING = "true"
+
 [triggers]
-crons = ["0 3 * * *"]
+crons = ["0 3 * * *", "*/10 * * * *"]

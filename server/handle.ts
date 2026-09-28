@@ -33,11 +33,12 @@ function proxyError(response: Response): Response {
 export interface CreateAppOptions {
   relay?: Relay;
   db?: D1Database;
+  pollDb?: D1Database;
   scheduledHandler?: (event: { scheduledTime: Date; waitUntil?: (p: Promise<unknown>) => void }) => Promise<void>;
 }
 
 export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}): Hono<E> {
-  const { relay: providedRelay, db, scheduledHandler } = options;
+  const { relay: providedRelay, db, pollDb, scheduledHandler } = options;
   let relay = providedRelay;
   if (!relay && typeof process !== 'undefined' && process.env?.MCP_ENABLED === 'true') {
     relay = new Relay();
@@ -223,7 +224,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
   // Sync routes — only registered when a D1 binding is provided.
   if (db) {
-    const syncApp = createSyncRoutes(db);
+    const syncApp = createSyncRoutes(db, { pollDb });
     app.route('/', syncApp);
     if (scheduledHandler) {
       // Mount scheduled handler as a module-level export so worker.ts can hook it.

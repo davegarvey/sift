@@ -1,6 +1,6 @@
 import { getDb } from './open';
 import type { FeedStats, Item } from './types';
-import { readToFlag, starToFlag, READ_UNREAD, STAR_UNSTARRED } from './flags';
+import { flagToRead, flagToStar, readToFlag, starToFlag, READ_UNREAD, STAR_UNSTARRED } from './flags';
 
 /**
  * Merge an incoming item into an existing stored record. First-seen state
@@ -31,7 +31,7 @@ export async function insertOrUpdateItem(item: Item): Promise<void> {
   await bulkUpsertItems([item]);
 }
 
-export async function bulkUpsertItems(items: Item[]): Promise<string[]> {
+export async function bulkUpsertItems(items: Item[], options: { insertOnly?: boolean } = {}): Promise<string[]> {
   if (items.length === 0) return [];
   const db = await getDb();
   const feedId = items[0].feedId;
@@ -71,6 +71,7 @@ export async function bulkUpsertItems(items: Item[]): Promise<string[]> {
   for (const item of items) {
     const existing = existingByKey.get(item.id);
     if (existing) {
+      if (options.insertOnly) continue;
       const merged = mergeItem(existing, item);
       if (item.html) merged.extractedHtml = null;
       await itemsStore.put(merged);
@@ -84,8 +85,10 @@ export async function bulkUpsertItems(items: Item[]): Promise<string[]> {
       existingByKey.set(item.id, merged);
     } else {
       insertedIds.push(item.id);
-      await itemsStore.put(item);
       const existingFlag = flagByKey.get(item.id);
+      await itemsStore.put(existingFlag
+        ? { ...item, read: flagToRead(existingFlag.read), starred: flagToStar(existingFlag.starred) }
+        : item);
       await flagsStore.put({
         id: item.id,
         feedId: item.feedId,
