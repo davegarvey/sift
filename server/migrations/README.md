@@ -56,3 +56,19 @@ Migration `0007_upstream_origin_policy.sql` adds shared per-origin request
 reservations and cooldown state. It stores only a SHA-256 origin key, request
 slot/cooldown timestamps, status, and challenge count. Expired idle rows are
 removed by the daily Worker cleanup.
+
+Migration `0008_feed_id_schema.sql` rebuilds `feeds` and `flags` in the
+`feed_id`-keyed shape used by the sync routes. The stable feed ID change
+(#427) recreated those tables at runtime from `server/sync/schema.ts` without
+a matching migration, so a database built only from migrations kept the
+`feed_url`-keyed tables from `0001` and every sync request failed. The
+migration handles both shapes: columns missing from the old table are read
+as `NULL` via a correlated subquery, rows from the runtime-created shape are
+copied unchanged, and legacy rows without a `feed_id` (pre-#427 data that
+current clients cannot address) are not copied. Re-running it on the target
+shape is a no-op apart from the rebuild itself.
+
+When adding columns to `feeds` or `flags`, update both this directory and
+`server/sync/schema.ts` so the two paths keep producing the same schema; the
+`sync D1 migrations` tests in `tests/sync-d1.test.ts` exercise a
+migrations-only database.
