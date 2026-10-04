@@ -13,6 +13,7 @@ export function ReadingView() {
   const [extractionFailed, setExtractionFailed] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
   const [showChromeTitle, setShowChromeTitle] = createSignal(false);
+  const [scrolled, setScrolled] = createSignal(false);
   const [displayTitle, setDisplayTitle] = createSignal('');
 
   let titleRef: HTMLHeadingElement | undefined;
@@ -167,8 +168,8 @@ export function ReadingView() {
   };
 
   return (
-    <main class="reading" ref={containerRef} tabindex="-1" onPointerDown={onSwipeStart}>
-      <div class="reading-chrome">
+    <main class="reading" ref={containerRef} tabindex="-1" onPointerDown={onSwipeStart} onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}>
+      <div class="reading-chrome" data-scrolled={scrolled() || undefined}>
           <div class="reading-chrome-inner">
             <button class="back" onClick={() => ctx.closeReading()} title="Back (Esc)" aria-label="Back">
               <ArrowLeft size={14} />
