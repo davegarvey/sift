@@ -295,6 +295,15 @@ a:hover { text-decoration: underline; }
     border-left: 1px solid var(--hairline);
   }
 
+  .app-shell[data-reading="true"][data-focus-mode="false"] .reading .reading-chrome {
+    background: var(--base);
+    border-bottom-color: transparent;
+  }
+
+  .app-shell[data-reading="true"][data-focus-mode="false"] .reading .reading-chrome[data-scrolled] {
+    border-bottom-color: var(--hairline);
+  }
+
   .app-shell[data-reading="true"][data-focus-mode="false"] .reading .back {
     display: none;
   }
