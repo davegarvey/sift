@@ -43,6 +43,7 @@ function makeCtx() {
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
+    readMode: 'all',
     modal: { kind: 'none' },
     returnToItemId: null,
   });
@@ -52,6 +53,8 @@ function makeCtx() {
   const feedMap = createMemo(() => new Map(feeds().map((f) => [f.id, f])));
 
   const ctx: AppContext = {
+    hasScopedItems: () => false,
+    setReadMode: async () => {},
     state,
     setState,
     feeds,
@@ -186,4 +189,40 @@ describe('River loading vs empty state', () => {
     expect(document.body.textContent).not.toContain('Loading');
     expect(document.body.textContent).not.toContain('Welcome to Sift');
   });
+  it.each([
+    { stored: true, failed: false, message: 'You’re caught up' },
+    { stored: false, failed: false, message: 'No items yet' },
+    { stored: true, failed: true, message: 'No items yet' },
+  ])('distinguishes caught-up, empty and failed scopes: $message', ({ stored, failed, message }) => {
+    const m = createRoot((d) => { disposeCtx = d; return makeCtx(); });
+    m.ctx.setState({ readMode: 'unread' });
+    m.ctx.hasScopedItems = () => stored;
+    m.ctx.feedErrors = (): Record<string, string> => failed ? { f1: 'Refresh failed' } : {};
+    m.setFeeds([{ id: 'f1', title: 'Example', tags: ['news'] } as Feed]);
+    m.setHydrated(true);
+    ctxRef.value = m.ctx;
+    dispose = render(() => <River />, document.body);
+    expect(document.body.textContent).toContain(message);
+    if (message === 'You’re caught up') {
+      const changeMode = vi.fn(async () => {});
+      m.ctx.setReadMode = changeMode;
+      document.querySelector<HTMLButtonElement>('.empty-state button')?.click();
+      expect(changeMode).toHaveBeenCalledWith('all');
+    } else expect(document.body.textContent).not.toContain('You’re caught up');
+  });
+
+  it('shows fetching feedback instead of caught up while a scoped feed loads', () => {
+    const m = createRoot((d) => { disposeCtx = d; return makeCtx(); });
+    m.ctx.setState({ readMode: 'unread', activeTags: ['news'] });
+    m.ctx.hasScopedItems = () => true;
+    m.ctx.fetchingFeeds = () => new Set(['f1']);
+    m.setFeeds([{ id: 'f1', title: 'Example', tags: ['news'] } as Feed]);
+    m.setHydrated(true);
+    ctxRef.value = m.ctx;
+    dispose = render(() => <River />, document.body);
+    vi.advanceTimersByTime(600);
+    expect(document.body.textContent).toContain('Fetching your feeds');
+    expect(document.body.textContent).not.toContain('You’re caught up');
+  });
+
 });

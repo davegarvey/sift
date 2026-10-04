@@ -151,6 +151,7 @@ export interface AppSettings {
   lastFeedUrl: string | null;
   /** @deprecated No longer used. Kept for backward compat with persisted settings. */
   readFilter?: 'unread' | 'all';
+  articleReadMode?: 'all' | 'unread';
   mcpEnabled: boolean;
   sidebarWidth?: number;
   articleListWidth?: number;
