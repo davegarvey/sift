@@ -48,7 +48,6 @@ function Shell() {
       if (e.key === 'Escape' && ctx.state.modal.kind !== 'none') closeModalWithReturn();
       return;
     }
-    if (target?.closest('.read-filter') && ['Enter', ' ', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     if (ctx.state.modal.kind !== 'none') {
       if (e.key === 'Escape') closeModalWithReturn();
       return;

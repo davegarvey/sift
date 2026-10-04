@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change starred-filter. Update Purpose after archive.
+Let readers limit the article list to starred items within the selected feeds or tags.
 
 ## Requirements
 
@@ -36,7 +36,7 @@ The river item list SHALL filter to starred-only items when `starredOnly` is tru
 - **WHEN** `starredOnly` is true
 - **AND** `riverScope` is null
 - **AND** `activeTags` is empty
-- **THEN** items SHALL be loaded via `listStarred()` for efficient IndexedDB access
+- **THEN** the selected-item query SHALL apply starred eligibility before its result limit and SHALL include read starred articles regardless of the remembered read mode
 
 #### Scenario: Starred filter with feed scope
 - **WHEN** `starredOnly` is true

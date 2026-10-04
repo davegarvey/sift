@@ -1,6 +1,5 @@
 import { For, Show, createSignal, createMemo, createEffect, onCleanup } from 'solid-js';
 import { useApp } from '../state';
-import { ReadFilter } from './ReadFilter';
 import { refreshTargetForSelection } from '../feeds/scope';
 import type { Item } from '../db/types';
 import { relativeTime } from '../util/time';
@@ -159,7 +158,6 @@ export function River() {
   return (
     <main class="river" id="article-list" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
       <div class="river-inner">
-        <div class="read-filter-floating desktop-only"><ReadFilter /></div>
         <Show when={listState() === 'items'} fallback={listState() === 'loading' ? <LoadingMessage message={loadingMessage()} /> : <EmptyState />}>
           <For each={visibleItems()}>
             {(item, idx) => (

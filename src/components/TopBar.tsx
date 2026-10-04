@@ -1,4 +1,3 @@
-import { ReadFilter } from './ReadFilter';
 import { ChevronLeft, PanelLeft } from 'lucide-solid';
 import { useApp } from '../state';
 
@@ -18,7 +17,6 @@ export function TopBar() {
         {open() ? <ChevronLeft size={18} /> : <PanelLeft size={18} />}
       </button>
       <a class="wordmark" href="/" title="Sift">sift</a>
-      <ReadFilter />
     </div>
   );
 }
