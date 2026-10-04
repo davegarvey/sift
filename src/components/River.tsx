@@ -1,9 +1,9 @@
 import { For, Show, createSignal, createMemo, createEffect, onCleanup } from 'solid-js';
 import { useApp } from '../state';
-import { markRead } from '../db/items';
+import { ReadFilter } from './ReadFilter';
+import { refreshTargetForSelection } from '../feeds/scope';
 import type { Item } from '../db/types';
 import { relativeTime } from '../util/time';
-import { feedsMatchingTags } from '../feeds/scope';
 import { Star, CircleCheck } from 'lucide-solid';
 import { CircleIcon, CircleCheckIcon } from './Icons';
 
@@ -11,20 +11,7 @@ export function River() {
   const ctx = useApp();
   let containerRef: HTMLDivElement | undefined;
 
-  const visibleItems = createMemo(() => {
-    let items = ctx.items();
-    const tags = ctx.state.activeTags;
-    if (tags.length > 0) {
-      const matchingFeeds = new Set(
-        feedsMatchingTags(ctx.feeds(), tags).map((f) => f.id),
-      );
-      items = items.filter((i) => matchingFeeds.has(i.feedId));
-    } else if (ctx.state.riverScope != null) {
-      items = items.filter((i) => i.feedId === ctx.state.riverScope);
-    }
-    if (ctx.state.starredOnly) items = items.filter((i) => i.starred);
-    return items;
-  });
+  const visibleItems = ctx.items;
 
   // Auto-scroll to the focused item when focusedIndex changes.
   // Guards against re-scrolling on periodic data reloads (idx === lastFocusedIdx).
@@ -159,20 +146,20 @@ export function River() {
     if (!ctx.hydrated()) return 'loading';
     if (ctx.feeds().length === 0) return 'empty';
     const fetching = ctx.fetchingFeeds();
-    if (ctx.state.riverScope == null) return fetching.size > 0 ? 'loading' : 'empty';
-    return fetching.has(ctx.state.riverScope) ? 'loading' : 'empty';
+    const scope = refreshTargetForSelection(ctx.feeds(), ctx.state.riverScope, ctx.state.activeTags);
+    return [...scope].some((id) => fetching.has(id)) ? 'loading' : 'empty';
   });
   const loadingMessage = () => {
     const fetching = ctx.fetchingFeeds();
-    const isFetchingVisibleFeeds = ctx.state.riverScope == null
-      ? fetching.size > 0
-      : fetching.has(ctx.state.riverScope);
+    const scope = refreshTargetForSelection(ctx.feeds(), ctx.state.riverScope, ctx.state.activeTags);
+    const isFetchingVisibleFeeds = [...scope].some((id) => fetching.has(id));
     return isFetchingVisibleFeeds ? 'Fetching your feeds…' : 'Loading…';
   };
 
   return (
     <main class="river" id="article-list" ref={containerRef} onMouseLeave={() => ctx.setState({ focusedIndex: -1 })} onMouseMove={() => { mouseMoved = true; lastMouseMoveTime = performance.now(); }}>
       <div class="river-inner">
+        <div class="read-filter-floating desktop-only"><ReadFilter /></div>
         <Show when={listState() === 'items'} fallback={listState() === 'loading' ? <LoadingMessage message={loadingMessage()} /> : <EmptyState />}>
           <For each={visibleItems()}>
             {(item, idx) => (
@@ -265,6 +252,7 @@ function LoadingMessage(props: { message: string }) {
 function EmptyState() {
   const ctx = useApp();
   const hasFeeds = ctx.feeds().length > 0;
+  const caughtUp = () => ctx.state.readMode === 'unread' && ctx.hasScopedItems() && !Object.keys(ctx.feedErrors()).some((id) => ctx.state.riverScope ? id === ctx.state.riverScope : ctx.feeds().some((feed) => feed.id === id && (ctx.state.activeTags.length === 0 || feed.tags?.some((tag) => ctx.state.activeTags.includes(tag)))));
 
   if (!hasFeeds) {
     return (
@@ -287,6 +275,7 @@ function EmptyState() {
   }
 
   return (
+    <Show when={caughtUp()} fallback={
     <div class="empty-state">
       <div class="headline">No items yet.</div>
       <a
@@ -296,6 +285,11 @@ function EmptyState() {
       >
         Check for new items
       </a>
-    </div>
+    </div>}>
+      <div class="empty-state">
+        <div class="headline">You’re caught up</div>
+        <button class="btn subtle" onClick={() => void ctx.setReadMode('all')}>Show all articles</button>
+      </div>
+    </Show>
   );
 }

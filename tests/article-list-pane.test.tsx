@@ -33,6 +33,7 @@ function makeContext() {
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
+    readMode: 'all',
     modal: { kind: 'none' },
     returnToItemId: null,
   });

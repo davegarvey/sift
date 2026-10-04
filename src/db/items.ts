@@ -286,3 +286,25 @@ export async function deleteItemsByFeed(feedId: string): Promise<void> {
   }
   await tx.done;
 }
+
+export async function listSelectedItems(options: {
+  feedIds: ReadonlySet<string>;
+  unreadOnly: boolean;
+  starredOnly: boolean;
+  limit?: number;
+}): Promise<{ items: Item[]; hasStoredItems: boolean }> {
+  const db = await getDb();
+  const items: Item[] = [];
+  let hasStoredItems = false;
+  let cursor = await db.transaction('items', 'readonly').store.index('by-published').openCursor(null, 'prev');
+  while (cursor) {
+    const item = cursor.value;
+    if (options.feedIds.has(item.feedId)) {
+      hasStoredItems = true;
+      if ((!options.unreadOnly || !item.read) && (!options.starredOnly || item.starred)) items.push(item);
+    }
+    if (items.length >= (options.limit ?? 500)) break;
+    cursor = await cursor.continue();
+  }
+  return { items, hasStoredItems };
+}

@@ -1,10 +1,12 @@
+import { eligibleArticles, normalizeReadMode, remainingNeighbour } from './articleFilter';
+import type { ReadMode } from './articleFilter';
 import { createSignal, createMemo, createContext, useContext, onCleanup } from 'solid-js';
 import type { ParentComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { listFeeds } from './db/feeds';
-import { listItems, listItemsByFeed, listStarred, markRead, toggleStar as dbToggleStar } from './db/items';
+import { getItem, listSelectedItems, markRead, toggleStar as dbToggleStar } from './db/items';
 import type { Feed, Item } from './db/types';
-import { writeItemHistory, parseItemIdFromUrl, hashId, isStatsPath } from './routing';
+import { writeItemHistory, parseItemIdFromUrl, hashId, isStatsPath, itemIdFromHistoryState } from './routing';
 import { getMeta, setMeta } from './db/meta';
 import { DEFAULT_SETTINGS, DEFAULT_STATS_SORT, SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from './db/types';
 import type { AppSettings, StatsSortColumn, StatsSortDirection, StatsSortPreference, ThemePreference } from './db/types';
@@ -49,6 +51,7 @@ async function getSettings(): Promise<AppSettings> {
     sidebarWidth: Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, sidebarWidth)),
     ...desktopLayout,
     statsSort,
+    articleReadMode: normalizeReadMode(stored.articleReadMode),
   };
 }
 
@@ -98,6 +101,7 @@ export interface AppState {
   focusedIndex: number;
   /** When true, only starred items are shown. Orthogonal to riverScope/activeTags. */
   starredOnly: boolean;
+  readMode: ReadMode;
   modal: ModalKind;
   /** Item ID to restore focus to when returning to the river. */
   returnToItemId: string | null;
@@ -109,6 +113,8 @@ export interface AppContext {
   feeds: () => Feed[];
   feedMap: () => Map<string, Feed>;
   items: () => Item[];
+  hasScopedItems: () => boolean;
+  setReadMode: (mode: ReadMode) => Promise<void>;
   allTags: () => string[];
   activeTagSet: () => Set<string>;
   settings: () => AppSettings;
@@ -174,6 +180,7 @@ export const AppProvider: ParentComponent = (props) => {
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
+    readMode: 'all',
     modal: { kind: 'none' },
     returnToItemId: null,
   });
@@ -201,7 +208,12 @@ export const AppProvider: ParentComponent = (props) => {
     return [...seen];
   });
   const activeTagSet = createMemo(() => new Set(state.activeTags));
-  const [items, setItems] = createSignal<Item[]>([]);
+  const [storedItems, setItems] = createSignal<Item[]>([]);
+  const [hasScopedItems, setHasScopedItems] = createSignal(false);
+  const items = createMemo(() => {
+    const scope = refreshTargetForSelection(feeds(), state.riverScope, state.activeTags);
+    return eligibleArticles(storedItems().filter((item) => scope.has(item.feedId)), state.readMode, state.starredOnly, state.view === 'reading' ? state.currentItem?.id ?? null : null);
+  });
   /** True once the boot sequence has finished reading feeds/items from IndexedDB. */
   const [hydrated, setHydrated] = createSignal(false);
   const [statsRevision, setStatsRevision] = createSignal(0);
@@ -292,7 +304,7 @@ export const AppProvider: ParentComponent = (props) => {
 
   const markReadAndSync = async (item: Item, read: boolean) => {
     await markRead(item.id, read);
-    setItems(items().map((i) => i.id === item.id ? { ...i, read } : i));
+    setItems(storedItems().map((i) => i.id === item.id ? { ...i, read } : i));
     const now = Date.now();
     enqueueFlag({
       itemId: item.id,
@@ -322,7 +334,7 @@ export const AppProvider: ParentComponent = (props) => {
   const toggleStarAndSync = async (item: Item) => {
     await dbToggleStar(item.id);
     const starred = !item.starred;
-    setItems(items().map((i) => i.id === item.id ? { ...i, starred } : i));
+    setItems(storedItems().map((i) => i.id === item.id ? { ...i, starred } : i));
     const now = Date.now();
     enqueueFlag({
       itemId: item.id,
@@ -367,13 +379,26 @@ export const AppProvider: ParentComponent = (props) => {
   const reloadItems = async () => {
     if (reloadItemsPromise) return reloadItemsPromise;
     const reload = (async () => {
-      if (state.starredOnly && state.riverScope == null && state.activeTags.length === 0) {
-        setItems(await listStarred(500));
-      } else if (state.riverScope != null) {
-        setItems(await listItemsByFeed(state.riverScope, 500));
-      } else {
-        setItems(await listItems(500));
-      }
+      do {
+        const scope = state.riverScope;
+        const tags = [...state.activeTags];
+        const mode = state.readMode;
+        const starred = state.starredOnly;
+        const result = await listSelectedItems({
+          feedIds: refreshTargetForSelection(feeds(), scope, tags),
+          unreadOnly: mode === 'unread' && !starred,
+          starredOnly: starred,
+        });
+        if (scope !== state.riverScope || mode !== state.readMode || starred !== state.starredOnly || tags.join('\0') !== state.activeTags.join('\0')) continue;
+        setHasScopedItems(result.hasStoredItems);
+        const retained = state.view === 'reading' ? storedItems().find((item) => item.id === state.currentItem?.id) : undefined;
+        if (retained && !result.items.some((item) => item.id === retained.id) && refreshTargetForSelection(feeds(), scope, tags).has(retained.feedId)) {
+          const position = storedItems().findIndex((item) => item.id === retained.id);
+          result.items.splice(Math.min(position, result.items.length), 0, retained);
+        }
+        setItems(result.items);
+        break;
+      } while (true);
     })();
     reloadItemsPromise = reload;
     try {
@@ -381,6 +406,12 @@ export const AppProvider: ParentComponent = (props) => {
     } finally {
       if (reloadItemsPromise === reload) reloadItemsPromise = null;
     }
+  };
+
+  const setReadMode = async (mode: ReadMode) => {
+    setState({ readMode: mode, focusedIndex: -1 });
+    await saveSettingsPatch({ articleReadMode: mode });
+    await reloadItems();
   };
 
   const setRiverScope = (feedId: string | null) => {
@@ -411,7 +442,7 @@ export const AppProvider: ParentComponent = (props) => {
     if (idx >= 0) {
       const next = current.filter((t) => t !== tag);
       setState({ activeTags: next, riverScope: null, focusedIndex: -1, view });
-      if (next.length > 0) void reloadItems();
+      void reloadItems();
     } else {
       setState({ activeTags: [...current, tag], riverScope: null, focusedIndex: -1, view });
       void reloadItems();
@@ -436,13 +467,23 @@ export const AppProvider: ParentComponent = (props) => {
     if (!item.read) {
       await markReadAndSync(item, true);
     }
+    if (state.readMode === 'unread' && !state.starredOnly) {
+      await reloadItems();
+      setState({ focusedIndex: items().findIndex((entry) => entry.id === item.id) });
+    }
   };
 
   const closeReading = async () => {
-    setState({ view: 'river', currentItem: null });
+    const previous = items();
+    const openedId = state.currentItem?.id;
+    setState({ view: 'river', currentItem: null, returnToItemId: null });
     history.replaceState(null, '', '/');
     try {
       await reloadItems();
+      if (openedId) {
+        const neighbour = remainingNeighbour(previous, items(), openedId);
+        setState({ returnToItemId: neighbour, focusedIndex: neighbour ? items().findIndex((item) => item.id === neighbour) : -1 });
+      }
     } catch {
       // reload failure is non-fatal
     }
@@ -667,6 +708,8 @@ export const AppProvider: ParentComponent = (props) => {
     feeds,
     feedMap,
     items,
+    hasScopedItems,
+    setReadMode,
     allTags,
     activeTagSet,
     settings,
@@ -734,6 +777,7 @@ export const AppProvider: ParentComponent = (props) => {
     const validFeedId = matchingFeed?.id ?? null;
     setState({
       riverScope: state.view === 'stats' ? null : validFeedId,
+      readMode: normalizeReadMode(s.articleReadMode),
       sidebarWidth: s.sidebarWidth,
       articleListWidth: s.articleListWidth ?? defaultArticleListWidth(currentViewportWidth()),
       articleListWidthCustomized: s.articleListWidthCustomized ?? false,
@@ -742,13 +786,17 @@ export const AppProvider: ParentComponent = (props) => {
     await reloadItems();
     const hash = parseItemIdFromUrl();
     if (hash) {
-      const item = items().find(i => hashId(i.id) === hash);
+      const historyId = itemIdFromHistoryState(history.state, hash);
+      const item = items().find(i => hashId(i.id) === hash)
+        ?? (historyId ? await getItem(historyId) : (await listSelectedItems({ feedIds: new Set(feeds().map((feed) => feed.id)), unreadOnly: false, starredOnly: false, limit: Infinity })).items.find((entry) => hashId(entry.id) === hash));
       if (item) {
         setState({ view: 'reading', currentItem: item, sidebarOpen: false, returnToItemId: item.id });
         writeItemHistory(item, true);
+        if (!storedItems().some((entry) => entry.id === item.id)) setItems([...storedItems(), item].sort((a, b) => b.publishedAt - a.publishedAt));
         if (!item.read) {
           await markReadAndSync(item, true);
         }
+        await reloadItems();
       }
     }
     startScheduler();

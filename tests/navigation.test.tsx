@@ -28,6 +28,7 @@ function makeContext(collapsed = false, view: 'river' | 'reading' = 'river') {
     focusMode: false,
     focusedIndex: -1,
     starredOnly: false,
+    readMode: 'all',
     modal: { kind: 'none' },
     returnToItemId: null,
   });

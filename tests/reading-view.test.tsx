@@ -38,6 +38,7 @@ describe('reading view focus-mode navigation', () => {
       focusMode: true,
       focusedIndex: -1,
       starredOnly: false,
+    readMode: 'all',
       modal: { kind: 'none' },
       returnToItemId: null,
     });

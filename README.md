@@ -13,6 +13,7 @@ provides multi-device sync and AI agent integration.
 - **Portable**: import/export your subscription list as OPML.
 - **Offline**: installable PWA; works offline against cached data.
 - **Deploy anywhere**: local dev, Node/Bun server, Docker, or Cloudflare Workers — all from one codebase.
+- **Unread filter**: switch between Unread and All within the selected feed or tags. The choice is remembered on each device; Starred shows both read and unread saved articles.
 - **Full-text**: summary-only feeds get full-text extraction via Readability.
 
 ## Develop
