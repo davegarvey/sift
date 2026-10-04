@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
-import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, MoreHorizontal, GripVertical, ChartNoAxesCombined } from 'lucide-solid';
+import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, CircleDot, MoreHorizontal, GripVertical, ChartNoAxesCombined } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../db/types';
 import { usesCollapsedFeedNavigation } from '../desktopLayout';
@@ -25,6 +25,9 @@ export function Sidebar(props: { onNavigate?: () => void }) {
   };
 
   const hasActiveTags = () => ctx.state.activeTags.length > 0;
+  const unreadOnly = () => ctx.state.readMode === 'unread';
+  const toggleUnreadOnly = () => void ctx.setReadMode(unreadOnly() ? 'all' : 'unread');
+  const unreadFilterLabel = () => ctx.state.starredOnly ? 'Unread filter is off while showing starred' : 'Show unread only';
 
   const visibleFeeds = createMemo(() => {
     const tags = ctx.state.activeTags;
@@ -134,6 +137,17 @@ export function Sidebar(props: { onNavigate?: () => void }) {
                 aria-label="Toggle starred filter"
               >
                 <Star size={14} />
+              </button>
+              <button
+                class={`tag-chip read-chip ${unreadOnly() && !ctx.state.starredOnly ? 'active' : ''}`}
+                onClick={toggleUnreadOnly}
+                type="button"
+                title={unreadFilterLabel()}
+                aria-label="Show unread only"
+                aria-pressed={unreadOnly()}
+                disabled={ctx.state.starredOnly}
+              >
+                <CircleDot size={14} />
               </button>
               <For each={ctx.allTags()}>
                 {(tag) => (
@@ -260,6 +274,17 @@ export function Sidebar(props: { onNavigate?: () => void }) {
               onClick={() => ctx.toggleStarFilter()}
             >
               <Star size={14} />
+            </button>
+            <button
+              class="collapsed-action"
+              classList={{ active: unreadOnly() && !ctx.state.starredOnly }}
+              title={unreadFilterLabel()}
+              aria-label="Show unread only"
+              aria-pressed={unreadOnly()}
+              disabled={ctx.state.starredOnly}
+              onClick={toggleUnreadOnly}
+            >
+              <CircleDot size={14} />
             </button>
             <button class="collapsed-action" title="Search / Command palette" onClick={() => ctx.openModal({ kind: 'palette' })}>
               <Search size={14} />

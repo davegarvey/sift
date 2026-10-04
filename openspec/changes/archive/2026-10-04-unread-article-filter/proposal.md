@@ -4,10 +4,9 @@ Read articles remain interspersed with unread articles, making repeat visits req
 
 ## What Changes
 
-- Add a standalone Unread / All segmented control, with All as the initial default and a device-local remembered choice.
-- Float the control above the desktop article list without a scope heading or toolbar divider; keep it above the middle column when reading.
-- Place the control in the mobile top header beside the wordmark, without a separate row above the articles.
-- Apply the filter to the existing feed/tag selection. Starred temporarily bypasses it and hides the control, retaining the remembered choice.
+- Add an Unread / All filter, with All as the initial default and a device-local remembered choice.
+- Show it as a single icon toggle beside Starred in the sidebar filter chips (desktop and mobile) and the collapsed desktop rail, so it takes no row above the article list and behaves consistently with Starred.
+- Apply the filter to the existing feed/tag selection. Starred temporarily bypasses it and disables the toggle, retaining the remembered choice.
 - Keep the currently opened article in place until the reader moves on or returns to the list, then remove it if it is read in Unread mode.
 - Keep keyboard navigation and focus aligned with the visible list.
 - Query matching unread articles before applying the 500-item limit.
@@ -27,7 +26,7 @@ Read articles remain interspersed with unread articles, making repeat visits req
 
 ## Impact
 
-Client state, settings, IndexedDB item queries, River, TopBar and reader navigation require changes. Existing starred feed/tag composition remains intact. README and focused tests need updating. No server changes or new dependencies are planned.
+Client state, settings, IndexedDB item queries, River, Sidebar and reader navigation require changes. Existing starred feed/tag composition remains intact. README and focused tests need updating. No server changes or new dependencies are planned.
 
 ## Non-goals
 

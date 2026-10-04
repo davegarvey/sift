@@ -1,28 +1,38 @@
 # river-focus-restore Specification
 
 ## Purpose
-TBD - created by archiving change return-to-river-focus. Update Purpose after archive.
+Keep the reader's place in the article list when they return from reading, restoring focus to the article they viewed or its nearest remaining neighbour.
 
 ## Requirements
 
 ### Requirement: River restores focus to previously viewed item
-When the user returns to the river after reading an article, the focused item SHALL be the item they most recently opened in the reading view.
+When returning to the river, the app SHALL restore focus to the previously opened article if it remains eligible. If Unread mode excludes that article because it is read, focus SHALL move to the next remaining article in the previously displayed order, or the previous remaining article when no next article exists. An empty list SHALL have no focused article. All mode SHALL preserve restoration to the opened article. Other missing-item cases SHALL preserve existing behaviour without focusing an unrelated filtered-out item.
+
+#### Scenario: Return in All mode
+- **WHEN** the reader returns from an article still eligible in All mode
+- **THEN** focus SHALL return to that article at its current index
+
+#### Scenario: Return in Unread mode
+- **WHEN** the reader returns from an article excluded because it is now read
+- **THEN** focus SHALL move to the next remaining article, falling back to the previous remaining article
+- **AND** that article SHALL be brought into view
+
+#### Scenario: Read the last unread article
+- **WHEN** no eligible article remains after returning
+- **THEN** the app SHALL clear article focus and show the appropriate empty state
 
 #### Scenario: User opens article via click and returns
-- **WHEN** the user clicks an item in the river to open it in the reading view
-- **AND** the user returns to the river (via Escape, back button, or clicking Back)
-- **THEN** the river SHALL set `focusedIndex` to the position of that same item in the current items list
-- **AND** the existing `onFocusChange` mechanism SHALL scroll that item into view
+- **WHEN** the reader clicks an article and returns to the river
+- **THEN** focus SHALL return to that article if eligible, otherwise follow the remaining-neighbour rule
 
 #### Scenario: User opens article via keyboard and returns
-- **WHEN** the user uses `j`/`k` to focus an item and presses Enter to open it
-- **AND** the user returns to the river
-- **THEN** the river SHALL set `focusedIndex` to the position of that same item
+- **WHEN** the reader opens a focused article with Enter and returns
+- **THEN** focus SHALL return to that article if eligible, otherwise follow the remaining-neighbour rule
 
 #### Scenario: Item no longer exists on return
-- **WHEN** the item the user was reading is no longer present in the items list (e.g., evicted, feed removed)
-- **THEN** `focusedIndex` SHALL remain at its previous value
+- **WHEN** the article no longer exists because it was evicted or its feed removed
+- **THEN** existing missing-item behaviour SHALL be preserved, with no focused article when the list is empty
 
 #### Scenario: Item appears at different index on return
-- **WHEN** the items list has changed between opening and returning (e.g., new items added, read status changed) and the viewed item is found at a different index
-- **THEN** `focusedIndex` SHALL be set to the item's new index in the refreshed list
+- **WHEN** the previously opened article remains eligible but its index has changed
+- **THEN** focus SHALL use its new index in the eligible list

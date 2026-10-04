@@ -1,4 +1,9 @@
-## ADDED Requirements
+# unread-article-filter Specification
+
+## Purpose
+Let readers choose between unread and all articles within the selected feeds or tags, remember that choice per device, and keep reading navigation stable as articles are marked read.
+
+## Requirements
 
 ### Requirement: Remembered scoped article filter
 The app SHALL offer Unread and All modes, defaulting to All when no active preference is stored. It SHALL persist the choice on the device, preserve it across feed/tag selection changes and apply it within the existing selection. Deprecated settings from the removed filter SHALL NOT silently change the initial default.
@@ -10,20 +15,20 @@ The app SHALL offer Unread and All modes, defaulting to All when no active prefe
 
 #### Scenario: View starred articles
 - **WHEN** Starred is active
-- **THEN** the control SHALL be hidden and both read and unread starred articles SHALL be eligible within the current feed/tag selection
+- **THEN** the control SHALL be disabled and both read and unread starred articles SHALL be eligible within the current feed/tag selection
 - **AND** disabling Starred SHALL restore the remembered Unread / All mode
 
-### Requirement: Standalone responsive control
-The desktop control SHALL float above the article content, aligned to the right edge of the list, without a repeated feed/tag heading or full-width toolbar divider. In desktop reading view it SHALL remain above the middle article-list column. On mobile it SHALL occupy the existing top header alongside the wordmark, without an additional control row above the list. Controls SHALL have accessible names, expose selection state and support keyboard and touch activation.
+### Requirement: Sidebar filter control
+The control SHALL be a single icon toggle (Lucide `CircleDot`) in the sidebar filter chips beside Starred, on desktop and in the mobile sidebar drawer, and in the collapsed desktop sidebar rail beside Starred. Pressed SHALL mean Unread; unpressed SHALL mean All. It SHALL NOT occupy a row above the article list or appear in the mobile top header. While Starred is active the toggle SHALL be disabled and not highlighted. The toggle SHALL have an accessible name, expose its pressed state and support keyboard and touch activation.
 
-#### Scenario: Open an article on desktop
-- **WHEN** the reader opens an article
-- **THEN** the control SHALL remain associated with the list column rather than the article body
+#### Scenario: Browse the article list
+- **WHEN** the article list is visible on desktop or mobile
+- **THEN** the first article SHALL begin directly below the existing chrome without a filter row above it
+- **AND** the Unread toggle SHALL appear in the sidebar filter chips, or in the collapsed rail when the desktop sidebar is collapsed
 
-#### Scenario: Browse on mobile
-- **WHEN** the mobile article list is visible
-- **THEN** Unread / All SHALL appear at the right of the top header
-- **AND** article content SHALL begin below that header without a separate filter row
+#### Scenario: Starred active
+- **WHEN** Starred is active
+- **THEN** the Unread toggle SHALL be disabled and SHALL retain the remembered mode for when Starred is disabled
 
 ### Requirement: Stable reading transitions
 Opening an unread article SHALL retain that article's row and position while it is the current reading item, even after it is marked read or the list reloads. In Unread mode, moving to another article or returning to the list SHALL release the retained row and exclude it if read. Navigation SHALL use the same ordered eligible articles as the visible list, rather than unfiltered indices.

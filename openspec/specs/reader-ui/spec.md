@@ -30,15 +30,16 @@ When no items match the current view, the river SHALL display a contextual empty
 
 #### Scenario: No unread items in Unread mode (no fetch in progress)
 
-- **WHEN** the user is in "Unread" mode and IndexedDB contains no unread items
+- **WHEN** the user is in "Unread" mode and the current feed/tag scope contains no unread items and Starred is inactive
 - **AND** no feed fetch is in progress
-- **THEN** the river body shows "You're all caught up." and a "Check for new items" link below it (unchanged)
+- **THEN** the river SHALL show “You’re caught up” and a “Show all articles” button that switches to All within the current scope
+- **AND** this state SHALL appear only when the scope contains stored articles and has no relevant refresh failure; a scope without stored articles SHALL retain its existing empty or failure feedback
 
 #### Scenario: Zero items in All mode (fresh install, no fetch in progress)
 
 - **WHEN** the user is in "All" mode and IndexedDB contains no items
 - **AND** no feed fetch is in progress
-- **THEN** the river body shows an empty state describing that no feeds are subscribed (unchanged)
+- **THEN** the river SHALL retain the existing subscription, empty-scope or failure feedback appropriate to the current selection
 
 ### Requirement: Per-feed fetching indicator in sidebar
 

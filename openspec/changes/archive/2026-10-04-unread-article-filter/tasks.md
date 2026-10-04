@@ -12,8 +12,8 @@
 
 ## 3. Layout
 
-- [x] 3.1 Add the standalone right-aligned desktop control above the list, including the middle column in reading mode, without scope text or a toolbar divider.
-- [x] 3.2 Place the mobile control in the existing top header and hide it while Starred is active.
+- [x] 3.1 Add the Unread icon toggle beside Starred in the sidebar filter chips and collapsed rail, disabled while Starred is active, without a row above the list.
+- [x] 3.2 Use the same sidebar toggle on mobile, leaving the top header unchanged.
 - [x] 3.3 Verify keyboard access, selection semantics, touch targets and narrow layouts.
 - [x] 3.4 Update README to describe the filter and its device-local preference.
 
