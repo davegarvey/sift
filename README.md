@@ -93,6 +93,7 @@ from accounts active in the last 14 days and deletes items older than 7 days.
 - `npm run lint` — eslint
 - `npm test` — vitest unit/integration tests
 - `npm run test:smoke` — Playwright smoke tests (requires `npm run dev`)
+- `npm run spec:validate` — strict OpenSpec validation of `openspec/specs/` (runs in CI)
 - `npm run deploy` — `git pull --ff-only && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler d1 migrations apply sift-poll --remote && wrangler deploy`
 - `npm run deploy:ci` — same, without `git pull` (Workers Builds deploy command)
 
