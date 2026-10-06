@@ -8,7 +8,8 @@ import { parseOpml } from '../opml/parse';
 import { buildMergePreview, applyMerge } from '../opml/merge';
 import { isSyncAvailable } from '../sync/capabilities';
 import { fingerprintSyncKey } from '../sync/key';
-import { lastPullAt, lastPushAt, pendingCount, lastError, lastErrorAt } from '../sync/status';
+import { lastPullAt, lastPushAt, pendingCount, lastError, lastErrorAt, keyRejected } from '../sync/status';
+import { deleteSyncAccount } from '../sync/client';
 import { humanRelativeTime } from '../util/time';
 
 export function SettingsDrawer() {
@@ -156,6 +157,8 @@ export function SettingsDrawer() {
   );
 }
 
+const [deleteError, setDeleteError] = createSignal<string | null>(null);
+
 function SyncSection() {
   const ctx = useApp();
   const [syncError, setSyncError] = createSignal<string | null>(null);
@@ -174,6 +177,7 @@ function SyncSection() {
 
   const toggleOn = async () => {
     setSyncError(null);
+    setDeleteError(null);
     try {
       await ctx.enableSync();
     } catch (e) {
@@ -186,11 +190,35 @@ function SyncSection() {
     ctx.openModal({
       kind: 'confirm',
       title: 'Disable sync',
-      message: 'Your other devices will stop syncing. Server data is kept until you generate a new key. Continue?',
+      message: 'This device will stop syncing. Your synced data stays on the server, and devices paired with this key keep syncing. To delete it, cancel and use Delete sync data first. Continue?',
       confirmLabel: 'Disable',
       danger: true,
       returnTo: { kind: 'settings' },
       onConfirm: async () => {
+        setDeleteError(null);
+        await ctx.disableSync();
+      },
+    });
+  };
+
+  const deleteData = () => {
+    ctx.openModal({
+      kind: 'confirm',
+      title: 'Delete sync data',
+      message: 'This permanently deletes your synced subscriptions, read and starred flags, statistics and agent access from the server. Your other paired devices will stop syncing. Reading data on this device is kept.',
+      hint: 'You can turn sync on again later with a new key.',
+      confirmLabel: 'Delete',
+      danger: true,
+      returnTo: { kind: 'settings' },
+      onConfirm: async () => {
+        setDeleteError(null);
+        try {
+          await deleteSyncAccount();
+        } catch (e) {
+          console.error('Failed to delete sync data:', e);
+          setDeleteError('Failed to delete sync data. Try again.');
+          return;
+        }
         await ctx.disableSync();
       },
     });
@@ -283,6 +311,9 @@ function SyncSection() {
           <p class="error">{syncError()}</p>
         </Show>
         <Show when={enabled()}>
+          <Show when={keyRejected() && lastError()}>
+            <p class="error">{lastError()}</p>
+          </Show>
           <div class="row">
             <label classList={{ error: statusLine().error }} title={statusLine().detail ?? undefined}>
               {statusLine().text}
@@ -306,6 +337,13 @@ function SyncSection() {
           <label>Regenerate sync key</label>
           <button class="btn" onClick={regenerate}>Regenerate</button>
         </div>
+        <div class="row danger">
+          <label>Delete sync data</label>
+          <button class="btn" onClick={deleteData}>Delete</button>
+        </div>
+        <Show when={deleteError()}>
+          <p class="error">{deleteError()}</p>
+        </Show>
       </Show>
     </div>
   );

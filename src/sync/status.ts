@@ -10,6 +10,7 @@
 import { createSignal } from 'solid-js';
 import { getMeta, setMeta } from '../db/meta';
 import { getDirty } from './queue';
+import { SyncClientError } from './client';
 
 const LAST_PULL_KEY = 'sync_last_pull_at';
 const LAST_PUSH_KEY = 'sync_last_push_at';
@@ -25,8 +26,9 @@ const [pendingCount, setPendingCount] = createSignal(0);
 const [lastError, setLastError] = createSignal<string | null>(null);
 const [lastErrorKind, setLastErrorKind] = createSignal<SyncErrorKind | null>(null);
 const [lastErrorAt, setLastErrorAt] = createSignal<number | null>(null);
+const [keyRejected, setKeyRejected] = createSignal(false);
 
-export { lastPullAt, lastPushAt, pendingCount, lastError, lastErrorKind, lastErrorAt };
+export { lastPullAt, lastPushAt, pendingCount, lastError, lastErrorKind, lastErrorAt, keyRejected };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -72,6 +74,7 @@ export function refreshPending(): void {
 }
 
 export function markPullSuccess(): void {
+  setKeyRejected(false);
   setLastPullAt(Date.now());
   if (lastErrorKind() !== 'push') clearError();
   schedulePersist();
@@ -79,13 +82,21 @@ export function markPullSuccess(): void {
 }
 
 export function markPushSuccess(t: number): void {
+  setKeyRejected(false);
   setLastPushAt(t);
   if (lastErrorKind() !== 'pull') clearError();
   schedulePersist();
   refreshPending();
 }
 
+export function resetSyncStatus(): void {
+  setKeyRejected(false);
+  clearError();
+  schedulePersist();
+}
+
 export function markError(kind: SyncErrorKind, e: unknown): void {
+  if (e instanceof SyncClientError && e.status === 401) setKeyRejected(true);
   setLastError(e instanceof Error ? e.message : String(e));
   setLastErrorKind(kind);
   setLastErrorAt(Date.now());

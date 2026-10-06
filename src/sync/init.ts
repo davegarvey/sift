@@ -5,7 +5,8 @@
  *   If `lastSyncAt` is unset (fresh device), runs the first-time setup.
  *   Otherwise, runs a normal pull.
  * - `pullIfStale(thresholdMs)` runs a pull if the last successful pull
- *   was more than `thresholdMs` ago.
+ *   was more than `thresholdMs` ago, unless the server has rejected the key
+ *   (401); only an explicit sync retries then.
  * - `pullNow()` always pulls.
  */
 
@@ -13,7 +14,7 @@ import { runFirstTimeSetup, runPull } from './merge';
 import { loadDirty, persistDirty, setOnOverflow } from './queue';
 import { scheduleFlush } from './push';
 import { getStoredSyncKey, getStoredLastSyncAt } from './key';
-import { loadStatus, refreshPending } from './status';
+import { loadStatus, refreshPending, keyRejected } from './status';
 
 let lastPullAt = 0;
 let pullInFlight: Promise<void> | null = null;
@@ -63,6 +64,7 @@ export async function bootSync(): Promise<void> {
 }
 
 export async function pullIfStale(thresholdMs: number): Promise<void> {
+  if (keyRejected()) return;
   if (Date.now() - lastPullAt < thresholdMs) return;
   await pullShared();
 }

@@ -60,6 +60,7 @@ async function saveSettings(settings: AppSettings): Promise<void> {
 }
 import { refreshStaleFeeds, fetchingState, startScheduler, setOnRefresh } from './feeds/scheduler';
 import { enqueueFlag, clearAllDirty, enqueueStatsIfSync, enqueueReadMarkerIfSync } from './sync/queue';
+import { resetSyncStatus } from './sync/status';
 import { scheduleFlush, flushNow } from './sync/push';
 import { bootSync, pullIfStale, pullNow, triggerFirstTime } from './sync/init';
 import { setOnSync } from './sync/merge';
@@ -638,6 +639,7 @@ export const AppProvider: ParentComponent = (props) => {
   const disableSync = async () => {
     await updateSettingsWith({ syncKey: null, lastSyncAt: null, lastStatsSyncAt: null, lastItemsCursor: null, serverOffset: null });
     clearAllDirty();
+    resetSyncStatus();
   };
 
   const pairSyncWithKey = async (key: string) => {

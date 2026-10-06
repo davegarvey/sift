@@ -1,7 +1,7 @@
 import { pushChunk, pushStatsChunk, SyncClientError, MAX_DIRTY_PER_PUSH } from './client';
 import { getDirty, clearEntries, type DirtyEntry } from './queue';
 import { decodeItemId, encodeItemId } from './itemId';
-import { markPushSuccess, markError, refreshPending } from './status';
+import { markPushSuccess, markError, refreshPending, keyRejected } from './status';
 import { getStoredSyncKey } from './key';
 import { isStatsSyncAvailable } from './capabilities';
 import { applyRemoteStatistics, type RemoteStatsRow } from '../db/stats';
@@ -153,6 +153,7 @@ async function pushStatsChunkWithSplit(entries: DirtyEntry[]): Promise<void> {
 }
 
 export function scheduleFlush(): void {
+  if (keyRejected()) return;
   if (pendingTimer) clearTimeout(pendingTimer);
   pendingTimer = setTimeout(() => {
     pendingTimer = null;
