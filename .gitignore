@@ -31,3 +31,7 @@ yarn-error.log*
 # Test
 coverage/.chit/
 .chit/
+
+# Playwright
+test-results/
+playwright-report/
