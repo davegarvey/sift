@@ -97,7 +97,7 @@ describe('database version 10', () => {
     db.close();
   });
 
-  it('migrates a version 9 database, moving bodies out of article records', async () => {
+  it('migrates a version 9 database, dropping bodies from article records', async () => {
     const name = freshName();
     await seedV9(name);
     const before = await openDB(name, 9);
@@ -122,13 +122,7 @@ describe('database version 10', () => {
       expect(item).toEqual(rest);
     }
 
-    expect(await db.getAll('itemBodies')).toEqual(expect.arrayContaining([
-      { id: 'f1::both', feedId: 'f1', html: '<p>feed</p>', extractedHtml: '<p>extracted</p>' },
-      { id: 'f1::feedonly', feedId: 'f1', html: '<p>feed only</p>' },
-      { id: 'f1::extractedonly', feedId: 'f1', extractedHtml: '<p>only extracted</p>' },
-    ]));
-    expect(await db.count('itemBodies')).toBe(3);
-    expect(await db.getAllFromIndex('itemBodies', 'by-feed-id', 'f1')).toHaveLength(3);
+    expect(await db.count('itemBodies')).toBe(0);
     db.close();
   });
 

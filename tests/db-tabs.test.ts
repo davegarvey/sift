@@ -41,7 +41,7 @@ describe('tab coordination', () => {
     expect(order).toEqual(['close', 'reload']);
   });
 
-  it('reports a blocked open while another tab holds version 9, and clears it once the open completes', async () => {
+  it('reports blocked while another tab holds version 9, then upgrading, then idle once the open completes', async () => {
     const olderTab = await openDB(DB_NAME, 9, {
       upgrade(db) {
         db.createObjectStore('feeds', { keyPath: 'id' });
@@ -49,30 +49,65 @@ describe('tab coordination', () => {
         db.createObjectStore('meta', { keyPath: 'key' });
       },
     });
-    const { getDb, isDbBlocked, onDbBlockedChange } = await freshModule();
-    const changes: boolean[] = [];
-    onDbBlockedChange(() => changes.push(isDbBlocked()));
-    expect(isDbBlocked()).toBe(false);
+    const { getDb, getDbStatus, onDbStatusChange } = await freshModule();
+    const statuses: string[] = [];
+    onDbStatusChange(() => statuses.push(getDbStatus()));
+    expect(getDbStatus()).toBe('idle');
 
     const opening = getDb();
-    await vi.waitFor(() => expect(isDbBlocked()).toBe(true));
+    await vi.waitFor(() => expect(getDbStatus()).toBe('blocked'));
 
     olderTab.close();
     const db = await opening;
 
     expect(db.version).toBe(DB_VERSION);
-    expect(isDbBlocked()).toBe(false);
-    expect(changes).toEqual([true, false]);
+    expect(getDbStatus()).toBe('idle');
+    expect(statuses).toEqual(['blocked', 'upgrading', 'idle']);
     db.close();
   });
 
-  it('never reports blocked when nothing holds the database open', async () => {
-    const { getDb, isDbBlocked, onDbBlockedChange } = await freshModule();
+  it('never reports blocked or upgrading when a new database is created', async () => {
+    const { getDb, getDbStatus, onDbStatusChange } = await freshModule();
     const listener = vi.fn();
-    onDbBlockedChange(listener);
+    onDbStatusChange(listener);
     const db = await getDb();
-    expect(isDbBlocked()).toBe(false);
+    expect(getDbStatus()).toBe('idle');
     expect(listener).not.toHaveBeenCalled();
     db.close();
+  });
+
+  it('reports upgrading while an existing database is migrated, then idle', async () => {
+    const seed = await openDB(DB_NAME, 9, {
+      upgrade(db) {
+        db.createObjectStore('feeds', { keyPath: 'id' });
+        db.createObjectStore('items', { keyPath: 'id' });
+        db.createObjectStore('meta', { keyPath: 'key' });
+      },
+    });
+    seed.close();
+    const { getDb, getDbStatus, onDbStatusChange } = await freshModule();
+    const statuses: string[] = [];
+    onDbStatusChange(() => statuses.push(getDbStatus()));
+
+    const db = await getDb();
+
+    expect(statuses).toEqual(['upgrading', 'idle']);
+    db.close();
+  });
+
+  it('returns to idle when the upgrade fails', async () => {
+    const seed = await openDB(DB_NAME, 9, {
+      upgrade(db) {
+        db.createObjectStore('items', { keyPath: 'id' });
+        db.createObjectStore('itemBodies', { keyPath: 'id' });
+      },
+    });
+    seed.close();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { getDb, getDbStatus } = await freshModule();
+
+    await expect(getDb()).rejects.toThrow();
+
+    expect(getDbStatus()).toBe('idle');
   });
 });

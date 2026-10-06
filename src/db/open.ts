@@ -61,22 +61,24 @@ type StoredItemWithBodies = Item & { html?: string; extractedHtml?: string | nul
 const PREVIOUS_VERSION = 9;
 
 let dbPromise: Promise<IDBPDatabase<RssReaderDB>> | null = null;
-let dbBlocked = false;
-const blockedListeners = new Set<() => void>();
+let dbStatus: DbStatus = 'idle';
+const statusListeners = new Set<() => void>();
 
-function setDbBlocked(value: boolean): void {
-  if (dbBlocked === value) return;
-  dbBlocked = value;
-  for (const listener of [...blockedListeners]) listener();
+export type DbStatus = 'idle' | 'blocked' | 'upgrading';
+
+function setDbStatus(status: DbStatus): void {
+  if (dbStatus === status) return;
+  dbStatus = status;
+  for (const listener of [...statusListeners]) listener();
 }
 
-export function isDbBlocked(): boolean {
-  return dbBlocked;
+export function getDbStatus(): DbStatus {
+  return dbStatus;
 }
 
-export function onDbBlockedChange(listener: () => void): () => void {
-  blockedListeners.add(listener);
-  return () => blockedListeners.delete(listener);
+export function onDbStatusChange(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
 }
 
 function createLayout(db: IDBPDatabase<RssReaderDB>): void {
@@ -101,18 +103,13 @@ function createBodiesStore(db: IDBPDatabase<RssReaderDB>): void {
   db.createObjectStore('itemBodies', { keyPath: 'id' }).createIndex('by-feed-id', 'feedId');
 }
 
-async function moveBodiesOutOfItems(db: IDBPDatabase<RssReaderDB>, transaction: VersionChangeTransaction): Promise<void> {
+async function dropBodiesFromItems(db: IDBPDatabase<RssReaderDB>, transaction: VersionChangeTransaction): Promise<void> {
   createBodiesStore(db);
-  const bodies = transaction.objectStore('itemBodies');
   let cursor = await transaction.objectStore('items').openCursor();
   while (cursor) {
     const stored = cursor.value as StoredItemWithBodies;
     if ('html' in stored || 'extractedHtml' in stored) {
-      const { html, extractedHtml, ...item } = stored;
-      const body: ItemBody = { id: item.id, feedId: item.feedId };
-      if (html) body.html = html;
-      if (extractedHtml) body.extractedHtml = extractedHtml;
-      if (body.html !== undefined || body.extractedHtml !== undefined) await bodies.put(body);
+      const { html: _html, extractedHtml: _extractedHtml, ...item } = stored;
       await cursor.update(item);
     }
     cursor = await cursor.continue();
@@ -136,7 +133,7 @@ export async function upgradeDb<T extends DBSchema>(
   if (oldVersion === PREVIOUS_VERSION) {
     transaction.done.catch(() => {});
     try {
-      await moveBodiesOutOfItems(db, transaction);
+      await dropBodiesFromItems(db, transaction);
     } catch (error) {
       console.error('Database upgrade failed', error);
       try {
@@ -159,14 +156,17 @@ export function releaseForUpgrade(db: Pick<IDBPDatabase<RssReaderDB>, 'close'>, 
 export function getDb(): Promise<IDBPDatabase<RssReaderDB>> {
   if (!dbPromise) {
     const opened: Promise<IDBPDatabase<RssReaderDB>> = openDB<RssReaderDB>(DB_NAME, DB_VERSION, {
-      upgrade: upgradeDb,
-      blocked: () => setDbBlocked(true),
+      upgrade: (db, oldVersion, newVersion, transaction) => {
+        if (oldVersion !== 0) setDbStatus('upgrading');
+        return upgradeDb(db, oldVersion, newVersion, transaction);
+      },
+      blocked: () => setDbStatus('blocked'),
       blocking: () => {
         void opened.then((db) => releaseForUpgrade(db, () => globalThis.location.reload()));
       },
     });
     dbPromise = opened;
-    const settle = () => setDbBlocked(false);
+    const settle = () => setDbStatus('idle');
     opened.then(settle, settle);
   }
   return dbPromise;
