@@ -7,6 +7,7 @@ TBD - created by archiving change compact-sidebar-layout. Update Purpose after a
 ## Requirements
 
 ### Requirement: Heading row compact actions
+
 The sidebar SHALL render the Add feed and Refresh actions as compact icon buttons inside the Feeds heading row when at least one feed is subscribed. The buttons SHALL have accessible labels and SHALL behave identically to the current full-width actions.
 
 #### Scenario: Feeds heading shows compact actions
@@ -19,15 +20,17 @@ The sidebar SHALL render the Add feed and Refresh actions as compact icon button
 
 #### Scenario: Refreshing all feeds from the heading
 - **WHEN** the user activates the refresh icon button in the Feeds heading
-- **THEN** all feeds are refreshed
+- **THEN** all feeds are refreshed when All is selected
+- **AND** only the selected feed is refreshed when a feed is selected
+- **AND** only feeds matching the selected tags are refreshed when one or more tags are selected
 
 #### Scenario: Refresh in progress
-- **WHEN** a refresh is in progress
+- **WHEN** a manual refresh is in progress
 - **THEN** the refresh button is disabled and shows the spinning indicator
 
 #### Scenario: Buttons are accessible
 - **WHEN** the heading action buttons are rendered
-- **THEN** each button exposes an accessible name describing its action
+- **THEN** each button exposes an accessible name describing its action and current refresh scope
 
 ### Requirement: Fixed navigation zones
 The sidebar SHALL keep the Feeds heading row and the tag chips fixed while the feed list scrolls independently. The heading row and tag chips SHALL remain visible at all scroll positions of the feed list.
