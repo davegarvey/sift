@@ -1,7 +1,7 @@
 # release-push-guard Specification
 
 ## Purpose
-TBD - created by archiving change guard-release-process. Update Purpose after archive.
+Ensure only the automated release workflow creates release tags and pushes release branches, and document that policy for contributors and agents.
 ## Requirements
 ### Requirement: Tag creation restricted to workflow actors
 

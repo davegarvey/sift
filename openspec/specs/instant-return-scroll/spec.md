@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change instant-return-scroll. Update Purpose after archive.
+Return readers from an article to their previous position in the list instantly, without a visible scroll animation or a jump after data reloads.
 
 ## Requirements
 

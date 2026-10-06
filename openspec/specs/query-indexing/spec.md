@@ -1,7 +1,7 @@
 # query-indexing Specification
 
 ## Purpose
-TBD - created by archiving change fix-performance-at-scale. Update Purpose after archive.
+Keep unread and starred article lists fast with large libraries by querying them through IndexedDB indexes that stay in step with flag changes.
 
 ## Requirements
 

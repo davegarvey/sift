@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change optimistic-refresh-feedback. Update Purpose after archive.
+Confirm a manual refresh as soon as it is requested, and keep that confirmation visible until per-feed progress takes over, without showing it for background refreshes.
 
 ## Requirements
 

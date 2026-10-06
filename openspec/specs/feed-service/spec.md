@@ -1,7 +1,7 @@
 # feed-service Specification
 
 ## Purpose
-TBD - created by archiving change fix-feed-sync-enqueue. Update Purpose after archive.
+Route every subscribe and unsubscribe operation, whether from the UI, OPML import or MCP, through one service so local storage, sync queueing and refresh stay consistent, and newly paired devices show their feeds immediately.
 
 ## Requirements
 

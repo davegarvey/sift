@@ -1,7 +1,7 @@
 # codebase-cleanup Specification
 
 ## Purpose
-TBD - created by archiving change codebase-cleanup. Update Purpose after archive.
+Record the outcome of a cleanup pass so the removed code and corrected behaviours stay removed and corrected: proxy cache headers, cron time units, IndexedDB indexes, batched schema initialisation and dead OPML and sync code.
 
 ## Requirements
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change add-ghcr-publish. Update Purpose after archive.
+Publish a multi-architecture Sift container image to GitHub Container Registry from the release workflow, authenticated with the workflow token and using build caching.
 
 ## Requirements
 

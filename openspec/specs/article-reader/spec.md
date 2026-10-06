@@ -1,7 +1,7 @@
 # article-reader Specification
 
 ## Purpose
-TBD - created by archiving change mobile-reading-chrome. Update Purpose after archive.
+Keep articles readable in the reading view by fitting embedded media to the reading column, and by treating feed HTML that carries a `Source` link to the item's own article as partial content, so the full article is extracted instead.
 
 ## Requirements
 

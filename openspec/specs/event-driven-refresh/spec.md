@@ -1,7 +1,7 @@
 # event-driven-refresh Specification
 
 ## Purpose
-TBD - created by archiving change smart-refresh-strategy. Update Purpose after archive.
+Keep the article list current by reloading it when the background scheduler or sync delivers changes, without redundant reloads during a manual refresh or overlapping reloads.
 
 ## Requirements
 

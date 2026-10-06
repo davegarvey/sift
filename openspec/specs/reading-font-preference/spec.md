@@ -1,7 +1,7 @@
 # reading-font-preference Specification
 
 ## Purpose
-TBD - created by archiving change reading-font-preference. Update Purpose after archive.
+Let readers choose the typeface used for article text without changing brand elements or other settings.
 
 ## Requirements
 

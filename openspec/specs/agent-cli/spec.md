@@ -1,7 +1,7 @@
 # agent-cli Specification
 
 ## Purpose
-TBD - created by archiving change add-agent-access. Update Purpose after archive.
+Define `siftctl`, the command-line program that lets people and AI agents manage a Sift account through the sync API: pairing, reading status and statistics, adding, editing and removing feeds, listing items and marking them read, with a stable output and exit-code contract.
 
 ## Requirements
 

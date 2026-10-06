@@ -1,7 +1,7 @@
 # smart-visibility-refresh Specification
 
 ## Purpose
-TBD - created by archiving change smart-refresh-strategy. Update Purpose after archive.
+Avoid unnecessary refreshes when the tab regains visibility or the network reconnects, refreshing only after a meaningful absence and throttling repeated online events.
 
 ## Requirements
 

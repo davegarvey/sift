@@ -1,7 +1,7 @@
 # high-contrast-theme Specification
 
 ## Purpose
-TBD - created by archiving change improve-high-contrast. Update Purpose after archive.
+Offer a high-contrast mode, independent of the light or dark theme choice, that meets contrast requirements with a strengthened Catppuccin palette.
 ## Requirements
 ### Requirement: High contrast is an orthogonal toggle
 

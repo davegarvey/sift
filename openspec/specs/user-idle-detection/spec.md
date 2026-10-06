@@ -1,7 +1,7 @@
 # user-idle-detection Specification
 
 ## Purpose
-TBD - created by archiving change smart-refresh-strategy. Update Purpose after archive.
+Detect when the reader is idle or active from DOM activity events, so missed updates can be fetched when they return.
 
 ## Requirements
 

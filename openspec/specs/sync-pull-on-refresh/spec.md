@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change sync-pull-on-refresh. Update Purpose after archive.
+Make a manual refresh also pull remote sync state, so changes from other devices appear without waiting for the next scheduled sync.
 
 ## Requirements
 

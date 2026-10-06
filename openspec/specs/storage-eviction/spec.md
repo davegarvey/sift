@@ -1,7 +1,7 @@
 # storage-eviction Specification
 
 ## Purpose
-TBD - created by archiving change fix-performance-at-scale. Update Purpose after archive.
+Keep browser storage within quota by storing proxied image URLs instead of inline images, and evicting least-recently-used article content in batches under storage pressure while keeping item metadata.
 
 ## Requirements
 

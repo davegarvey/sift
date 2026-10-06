@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change compact-sidebar-layout. Update Purpose after archive.
+Define the sidebar's structure: compact add and refresh actions in the Feeds heading, fixed navigation zones around a scrollable feed list, and an add-feed prompt when there are no feeds.
 
 ## Requirements
 

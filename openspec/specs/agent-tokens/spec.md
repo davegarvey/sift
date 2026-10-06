@@ -1,7 +1,7 @@
 # agent-tokens Specification
 
 ## Purpose
-TBD - created by archiving change add-agent-access. Update Purpose after archive.
+Give AI agents scoped, revocable access to a Sift sync account without sharing the sync key, covering token minting, redemption, authentication, revocation, the pairing UI in Settings and the published OpenAPI document.
 
 ## Requirements
 
