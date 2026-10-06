@@ -17,7 +17,7 @@ import {
 } from './key';
 import { decodeItemId } from './itemId';
 import { markPullSuccess, markError } from './status';
-import type { Feed, Item } from '../db/types';
+import type { Feed, Item, ItemInput } from '../db/types';
 import { isItemSyncAvailable, isStatsSyncAvailable } from './capabilities';
 import { parsedItemToItem } from '../feeds/parse';
 
@@ -124,7 +124,7 @@ export async function runStatsPull(sinceOverride?: number): Promise<number | nul
   return next;
 }
 
-export function toServerItems(rows: readonly unknown[], localFeedIds: ReadonlySet<string>): Item[] {
+export function toServerItems(rows: readonly unknown[], localFeedIds: ReadonlySet<string>): ItemInput[] {
   return rows.flatMap((value) => {
     if (!value || typeof value !== 'object') return [];
     const row = value as Record<string, unknown>;
@@ -159,7 +159,7 @@ export async function runItemsPull(afterOverride?: number): Promise<number> {
   let inserted = 0;
   for (let page = 0; page < MAX_ITEM_PAGES_PER_PULL; page++) {
     const result = await pullItemsAfter(cursor);
-    const byFeed = new Map<string, Item[]>();
+    const byFeed = new Map<string, ItemInput[]>();
     for (const item of toServerItems(result.items, localFeedIds)) {
       const group = byFeed.get(item.feedId) ?? [];
       group.push(item);

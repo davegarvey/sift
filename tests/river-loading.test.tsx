@@ -9,6 +9,16 @@ import type { Feed, Item } from '../src/db/types';
 
 const ctxRef = vi.hoisted(() => ({ value: null as AppContext | null }));
 
+const dbBlock = vi.hoisted(() => ({ blocked: false, listeners: new Set<() => void>() }));
+
+vi.mock('../src/db/open', () => ({
+  isDbBlocked: () => dbBlock.blocked,
+  onDbBlockedChange: (listener: () => void) => {
+    dbBlock.listeners.add(listener);
+    return () => dbBlock.listeners.delete(listener);
+  },
+}));
+
 vi.mock('../src/state', () => ({
   useApp: () => {
     if (!ctxRef.value) throw new Error('test ctx not set');
@@ -127,7 +137,30 @@ describe('River loading vs empty state', () => {
     disposeCtx?.();
     disposeCtx = undefined;
     ctxRef.value = null;
+    dbBlock.blocked = false;
     vi.useRealTimers();
+  });
+
+  it('asks the reader to close other tabs while the database upgrade is blocked, then reverts', () => {
+    const m = createRoot((d) => {
+      disposeCtx = d;
+      return makeCtx();
+    });
+    ctxRef.value = m.ctx;
+
+    dispose = render(() => <River />, document.body);
+    vi.advanceTimersByTime(600);
+    expect(document.body.textContent).toContain('Loading');
+
+    dbBlock.blocked = true;
+    dbBlock.listeners.forEach((listener) => listener());
+    expect(document.body.textContent).toContain('Close other Sift tabs');
+    expect(document.body.textContent).not.toContain('Loading…');
+
+    dbBlock.blocked = false;
+    dbBlock.listeners.forEach((listener) => listener());
+    expect(document.body.textContent).toContain('Loading…');
+    expect(document.body.textContent).not.toContain('Close other Sift tabs');
   });
 
   it('shows the Welcome empty state once boot completes with zero feeds', () => {

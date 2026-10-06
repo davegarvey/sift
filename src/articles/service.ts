@@ -1,5 +1,5 @@
 import type { Item } from '../db/types';
-import { getItem, updateItem } from '../db/items';
+import { getItem, getItemBody, saveExtractedHtml, updateItem } from '../db/items';
 import { isPartialFeedContent } from '../feeds/parse';
 import { extractArticle } from './extract';
 
@@ -39,15 +39,15 @@ function processLinks(html: string, baseUrl?: string): string {
  * High-level "open an item in the reading view" service.
  *
  * Returns the HTML to render for the item's body, following the strategy:
- *  1. If the item already has cached extractedHtml, use it (text-only or
- *     inlined — the reading view can lazy-re-inline images on scroll).
- *  2. Otherwise, if the feed item has full `html` (full content in the
- *     feed itself), use that HTML directly. Mark firstOpenedAt.
+ *  1. If the feed item has full `html` (full content in the feed itself),
+ *     use that HTML directly.
+ *  2. Otherwise, if the item already has cached extractedHtml, use it.
  *  3. Otherwise (summary-only feed), call `extractArticle` and cache the
- *     result. On extraction failure, return null — the reading view will
- *     render the excerpt and an "Open ↗" link.
+ *     result in the body store. On extraction failure, return null — the
+ *     reading view will render the excerpt and an "Open ↗" link.
  *
- * Sets `firstOpenedAt = now` on first open so eviction can use it.
+ * Sets `firstOpenedAt = now` on first open. This is the only place that
+ * reads an item's body.
  */
 export async function openItemForReading(
   itemId: string,
@@ -66,16 +66,18 @@ export async function openItemForReading(
     await updateItem(item.id, { firstOpenedAt: Date.now() });
   }
 
+  const body = await getItemBody(item.id);
+
   // Path 1: feed included full content — prefer the feed's own HTML over
   // a cached Readability extraction (which may have been extracted from the
   // linked URL when the feed didn't provide full content at parse time).
-  if (item.html && item.html.length > 0 && !isPartialFeedContent(item.html, item.link)) {
-    return { bodyHtml: processLinks(item.html, item.link), extracted: true, extractionFailed: false };
+  if (body?.html && body.html.length > 0 && !isPartialFeedContent(body.html, item.link)) {
+    return { bodyHtml: processLinks(body.html, item.link), extracted: true, extractionFailed: false };
   }
 
   // Path 2: cached Readability extract.
-  if (item.extractedHtml != null && item.extractedHtml.length > 0) {
-    return { bodyHtml: processLinks(item.extractedHtml, item.link), extracted: true, extractionFailed: false };
+  if (body?.extractedHtml != null && body.extractedHtml.length > 0) {
+    return { bodyHtml: processLinks(body.extractedHtml, item.link), extracted: true, extractionFailed: false };
   }
 
   // Path 3: extract via Readability + proxy.
@@ -87,6 +89,6 @@ export async function openItemForReading(
   if (!result) {
     return { bodyHtml: item.excerpt, extracted: false, extractionFailed: true };
   }
-  await updateItem(item.id, { extractedHtml: result.html });
+  await saveExtractedHtml(item, result.html);
   return { bodyHtml: processLinks(result.html, item.link), extracted: true, extractionFailed: false };
 }
