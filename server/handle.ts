@@ -1,8 +1,9 @@
-import { Hono, type Env } from 'hono';
+import { Hono, type Env, type MiddlewareHandler } from 'hono';
 import {
   getUpstreamUrl,
   fetchUpstreamWithPolicy,
   fetchFeedCached,
+  cancelResponse,
   badRequest,
   badGateway,
 } from './fetch';
@@ -13,17 +14,20 @@ import { createSyncRoutes } from './sync/routes';
 
 export type AppEnv = Env;
 
-const REDIRECT_HEADERS = ['Location', 'Refresh', 'Content-Location'];
+const PROXY_CSP = "default-src 'none'; sandbox";
+const IMAGE_CSP = 'sandbox';
 
-function responseHeadersWithoutRedirects(response: Response): Headers {
-  const headers = new Headers(response.headers);
-  for (const name of REDIRECT_HEADERS) headers.delete(name);
-  return headers;
+function isolateProxyResponse(csp: string): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    c.res.headers.set('Content-Security-Policy', csp);
+    c.res.headers.set('X-Content-Type-Options', 'nosniff');
+  };
 }
 
 function proxyError(response: Response): Response {
-  const headers = new Headers({ 'Cache-Control': 'no-store' });
-  for (const name of ['Retry-After', 'X-Sift-Request-Source', 'X-Sift-Cache']) {
+  const headers = new Headers({ 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' });
+  for (const name of ['Retry-After', 'X-Sift-Retry-After', 'X-Sift-Request-Source', 'X-Sift-Cache']) {
     const value = response.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -45,6 +49,10 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
   }
   const mcpEnabled = relay !== undefined;
   const app = new Hono<E>();
+
+  app.use('/feed', isolateProxyResponse(PROXY_CSP));
+  app.use('/article', isolateProxyResponse(PROXY_CSP));
+  app.use('/img', isolateProxyResponse(IMAGE_CSP));
 
   /**
    * GET /feed?url=<encoded>
@@ -88,14 +96,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     }
 
     // For non-2xx (other than 304), return the upstream status to the client.
-    if (upstreamRes.status < 200 || upstreamRes.status >= 300) {
-      const headers = responseHeadersWithoutRedirects(upstreamRes);
-      headers.set('Cache-Control', 'no-store');
-      return new Response(upstreamRes.body, {
-        status: upstreamRes.status,
-        headers,
-      });
-    }
+    if (upstreamRes.status < 200 || upstreamRes.status >= 300) return proxyError(upstreamRes);
 
     const headers = new Headers();
     headers.set('Content-Type', 'application/xml; charset=utf-8');
@@ -147,8 +148,9 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
   /**
    * GET /img?url=<encoded>
    * Stateless single-shot image proxy: fetches an upstream image and pipes it
-   * back with its original Content-Type. Used by the browser to inline images
-   * as data: URIs in extracted article HTML. Never logs the URL.
+   * back with its original Content-Type. Non-image responses are refused. Used
+   * by the browser to inline images as data: URIs in extracted article HTML.
+   * Never logs the URL.
    */
   app.get('/img', async (c) => {
     const upstream = await getUpstreamUrl(c.req.url);
@@ -167,9 +169,14 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
     if (upstreamRes.status < 200 || upstreamRes.status >= 300) return proxyError(upstreamRes);
 
+    const contentType = upstreamRes.headers.get('Content-Type')?.trim();
+    if (!contentType || !/^image\//i.test(contentType)) {
+      void cancelResponse(upstreamRes);
+      return badGateway('Upstream response is not an image');
+    }
+
     const headers = new Headers();
-    const contentType = upstreamRes.headers.get('Content-Type');
-    if (contentType) headers.set('Content-Type', contentType);
+    headers.set('Content-Type', contentType);
     headers.set('Cache-Control', 'public, max-age=2592000, immutable');
     headers.set('X-Sift-Request-Source', upstreamRes.headers.get('X-Sift-Request-Source') ?? 'upstream');
     return new Response(upstreamRes.body, { status: upstreamRes.status, headers });

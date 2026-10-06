@@ -276,7 +276,7 @@ export async function getUpstreamUrl(reqUrl: string): Promise<string | null> {
   }
 }
 
-async function cancelResponse(response: Response): Promise<void> {
+export async function cancelResponse(response: Response): Promise<void> {
   try {
     await response.body?.cancel();
   } catch {
