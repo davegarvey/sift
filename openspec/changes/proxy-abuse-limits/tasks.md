@@ -21,6 +21,6 @@
 - [x] 4.3 Test that rejected requests make no upstream request and do not reach the origin governor.
 - [x] 4.4 Test the binding path, the fallback when the binding is absent or throws, and `X-Forwarded-For` handling.
 - [x] 4.5 Test declared and streamed oversize bodies, and bodies at the cap, for `/article` and `/img`.
-- [ ] 4.6 Run typecheck, lint, tests, build, spec validation and the smoke tests.
-- [ ] 4.7 In a browser, add feeds, refresh, open an image-heavy article and search without being limited.
-- [ ] 4.8 Validate the OpenSpec change with strict validation.
+- [x] 4.6 Run typecheck, lint, tests, build, spec validation and the smoke tests.
+- [x] 4.7 In a browser, add feeds, refresh, open an image-heavy article and search without being limited.
+- [x] 4.8 Validate the OpenSpec change with strict validation.
