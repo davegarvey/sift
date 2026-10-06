@@ -46,7 +46,7 @@ Sift — a simple, slick, browser-first RSS reader.
 
 ## OpenSpec
 
-Change artifacts live in `openspec/changes/`. Current change: `guard-release-process`.
-Specs (the WHAT) live in `openspec/changes/guard-release-process/specs/`. Design (the HOW) lives in `design.md`. Tasks are tracked in `tasks.md`.
+Each change lives in `openspec/changes/<change>/`: `proposal.md` (the why), `specs/` (the WHAT, as deltas against `openspec/specs/`), `design.md` (the HOW) and `tasks.md`. Several changes may be in progress at once; list them with `openspec list`.
+A change may start as a proposal alone. Add its specs and tasks before implementation, include the change in the implementing PR, and run `openspec validate <change> --strict`. After merge, archive it into `openspec/changes/archive/` so its deltas update `openspec/specs/`.
 
 If implementation requires a spec deviation, update the relevant spec or design artifact AND mention the divergence in the task summary.
