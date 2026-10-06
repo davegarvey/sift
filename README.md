@@ -126,7 +126,12 @@ request. Redirect destinations use the same policy. A valid upstream
 30-minute fallback, while headerless `419` responses back off for 6, 12, then
 24 hours. Other upstream errors use a 30-minute fallback capped at 24 hours.
 All proxy errors are `no-store`; `/img` uses immutable caching only for
-successful images. Response headers identify whether a response came from the
+successful images. Every proxy response, including errors, carries a
+sandboxing `Content-Security-Policy` and `X-Content-Type-Options: nosniff`, so
+proxied content opened directly runs in an opaque origin without scripts and
+cannot read Sift's storage. Error responses are plain text and never forward
+upstream headers, and `/img` refuses upstream responses that are not
+`image/*`. Response headers identify whether a response came from the
 upstream, a feed cache, a URL cooldown, an origin cooldown, or the local gate.
 
 The feed body cache is not part of sync or persistent storage. Cloudflare
