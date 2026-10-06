@@ -1,7 +1,7 @@
 # storage-eviction Specification
 
 ## Purpose
-Keep browser storage within quota by storing proxied image URLs instead of inline images, and evicting least-recently-used article content in batches under storage pressure while keeping item metadata.
+Keep browser storage within quota by storing proxied image URLs instead of inline images, and clearing extracted article HTML in batches, earliest-opened first, under storage pressure while keeping item metadata.
 
 ## Requirements
 
@@ -30,45 +30,45 @@ The `/img` proxy endpoint SHALL serve images with `Cache-Control: public, max-ag
 - **WHEN** the `/img` proxy responds to a request
 - **THEN** the response SHALL include `Cache-Control: public, max-age=2592000, immutable`
 
-### Requirement: Eviction is LRU-based under storage pressure
-Instead of age-based retention tiers, the eviction routine SHALL monitor total IndexedDB usage and drop `extractedHtml` from least-recently-accessed items when a soft cap is exceeded. The soft cap SHALL be derived from the browser's storage quota.
+### Requirement: Eviction clears the earliest-opened articles first under storage pressure
+Instead of age-based retention tiers, the eviction routine SHALL compare the origin's storage usage with a quota-based soft cap. When usage exceeds the cap, it SHALL set `extractedHtml` to null on items in ascending `firstOpenedAt` order until the length of the cleared HTML covers the excess. Order SHALL be by first open, not by most recent access. Items without `firstOpenedAt` SHALL be ordered after every opened item. The routine SHALL run after each scheduled feed refresh sweep.
 
 #### Scenario: Usage under soft cap — no eviction
-- **WHEN** total IndexedDB usage is below the soft cap
+- **WHEN** storage usage is at or below the soft cap
 - **THEN** no items SHALL have their `extractedHtml` dropped
 
-#### Scenario: Usage exceeds soft cap — oldest-accessed items are evicted
-- **WHEN** total IndexedDB usage exceeds the soft cap
-- **THEN** items SHALL be sorted by `firstOpenedAt` ascending and have their `extractedHtml` set to null, oldest first, until usage falls below the cap
+#### Scenario: Usage exceeds soft cap — earliest-opened items are evicted
+- **WHEN** storage usage exceeds the soft cap
+- **THEN** items with `extractedHtml` SHALL be sorted by `firstOpenedAt` ascending and have their `extractedHtml` set to null, earliest first, until the length of the cleared HTML covers the excess
 
-#### Scenario: Items never opened are evicted first
-- **WHEN** `firstOpenedAt` is null
-- **THEN** those items SHALL be treated as having the oldest access time and evicted first
+#### Scenario: Items without an open time are evicted last
+- **WHEN** an item with `extractedHtml` has no `firstOpenedAt`
+- **THEN** it SHALL be evicted only after every item that has a `firstOpenedAt`
 
 ### Requirement: Soft cap is quota-aware
-The eviction routine SHALL use `navigator.storage.estimate()` to determine the soft cap: `min(quota * 0.05, quota * 0.5)`. If the API is unavailable, a fixed fallback of 500 MB SHALL be used.
+The eviction routine SHALL use `navigator.storage.estimate()` and set the soft cap to 5% of the reported quota (`STORAGE_SOFT_CAP_RATIO`), with no further fixed maximum. When the Storage API is unavailable, or reports no quota or no usage, eviction SHALL NOT run.
 
 #### Scenario: Quota-aware cap on a high-storage device
 - **WHEN** a user's device provides a quota of 200 GB to the origin
-- **THEN** the soft cap SHALL be `min(200GB * 0.05, 200GB * 0.5)` = `min(10GB, 100GB)` = 10 GB, capped to a reasonable maximum
+- **THEN** the soft cap SHALL be 10 GB
 
 #### Scenario: Quota-aware cap on a low-storage device
 - **WHEN** a user's device provides a quota of 2 GB
-- **THEN** the soft cap SHALL be `min(2GB * 0.05, 2GB * 0.5)` = `min(100MB, 1GB)` = 100 MB
+- **THEN** the soft cap SHALL be 100 MB
 
-#### Scenario: Fallback when API unavailable
-- **WHEN** `navigator.storage.estimate()` is unavailable
-- **THEN** the soft cap SHALL default to 500 MB
+#### Scenario: Storage API unavailable
+- **WHEN** `navigator.storage.estimate()` is unavailable or reports no quota or usage
+- **THEN** no items SHALL have their `extractedHtml` dropped
 
 ### Requirement: Eviction writes are batched in chunks
-LRU eviction SHALL process items in chunks of 500 per readwrite transaction. If a chunk's transaction times out, it SHALL be retried on the next eviction tick.
+Eviction SHALL process items in chunks of 500 (`EVICTION_CHUNK_SIZE`) per readwrite transaction. If a chunk's transaction fails, that run SHALL stop; the next run SHALL recompute usage and candidates from the current state.
 
 #### Scenario: Chunked eviction
 - **WHEN** 1,200 items need `extractedHtml` dropped
 - **THEN** the items SHALL be processed in three chunks of 500, 500, and 200, each in a separate readwrite transaction
 
 ### Requirement: Eviction never drops item metadata
-LRU eviction SHALL only set `extractedHtml` to null. It SHALL NOT modify item metadata (title, excerpt, link, dates, read state, starred state, `item.html`, `itemFlags`), and SHALL NOT delete entire items from the database.
+Eviction SHALL only set `extractedHtml` to null. It SHALL NOT modify item metadata (title, excerpt, link, dates, read state, starred state, `item.html`, `itemFlags`), and SHALL NOT delete entire items from the database.
 
 #### Scenario: Metadata is preserved after eviction
 - **WHEN** an item's `extractedHtml` is dropped
