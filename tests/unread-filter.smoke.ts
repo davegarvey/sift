@@ -25,6 +25,24 @@ async function seed(page: Page) {
   await expect(page.locator('.river-item')).toHaveCount(3);
 }
 
+async function expectStoredReadMode(page: Page, mode: 'all' | 'unread') {
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open('sift');
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      const record = await new Promise<{ value?: { articleReadMode?: string } } | undefined>((resolve) => {
+        const request = db.transaction('meta').objectStore('meta').get('settings');
+        request.onsuccess = () => resolve(request.result);
+      });
+      return record?.value?.articleReadMode;
+    } finally {
+      db.close();
+    }
+  })).toBe(mode);
+}
+
 test('desktop filter persists, retains the opened row, restores neighbour focus and reaches caught up', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await seed(page);
@@ -33,6 +51,7 @@ test('desktop filter persists, retains the opened row, restores neighbour focus 
   await expect(filter).toHaveAttribute('aria-pressed', 'false');
   await filter.click();
   await expect(page.locator('.river-item')).toHaveCount(2);
+  await expectStoredReadMode(page, 'unread');
   await page.reload();
   await expect(filter).toHaveAttribute('aria-pressed', 'true');
   await page.locator('.river-item').first().click();
