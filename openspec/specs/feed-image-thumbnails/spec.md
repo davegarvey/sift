@@ -1,7 +1,7 @@
 # feed-image-thumbnails Specification
 
 ## Purpose
-TBD - created by archiving change fix-xkcd-comic-image. Update Purpose after archive.
+Give feed items a thumbnail when the feed provides only an inline image, without treating image-only summaries as full article content.
 
 ## Requirements
 

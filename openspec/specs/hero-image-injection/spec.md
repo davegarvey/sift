@@ -1,7 +1,7 @@
 # hero-image-injection Specification
 
 ## Purpose
-TBD - created by archiving change restore-hero-image-injection. Update Purpose after archive.
+Show an article's lead image when Readability extraction drops it, by capturing the page's Open Graph image before extraction and injecting it only when the extracted body has no images.
 
 ## Requirements
 

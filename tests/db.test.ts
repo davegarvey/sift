@@ -13,7 +13,6 @@ import {
   searchItems,
   deleteItemsByFeed,
 } from '../src/db/items';
-import { runEviction } from '../src/articles/eviction';
 import { getFlag, setFlag } from '../src/db/flags';
 import { getFeedStats, listReadMarkers } from '../src/db/stats';
 import type { Feed, Item } from '../src/db/types';

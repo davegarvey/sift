@@ -1,7 +1,7 @@
 # relative-time Specification
 
 ## Purpose
-TBD - created by archiving change add-relative-time. Update Purpose after archive.
+Format article dates as short relative times, such as minutes, hours or days ago, from ISO date strings.
 
 ## Requirements
 ### Requirement: Relative time formatting from ISO date string

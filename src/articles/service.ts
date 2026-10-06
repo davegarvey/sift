@@ -2,7 +2,6 @@ import type { Item } from '../db/types';
 import { getItem, updateItem } from '../db/items';
 import { isPartialFeedContent } from '../feeds/parse';
 import { extractArticle } from './extract';
-import { runEviction } from './eviction';
 
 function processLinks(html: string, baseUrl?: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -90,13 +89,4 @@ export async function openItemForReading(
   }
   await updateItem(item.id, { extractedHtml: result.html });
   return { bodyHtml: processLinks(result.html, item.link), extracted: true, extractionFailed: false };
-}
-
-/**
- * Triggered after a refresh sweep. Evicts stale extracted content per the
- * retention policy. Safe to call from the scheduler on each tick; no-op
- * when nothing needs to be evicted.
- */
-export async function runExtractionEviction(): Promise<void> {
-  await runEviction();
 }

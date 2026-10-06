@@ -48,6 +48,7 @@
     "dev": "vite",
     "lint": "eslint . --max-warnings=0",
     "preview": "vite preview",
+    "spec:validate": "npx --yes @fission-ai/openspec@1.13.0 validate --specs --strict --no-interactive",
     "start": "tsx server/node.ts",
     "test": "vitest run",
     "test:smoke": "playwright test",

@@ -1,7 +1,7 @@
 # feed-identity Specification
 
 ## Purpose
-TBD - created by archiving change stable-feed-ids. Update Purpose after archive.
+Give each subscription a stable ID that is independent of its URL, so items, read and starred state, sync and scheduling survive URL edits and converge on one canonical ID across devices.
 
 ## Requirements
 

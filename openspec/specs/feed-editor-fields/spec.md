@@ -1,7 +1,7 @@
 # feed-editor-fields Specification
 
 ## Purpose
-TBD - created by archiving change stable-feed-ids. Update Purpose after archive.
+Let readers correct a subscription's title and URL in the feed editor and have tag changes saved as they are made.
 
 ## Requirements
 

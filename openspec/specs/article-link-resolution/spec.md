@@ -1,7 +1,7 @@
 # article-link-resolution Specification
 
 ## Purpose
-TBD - created by archiving change resolve-article-links. Update Purpose after archive.
+Make links inside extracted articles work in the reader by resolving relative URLs against the article's address and opening them safely in a new tab.
 ## Requirements
 ### Requirement: Relative article links resolve to absolute URLs
 The system SHALL resolve relative `<a href>` values in article body HTML to absolute URLs using the article's canonical URL as the base.

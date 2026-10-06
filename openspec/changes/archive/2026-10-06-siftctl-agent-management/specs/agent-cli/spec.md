@@ -2,7 +2,7 @@
 
 ### Requirement: siftctl command surface
 
-The system SHALL provide a `siftctl` command-line program, published as an npm package with a `siftctl` bin, that operates against the hosted sync API (and, via a base-URL override, any Sift deployment). The command surface SHALL be: `pair <code>`, `status`, `feeds`, `feed add <url> [--title TITLE] [--tags TAG,...]`, `feed edit <url> (--title TITLE | --tags TAG,...)`, `feed remove <url> [--yes]`, `items <url> [--limit N]`, `mark read <itemId>`, and `help`. Unknown commands, missing required arguments, missing edit fields, and unexpected arguments SHALL exit with a usage error. Destructive commands SHALL require an explicit confirmation flag.
+The system SHALL provide a `siftctl` command-line program, published as an npm package with a `siftctl` bin, that operates against the hosted sync API (and, via a base-URL override, any Sift deployment). The command surface SHALL be: `pair <code>`, `status`, `feeds`, `stats`, `feed add <url> [--title TITLE] [--tags TAG,...]`, `feed edit <url> (--title TITLE | --tags TAG,...)`, `feed remove <url> [--yes]`, `items <url> [--limit N]`, `mark read <itemId>`, `help`, `--version`, and `-v`. Unknown commands, missing required arguments, missing edit fields, and unexpected arguments SHALL exit with a usage error. Destructive commands SHALL require an explicit confirmation flag. The version flags SHALL not require a token or network access.
 
 #### Scenario: Unknown command
 - **WHEN** the user runs `siftctl` with an unknown or malformed command
@@ -13,6 +13,11 @@ The system SHALL provide a `siftctl` command-line program, published as an npm p
 - **WHEN** the user runs `feed remove <url>` without `--yes`
 - **THEN** the program SHALL refuse and print the required flag
 - **AND** SHALL exit non-zero without contacting the server
+
+#### Scenario: Version does not require pairing
+- **WHEN** the user runs `siftctl --version` or `siftctl -v`
+- **THEN** the program SHALL print the installed package version to stdout
+- **AND** SHALL exit successfully without reading a token or contacting the server
 
 #### Scenario: Feed edit requires metadata
 - **WHEN** the user runs `feed edit <url>` without `--title` or `--tags`

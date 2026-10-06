@@ -1,7 +1,7 @@
 # search-performance Specification
 
 ## Purpose
-TBD - created by archiving change fix-performance-at-scale. Update Purpose after archive.
+Keep command-palette search and background polling responsive with large libraries by debouncing and cancelling searches, ignoring very short queries, using constant-time feed lookups and pausing polling while the tab is hidden.
 
 ## Requirements
 
