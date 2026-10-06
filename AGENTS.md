@@ -10,6 +10,7 @@ Sift — a simple, slick, browser-first RSS reader.
 - `npm run typecheck` — `tsc --noEmit` (zero errors required)
 - `npm run lint` — `eslint . --max-warnings=0`
 - `npm test` — `vitest run`
+- `npm run spec:validate` — strict validation of the main specs in `openspec/specs/` (runs in CI)
 - `npm run deploy` — `git pull --ff-only && vite build && wrangler d1 migrations apply sift-sync --remote && wrangler d1 migrations apply sift-poll --remote && wrangler deploy` (always deploy via this script — it pulls the latest before building and applies both D1 databases' migrations before the deploy). `npm run deploy:ci` is the same sequence without `git pull`, used as the Workers Builds deploy command.
 
 ## Architecture
@@ -20,7 +21,7 @@ Sift — a simple, slick, browser-first RSS reader.
 - Storage: IndexedDB via the `idb` wrapper. Schema lives in `src/db/types.ts`.
 - UI: SolidJS. Vue/React-free. JSX with `jsxImportSource: solid-js`.
 - Styling: plain CSS keyed off Catppuccin Latte (light) / Mocha (dark). Reserve the Catppuccin Mauve accent for unread + selection only.
-- Article extraction: `@mozilla/readability` against the `/article?url=` proxy. Images inlined as `data:` URIs (via `/img?url=`) and stored on the item record. Storage eviction: 7-day full retention, 30-day text-only, evict under storage pressure.
+- Article extraction: `@mozilla/readability` against the `/article?url=` proxy. Extracted HTML keeps images as `/img?url=` proxy URLs, which the browser caches for 30 days, rather than inlining them. Storage eviction: when IndexedDB usage exceeds a quota-based soft cap, clear `extractedHtml` from the earliest-opened articles first; item metadata and read/starred state are never evicted.
 - Server-side feed polling uses a separate `sift-poll` D1 binding (`POLL_DB`) and migrations in `server/migrations-poll/`; it is enabled only when `FEED_POLLING = "true"` and the binding exists. It retains items for 7 days, polls at most 500 feeds per account, and pauses above `POLL_DB_MAX_BYTES` (8 GiB by default). Polling stores complete feed URLs, including credentials embedded in private-feed URLs.
 
 ## Conventions
@@ -46,7 +47,7 @@ Sift — a simple, slick, browser-first RSS reader.
 
 ## OpenSpec
 
-Change artifacts live in `openspec/changes/`. Current change: `guard-release-process`.
-Specs (the WHAT) live in `openspec/changes/guard-release-process/specs/`. Design (the HOW) lives in `design.md`. Tasks are tracked in `tasks.md`.
+Each change lives in `openspec/changes/<change>/`: `proposal.md` (the why), `specs/` (the WHAT, as deltas against `openspec/specs/`), `design.md` (the HOW) and `tasks.md`. Several changes may be in progress at once; list them with `openspec list`.
+A change may start as a proposal alone. Add its specs and tasks before implementation, include the change in the implementing PR, and run `openspec validate <change> --strict`. After merge, archive it into `openspec/changes/archive/` so its deltas update `openspec/specs/`.
 
 If implementation requires a spec deviation, update the relevant spec or design artifact AND mention the divergence in the task summary.

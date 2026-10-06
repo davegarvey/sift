@@ -1,7 +1,7 @@
 # reading-chrome-title Specification
 
 ## Purpose
-TBD - created by archiving change reading-chrome-title. Update Purpose after archive.
+Show the current article's title in the reading chrome and the browser tab, truncated cleanly and aligned with the reading column.
 
 ## Requirements
 

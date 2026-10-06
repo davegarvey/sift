@@ -1,7 +1,7 @@
 # release-ci-pipeline Specification
 
 ## Purpose
-TBD - created by archiving change fix-release-workflow. Update Purpose after archive.
+Define when CI and container publishing run, so pull requests are tested, images are published only for release tags with code changes, and release tags are created only after the release PR merges.
 
 ## Requirements
 

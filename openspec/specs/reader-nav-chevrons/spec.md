@@ -1,7 +1,7 @@
 # reader-nav-chevrons Specification
 
 ## Purpose
-TBD - created by archiving change reader-nav-chevrons. Update Purpose after archive.
+Let readers move between articles from the reading view with previous and next controls on desktop and mobile, within simplified reading chrome that shows the feed name and a relative date.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # qr-scanner Specification
 
 ## Purpose
-TBD - created by archiving change add-qr-scanner. Update Purpose after archive.
+Let readers pair a new device for sync by scanning a QR code or entering a code manually, with the sharing device showing a code and how long it remains valid.
 
 ## Requirements
 

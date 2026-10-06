@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change fix-feed-editor-tags. Update Purpose after archive.
+Make tag editing in the feed editor reliable: immediate feedback, debounced persistence that survives closing and reopening the editor, current suggestions and no unexpected focus changes.
 
 ## Requirements
 

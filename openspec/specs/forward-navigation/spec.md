@@ -1,7 +1,7 @@
 # forward-navigation Specification
 
 ## Purpose
-TBD - created by archiving change fix-forward-navigation. Update Purpose after archive.
+Keep browser forward navigation consistent with back navigation by restoring the reading view for the article being returned to.
 
 ## Requirements
 

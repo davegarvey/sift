@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change all-builtin-tag. Update Purpose after archive.
+Provide a built-in, reserved `all` tag as the single way to show every subscribed feed, replacing the separate All Feeds sidebar row while leaving tag filtering otherwise unchanged.
 
 ## Requirements
 

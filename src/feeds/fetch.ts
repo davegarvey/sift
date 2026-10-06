@@ -95,34 +95,3 @@ export async function fetchArticleHtml(url: string): Promise<string | null> {
     return null;
   }
 }
-
-/**
- * Fetch an upstream image via the `/img?url=` proxy and return it as a
- * `data:` URI suitable for inlining in article HTML.
- */
-export async function fetchImageAsDataUri(url: string): Promise<string | null> {
-  const proxyUrl = `/img?url=${encodeURIComponent(url)}`;
-  try {
-    const res = await fetch(proxyUrl);
-    if (!res.ok) {
-      console.warn('fetchImageAsDataUri: HTTP', res.status, 'for', url);
-      return null;
-    }
-    const blob = await res.blob();
-    const buf = await blob.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let bin = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    }
-    const base64 = btoa(bin);
-    const type = blob.type;
-    return type
-      ? `data:${type};base64,${base64}`
-      : `data:;base64,${base64}`;
-  } catch (err) {
-    console.warn('fetchImageAsDataUri: network error for', url, err);
-    return null;
-  }
-}

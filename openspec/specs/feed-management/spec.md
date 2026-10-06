@@ -1,7 +1,7 @@
 # feed-management Specification
 
 ## Purpose
-TBD - created by archiving change paste-triggered-discover. Update Purpose after archive.
+Make adding a feed quick by starting feed discovery as soon as a URL is pasted into the Add Feed input.
 
 ## Requirements
 
