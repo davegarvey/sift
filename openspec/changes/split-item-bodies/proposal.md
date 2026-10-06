@@ -14,7 +14,9 @@ Size-based eviction of `extractedHtml` would also need rewriting to work across 
 
 - **Add an `itemBodies` object store** keyed by article ID, holding `feedId`, `html` and `extractedHtml`, with a `by-feed-id` index.
 - **Remove `html` and `extractedHtml` from the `items` store and the `Item` type.** List, search, unread, starred and refresh queries then read only article metadata.
-- **Migrate in the version 10 upgrade.** Move every existing body into `itemBodies` and strip it from the article record within the version-change transaction, streaming with a cursor rather than loading all articles into memory. After the upgrade, code reads only the new layout; there is no fallback to bodies on article records.
+- **Make version 10 the schema baseline.** Replace the accumulated upgrade steps (versions 2 to 9) with one baseline: a new database is created directly in the version 10 layout; a version 9 database is migrated once by moving every body into `itemBodies` and stripping it from the article record, streaming with a cursor within the version-change transaction; a database older than version 9 is deleted and recreated empty. Version 9 has been current since 31 August 2026 and installed clients update automatically, so only a client unopened since then loses local data, which sync restores if enabled. After the upgrade, code reads only the new layout; there is no fallback to bodies on article records.
+- **No migration UI.** The upgrade runs once while the database opens, during which the app shows its existing loading state. There is no modal or progress indicator.
+- **Release the database for upgrades in other tabs.** Add a `blocking` handler that closes the connection and reloads the page when a newer version needs to upgrade, and a `blocked` handler that changes the loading message to ask the reader to close other Sift tabs. Tabs already running version 9 have no `blocking` handler, so the first upgrade relies on that message.
 - **Write bodies alongside articles.** `bulkUpsertItems` writes metadata and bodies in the same transaction, for browser refreshes, the add-feed flow and sync item pulls. A fetched entry with feed HTML replaces the stored `html` and clears `extractedHtml`, as today.
 - **Read bodies on open.** `openItemForReading` reads the article's body by ID, applies the existing order (feed HTML unless partial, then cached extraction, then a new extraction) and stores new extractions in `itemBodies`.
 - **Delete bodies with their articles**, including when a feed is unsubscribed.
@@ -33,12 +35,11 @@ Size-based eviction of `extractedHtml` would also need rewriting to work across 
 
 ## Impact
 
-`src/db/types.ts`, `src/db/open.ts` (version 10 schema and migration), `src/db/items.ts` (writes, merges, deletion), `src/articles/service.ts`, `src/sync/merge.ts`, `src/components/AddFeedModal.tsx` (through `bulkUpsertItems`), `src/feeds/scheduler.ts`, `src/articles/eviction.ts` (removed), tests constructing `Item` values with bodies, the migration tests, and the `AGENTS.md` architecture note. The parser's partial-content check runs on parsed entries before storage and is unchanged. No server changes and no new dependencies.
+`src/db/types.ts`, `src/db/open.ts` (version 10 baseline, migration from version 9, and `blocked`/`blocking` handlers), the loading message in `src/components/River.tsx`, `src/db/items.ts` (writes, merges, deletion), `src/articles/service.ts`, `src/sync/merge.ts`, `src/components/AddFeedModal.tsx` (through `bulkUpsertItems`), `src/feeds/scheduler.ts`, `src/articles/eviction.ts` (removed), tests constructing `Item` values with bodies, the historical migration tests in `tests/date-fallbacks.test.ts` (replaced by baseline creation, version 9 migration and pre-version 9 reset tests), and the `AGENTS.md` architecture note. The parser's partial-content check runs on parsed entries before storage and is unchanged. No server changes and no new dependencies.
 
 ## Open questions
 
-- **Upgrade duration.** The migration runs in one version-change transaction, which blocks the database opening until it completes. A library of tens of thousands of articles should take seconds; this should be measured against a large generated library before release.
-- **Historical upgrade steps.** `upgradeDb` still carries steps from version 2 onwards. Since installed clients update automatically, those steps could be collapsed in a separate cleanup, recreating the database for any client older than version 9.
+None. The upgrade's duration on a large library should be measured during implementation, but no special handling is planned.
 
 ## Non-goals
 
