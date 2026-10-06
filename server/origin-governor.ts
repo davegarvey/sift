@@ -76,7 +76,7 @@ function stateFor(origin: string): RuntimeOriginState {
   return state;
 }
 
-function diagnostic(event: string, fields: Record<string, string | number | null>): void {
+export function diagnostic(event: string, fields: Record<string, string | number | null>): void {
   console.info(JSON.stringify({ event: `upstream_policy.${event}`, ...fields }));
 }
 

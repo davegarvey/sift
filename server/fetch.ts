@@ -121,7 +121,7 @@ function isDeniedIpv4(v: number): boolean {
   return false;
 }
 
-function ipv6Groups(s: string): number[] | null {
+export function ipv6Groups(s: string): number[] | null {
   let t = s.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0];
   if (t.includes('.')) return null;
   const z = t.indexOf('::');
