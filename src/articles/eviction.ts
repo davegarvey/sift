@@ -37,6 +37,7 @@ export async function runEviction(): Promise<void> {
     const chunk = candidates.slice(i, i + EVICTION_CHUNK_SIZE);
     const tx = db.transaction('items', 'readwrite');
     for (const item of chunk) {
+      if (bytesToFree <= 0) break;
       if (item.extractedHtml == null) continue;
       bytesToFree -= item.extractedHtml.length;
       await tx.store.put({ ...item, extractedHtml: null, id: item.id });
