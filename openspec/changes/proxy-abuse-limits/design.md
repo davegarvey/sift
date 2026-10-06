@@ -36,7 +36,7 @@ Chosen limits, per client address in a 60-second window:
 
 | Budget | Endpoints | Limit | Margin |
 | --- | --- | --- | --- |
-| fetch | `/feed`, `/article` | 2000 | 4 full refreshes of 500 feeds, or a 1000-feed import plus a full refresh |
+| fetch | `/feed`, `/article` | 2000 | 4 full refreshes of 500 feeds, or a 1000-feed import plus a 500-feed refresh |
 | image | `/img` | 600 | 3 articles of 200 images, or 6 of 100 |
 
 The feed and article budget is shared because both are server-side fetches of pages and are user-paced outside refreshes. Images have their own budget so an image-heavy article cannot starve a refresh, and a refresh cannot starve images. Sixty seconds is used instead of Cloudflare's other supported period, 10 seconds, because a 10-second window would have to be sized for the fastest possible burst and would either reject real refreshes or be too generous to mean anything.
