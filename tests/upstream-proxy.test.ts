@@ -67,3 +67,83 @@ describe('upstream proxy redirect boundary', () => {
     expect(response.headers.get('X-Sift-Request-Source')).toBe('upstream');
   });
 });
+
+describe('upstream proxy response isolation', () => {
+  const PAGE_CSP = "default-src 'none'; sandbox";
+
+  function proxied(endpoint: string, path: string): string {
+    return `${endpoint}?url=${encodeURIComponent(`${PUBLIC_ORIGIN}${path}`)}`;
+  }
+
+  function expectIsolated(response: Response, csp: string): void {
+    expect(response.headers.get('Content-Security-Policy')).toBe(csp);
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  }
+
+  it('sandboxes successful feed and article responses', async () => {
+    vi.stubGlobal('fetch', (async () => new Response('<html><script>alert(1)</script></html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    })) as typeof globalThis.fetch);
+
+    const feed = await createApp().request(proxied('/feed', '/feed.xml'));
+    expect(feed.status).toBe(200);
+    expectIsolated(feed, PAGE_CSP);
+
+    const article = await createApp().request(proxied('/article', '/page.html'));
+    expect(article.status).toBe(200);
+    expect(article.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+    expectIsolated(article, PAGE_CSP);
+  });
+
+  it('sandboxes successful image responses', async () => {
+    vi.stubGlobal('fetch', (async () => new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', {
+      status: 200,
+      headers: { 'Content-Type': 'image/svg+xml' },
+    })) as typeof globalThis.fetch);
+
+    const response = await createApp().request(proxied('/img', '/image.svg'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/svg+xml');
+    expectIsolated(response, 'sandbox');
+  });
+
+  it.each([
+    ['HTML', { 'Content-Type': 'text/html' }],
+    ['binary', { 'Content-Type': 'application/octet-stream' }],
+    ['untyped', {}],
+  ])('refuses %s image responses', async (_label, headers: Record<string, string>) => {
+    const body = new TextEncoder().encode('<script>alert(1)</script>');
+    vi.stubGlobal('fetch', (async () => new Response(body, { status: 200, headers })) as typeof globalThis.fetch);
+
+    const response = await createApp().request(proxied('/img', '/image.png'));
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(await response.text()).toBe('Upstream response is not an image');
+    expectIsolated(response, 'sandbox');
+  });
+
+  it('does not forward upstream content headers on error responses', async () => {
+    vi.stubGlobal('fetch', (async () => new Response('<script>alert(1)</script>', {
+      status: 404,
+      headers: { 'Content-Type': 'text/html', 'Set-Cookie': 'session=attacker' },
+    })) as typeof globalThis.fetch);
+
+    for (const [endpoint, csp] of [['/feed', PAGE_CSP], ['/article', PAGE_CSP], ['/img', 'sandbox']] as const) {
+      const response = await createApp().request(proxied(endpoint, `${endpoint}-missing`));
+      expect(response.status).toBe(404);
+      expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+      expect(response.headers.get('Set-Cookie')).toBeNull();
+      expectIsolated(response, csp);
+    }
+  });
+
+  it('sandboxes locally generated failures', async () => {
+    const response = await createApp().request('/article?url=not-a-url');
+
+    expect(response.status).toBe(400);
+    expectIsolated(response, PAGE_CSP);
+  });
+});
