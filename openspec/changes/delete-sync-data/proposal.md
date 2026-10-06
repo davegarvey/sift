@@ -8,8 +8,8 @@ The hosted instance stores sync data for anyone who enables sync, but no route d
 - Remove the deleted account's feed URLs from polling. The poll registry is rebuilt daily from active accounts; deletion should also take effect immediately where practical, without deleting shared `polled_feeds` rows still needed by other accounts.
 - Add a "Delete sync data" action to the settings drawer, behind a danger confirmation that states the effect on other paired devices. On success it disables sync locally and leaves local reading data untouched.
 - Correct the disable-sync confirmation, which currently says server data is kept "until you generate a new key"; rotation does not delete it.
-- Add retention to the daily cron, using the existing `users.last_active_at` and `users.rotated_at` columns: delete accounts with no sync activity for a fixed period (proposed: 12 months), and delete rotated-away accounts and their rows after a short grace period that lets paired devices move to the new key.
-- Expose the deletion and retention behaviour to agent tooling only if `siftctl` needs it; otherwise leave it browser-only.
+- Add retention to the daily cron, using the existing `users.last_active_at` and `users.rotated_at` columns: delete accounts with no sync activity for a fixed period (proposed: 12 months), and delete rotated-away accounts and their rows after a 30-day grace period.
+- Keep deletion browser-only: `siftctl` needs no change.
 
 ## Capabilities
 
@@ -24,12 +24,14 @@ None.
 
 ## Impact
 
-`server/sync/routes.ts`, `server/sync/cron.ts`, `server/poll-registry.ts`, `src/state.tsx`, `src/components/SettingsDrawer.tsx`, the OpenAPI document in `public/openapi.json`, README and tests. No new dependencies.
+`server/sync/routes.ts`, `server/sync/account.ts`, `server/sync/cron.ts`, `server/poll-registry.ts`, `server/sync/local-d1.ts`, migration `0010`, `src/sync/client.ts`, `src/sync/status.ts`, `src/components/SettingsDrawer.tsx`, the OpenAPI document in `public/openapi.json`, README and tests. No new dependencies.
 
-## Open questions
+## Decisions
 
-- The inactivity period. Twelve months is proposed; it must appear in the privacy policy.
-- Whether paired devices that still hold the deleted key should see a specific "account deleted" state rather than a generic sync error.
+- Inactive accounts are deleted after 12 months (365 days) without sync activity, measured from `last_active_at` and falling back to `created_at`. The privacy policy must state this period.
+- Rotated-away accounts are deleted 30 days after rotation. Devices never adopt a rotated key automatically, so the period is a grace period before erasure and not a window for migration (see `design.md`).
+- Devices that still hold a deleted key get no dedicated screen. They fail once with a clear message and stop automatic retries.
+- `siftctl` is unchanged; deletion is browser-only.
 
 ## Non-goals
 
