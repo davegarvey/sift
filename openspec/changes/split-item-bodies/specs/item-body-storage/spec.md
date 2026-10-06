@@ -21,32 +21,58 @@ The database SHALL have an `itemBodies` object store keyed by article ID, holdin
 
 #### Scenario: Version 9 database
 - **WHEN** a version 9 database is opened
-- **THEN** it SHALL be upgraded to version 10 with every body moved to `itemBodies` and article flags, read markers, feed statistics and settings unchanged
+- **THEN** it SHALL be upgraded to version 10 with an empty `itemBodies` store and no `html` or `extractedHtml` on any article record
+- **AND** article flags, read markers, feed statistics and settings SHALL be unchanged
 
 #### Scenario: Database older than version 9
 - **WHEN** a database at any version from 1 to 8 is opened
 - **THEN** every object store SHALL be deleted and the version 10 layout SHALL be created empty
 
-### Requirement: The version 9 migration streams within one transaction
-The migration SHALL run inside the version-change transaction and SHALL walk `items` with a cursor, holding at most one article record at a time rather than loading the library into memory. For each record with `html` or `extractedHtml` it SHALL write a body record and rewrite the article record without those fields. If the migration fails, the transaction SHALL abort and the database SHALL remain at version 9.
+### Requirement: The version 9 upgrade drops bodies within one transaction
+The upgrade SHALL run inside the version-change transaction and SHALL walk `items` with a cursor, holding at most one article record at a time rather than loading the library into memory. For each record with `html` or `extractedHtml` it SHALL rewrite the article record without those fields. It SHALL NOT write any record to `itemBodies`, because reading every stored body to copy it takes about 2.5 times as long as stripping it (75.5 s against 29.7 s on a library of 30,000 articles). If the upgrade fails, the transaction SHALL abort and the database SHALL remain at version 9.
 
-#### Scenario: Bodies move and records are stripped
+#### Scenario: Bodies are dropped and records are stripped
 - **WHEN** a version 9 article has `html` and `extractedHtml`
-- **THEN** after the upgrade its `itemBodies` record SHALL hold both values and its `items` record SHALL hold neither
+- **THEN** after the upgrade its `items` record SHALL hold neither
+- **AND** `itemBodies` SHALL hold no record for it
 
 #### Scenario: Article without bodies
 - **WHEN** a version 9 article has no `html` and a null `extractedHtml`
-- **THEN** after the upgrade `itemBodies` SHALL hold no record for it and its article record SHALL be otherwise unchanged
+- **THEN** after the upgrade its article record SHALL be otherwise unchanged
 
-### Requirement: The upgrade has no migration interface
-The app SHALL NOT show a modal or progress indicator for the upgrade. While the database opens, the app SHALL show its existing loading state.
+#### Scenario: Failed upgrade
+- **WHEN** the upgrade throws
+- **THEN** the transaction SHALL abort and reopening at version 9 SHALL find every article record unchanged, bodies included
+
+### Requirement: Dropped bodies are recovered on refresh or first open
+An article without a body record SHALL be handled as any article without a body. A fetched entry with feed HTML SHALL write a body for an article that is still in its feed. `openItemForReading` SHALL extract any other article from its link and store the extraction. When extraction fails, it SHALL return the article's excerpt and report the failure.
+
+#### Scenario: Refresh restores feed HTML
+- **WHEN** a feed refresh includes an article upgraded from version 9 and the entry has feed HTML
+- **THEN** the article SHALL have a body record holding that HTML
+
+#### Scenario: First open extracts again
+- **WHEN** an article upgraded from version 9 with no body is opened and extraction succeeds
+- **THEN** the extraction SHALL be stored in `itemBodies` and returned for display
+
+#### Scenario: First open offline
+- **WHEN** an article upgraded from version 9 with no body is opened and extraction fails
+- **THEN** the excerpt SHALL be returned and the failure reported
+
+### Requirement: The upgrade shows a loading message and no other interface
+While the database upgrade of an existing database runs, the river's loading message SHALL read "Updating your library…". The app SHALL NOT show a modal or progress indicator for the upgrade. The message SHALL be removed when the database open settles, whether it succeeds or fails. Creating a new database SHALL NOT change the loading message.
 
 #### Scenario: Upgrade during boot
-- **WHEN** the database upgrade is running at boot
-- **THEN** the river SHALL show its existing loading message and no other upgrade interface
+- **WHEN** an existing database is being upgraded at boot
+- **THEN** the river SHALL show "Updating your library…" and no other upgrade interface
+- **AND** the normal loading message SHALL return once the database opens
+
+#### Scenario: New database
+- **WHEN** the database does not exist at boot
+- **THEN** the loading message SHALL NOT change to the upgrade message
 
 ### Requirement: Tabs release the database for upgrades
-When a connection receives a `versionchange` request from a newer version, the `blocking` handler SHALL close the connection and reload the page. When an open request waits on connections in other tabs, the `blocked` handler SHALL change the river's loading message to ask the reader to close other Sift tabs, and the message SHALL revert when the database opens.
+When a connection receives a `versionchange` request from a newer version, the `blocking` handler SHALL close the connection and reload the page. When an open request waits on connections in other tabs, the `blocked` handler SHALL change the river's loading message to ask the reader to close other Sift tabs. The blocked message SHALL take precedence over the upgrade message, and the upgrade message SHALL replace it once the upgrade starts.
 
 #### Scenario: A newer version needs this tab's connection
 - **WHEN** another tab requests a newer database version while this tab holds an open connection
@@ -55,7 +81,7 @@ When a connection receives a `versionchange` request from a newer version, the `
 #### Scenario: Upgrade is blocked by another tab
 - **WHEN** the database open is blocked by connections in other tabs that have no `blocking` handler
 - **THEN** the loading message SHALL ask the reader to close other Sift tabs
-- **AND** the message SHALL revert to the normal loading message once the open completes
+- **AND** the message SHALL change to the upgrade message once the other tabs close and the upgrade starts, and to the normal loading message once the open completes
 
 ### Requirement: Writes store articles and bodies in one transaction
 `bulkUpsertItems` SHALL accept entries that carry `html` and SHALL write article records, flags, statistics and body records in a single transaction, for browser refreshes, the add-feed flow and sync item pulls. A fetched entry with feed HTML SHALL replace the stored `html` and clear any stored `extractedHtml`. A fetched entry without feed HTML SHALL leave the stored body unchanged. With `insertOnly`, an article that already exists SHALL be skipped, including its body.
