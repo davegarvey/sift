@@ -342,6 +342,23 @@
         }
       }
     },
+    "/sync/account": {
+      "delete": {
+        "summary": "Delete the account and all its server-side data (master-key only)",
+        "description": "Deletes the user row and every row keyed by the sync key in one transaction: feeds (including tombstones), flags, feed statistics, agent tokens, pairing codes and the per-key rate-limit counters. Agent tokens and pairing codes stop working immediately, and when server polling is enabled, polled feed URLs and items that no other account subscribes to are removed. A repeat request returns 401 because the key no longer exists. Agent tokens are rejected with 401.",
+        "responses": {
+          "204": {
+            "description": "Account deleted"
+          },
+          "401": {
+            "description": "Invalid, unknown (including already deleted) or token credential"
+          },
+          "429": {
+            "description": "Rate limited (10 per hour per sync key)"
+          }
+        }
+      }
+    },
     "/sync/otp": {
       "post": {
         "summary": "Mint a device pairing code (master-key only)",
