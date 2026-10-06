@@ -126,6 +126,50 @@ When sync is enabled, the Sync section of Settings SHALL offer a "Delete sync da
 - **WHEN** the user enables sync after deleting sync data
 - **THEN** a new sync key SHALL be generated and registered
 
+### Requirement: Regeneration rotates the key and preserves local state
+
+Regenerating the sync key (without disabling sync) SHALL preserve the local dirty set and `lastSyncAt`. The user wants continuity of state across the regeneration. The client SHALL store the new key locally and then call `POST /sync/rotate` with the old key in the `X-Sync-Key` header and the new key in the body. The server registers the new key and marks the old key's account rotated in one batch. A `401` is never recovered by registering: a key the server rejects stays rejected, and the client handles it as defined by the requirement "A rejected sync key is not retried".
+
+#### Scenario: User regenerates the key
+- **WHEN** the user clicks "Regenerate" and confirms
+- **THEN** the system SHALL generate a new sync key
+- **AND** SHALL replace the local sync key
+- **AND** SHALL preserve the dirty set
+- **AND** SHALL preserve `lastSyncAt`
+- **AND** SHALL call `POST /sync/rotate`, which registers the new key and rotates the old one, so that the next push or pull with the new key is authenticated
+
+#### Scenario: Rotation request fails
+- **WHEN** the user regenerates the key and `POST /sync/rotate` fails
+- **THEN** the new key SHALL remain stored locally and the failure SHALL be logged with `console.error`
+- **AND** the new key SHALL NOT be registered by any automatic retry
+- **AND** the next sync request SHALL receive `401` and SHALL be handled as a rejected sync key
+
+#### Scenario: 401 is not auto-registered
+- **WHEN** the server returns `401` for a sync request
+- **THEN** the client SHALL NOT call `POST /sync/register` and SHALL NOT retry the request
+- **AND** the only client paths that register a key are enabling sync, pairing, issuing a pairing code and rotation, each an explicit user action
+
+### Requirement: Rotation revokes a lost or stolen device's key
+
+The system SHALL provide no key revocation other than rotation. The only remediation for a stolen device is to regenerate the key on a trusted device and pair the other devices again. Rotation SHALL take effect at once: the server SHALL reject the old key and every agent token minted under it with `401`, and `POST /sync/register` SHALL refuse to register the old key while its rotated account exists (`403`). Rotation does not move data; the old account's rows stay on the server, unreadable through the API, until the daily cron deletes them 30 days after rotation.
+
+#### Scenario: User regenerates key after device loss
+- **WHEN** the user opens Settings on a trusted device
+- **AND** clicks "Regenerate" and confirms
+- **THEN** a new sync key SHALL be generated
+- **AND** the new key SHALL be stored locally and registered on the server
+- **AND** no data SHALL be migrated from the old account to the new one on the server
+
+#### Scenario: Stolen device's key is rejected after rotation
+- **WHEN** a stolen device presents the previous sync key after rotation
+- **THEN** the server SHALL respond `401` to push, pull and every other authenticated route
+- **AND** agent tokens minted under the old key SHALL be rejected with `401`
+- **AND** the Settings UI SHALL state, on the regenerate confirmation, that regenerating the key is the only way to revoke a lost or stolen device's access
+
+#### Scenario: Old account is erased after the grace period
+- **WHEN** 30 days have passed since the rotation
+- **THEN** the daily cron SHALL delete the old account and its rows, as defined by the requirement "Retention of rotated and inactive accounts"
+
 ## MODIFIED Requirements
 
 ### Requirement: Sync status UI in Settings
@@ -158,3 +202,13 @@ The Settings panel SHALL include a Sync section, conditionally rendered when the
 - **AND** the dialog SHALL tell the user to cancel and use "Delete sync data" first if they want the server data deleted, because this device no longer holds the key afterwards
 - **AND** the dialog SHALL NOT say that generating a new key keeps or removes the server data
 - **AND** SHALL only clear the local sync key and the dirty set on explicit confirmation
+
+## REMOVED Requirements
+
+### Requirement: Regenerate preserves dirty set
+**Reason**: It required the client to register the new key lazily and to auto-register on a 401. The client does neither: `POST /sync/rotate` registers the new key, and a 401 is final. Replaced by "Regeneration rotates the key and preserves local state".
+**Migration**: None; the behaviour already shipped. Preserving the dirty set and `lastSyncAt` is retained in the replacement.
+
+### Requirement: Stolen device recovery via key regeneration
+**Reason**: It said the server keeps accepting the old key and orphans its data. Since rotation shipped, the server rejects the old key and its agent tokens at once, and the old data is now deleted after 30 days. Replaced by "Rotation revokes a lost or stolen device's key".
+**Migration**: None; the behaviour already shipped.

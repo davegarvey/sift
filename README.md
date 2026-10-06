@@ -176,8 +176,9 @@ Disabling sync does not delete anything: the key leaves the device but the
 data stays on the server, so delete it first. The daily cron also deletes, with
 all their rows, accounts with no sync pull for 365 days (or, if they never
 pulled, created more than 365 days ago) and accounts whose key was regenerated
-more than 30 days ago. At most 50 accounts are deleted per run. Deleted rows
-may remain in D1 point-in-time backups for the plan's backup period. The
+more than 30 days ago. At most 50 accounts are deleted per run. Deleted sync
+data can persist in Cloudflare D1's point-in-time recovery (Time Travel) for up
+to 30 days on the Workers Paid plan, after which it is gone. The
 `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged
 or exposed to third parties. Synced lifetime reading statistics contain only
