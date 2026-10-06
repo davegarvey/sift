@@ -73,6 +73,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_flags_row_at    ON flags(sync_key, row_at)`,
     `CREATE INDEX IF NOT EXISTS idx_flags_feed_id   ON flags(sync_key, feed_id)`,
     `CREATE INDEX IF NOT EXISTS idx_feed_stats_row_at ON feed_stats(sync_key, row_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_feeds_live_feed_url ON feeds(feed_url) WHERE deleted = 0 AND feed_url IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_pairing_expires ON pairing_codes(expires_at)`,
     `CREATE INDEX IF NOT EXISTS idx_tokens_sync_key ON tokens(sync_key)`,
     `CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,

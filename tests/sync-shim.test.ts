@@ -200,6 +200,66 @@ describe('sync routes on the local-d1 shim', () => {
     const body = await statsRes.json() as { stats: Array<Record<string, unknown>> };
     expect(body.stats.find((row) => row.feed_id === feedId)?.total_seen).toBe(12);
   });
+
+  it('shim: DELETE /sync/account removes the account and keeps other accounts', async () => {
+    const alice = makeSyncKey('shim-acct-a');
+    const bob = makeSyncKey('shim-acct-b');
+    for (const [key, id] of [[alice, 'shim-acct-feed-a'], [bob, 'shim-acct-feed-b']] as const) {
+      await register(key);
+      await push(key, { feeds: [feed(id, `https://ex.com/${id}`)] });
+      const itemId = `${encodeURIComponent(id)}::article-1`;
+      await push(key, { flags: [{ itemId, feedId: id, read: 1 }] });
+      await pushStats(key, { stats: [{ feedId: id, totalSeen: 3 }] });
+      await app.request('/sync/otp', { method: 'POST', headers: { 'X-Sync-Key': key } });
+    }
+
+    const res = await app.request('/sync/account', { method: 'DELETE', headers: { 'X-Sync-Key': alice } });
+    expect(res.status).toBe(204);
+
+    const rows = async (table: string, key: string) =>
+      (await db.prepare(`SELECT * FROM ${table} WHERE sync_key = ?`).bind(key).all()).results.length;
+    for (const table of ['users', 'feeds', 'flags', 'feed_stats', 'pairing_codes']) {
+      expect(await rows(table, alice), table).toBe(0);
+      expect(await rows(table, bob), table).toBe(1);
+    }
+    const scopes = (await db.prepare('SELECT * FROM rate_limits').all()).results as Array<{ scope: string }>;
+    expect(scopes.some((row) => row.scope.endsWith(alice))).toBe(false);
+    expect(scopes.some((row) => row.scope.endsWith(bob))).toBe(true);
+    expect((await app.request('/sync/pull?since=0', { headers: { 'X-Sync-Key': alice } })).status).toBe(401);
+    expect((await app.request('/sync/account', { method: 'DELETE', headers: { 'X-Sync-Key': alice } })).status).toBe(401);
+    expect((await pullFeeds(bob)).length).toBe(1);
+  });
+
+  it('shim: the daily cron deletes only expired rotated and inactive accounts', async () => {
+    const day = 24 * 60 * 60;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const keys = {
+      rotatedOld: makeSyncKey('shim-ret-ro'),
+      rotatedNew: makeSyncKey('shim-ret-rn'),
+      inactive: makeSyncKey('shim-ret-in'),
+      neverActive: makeSyncKey('shim-ret-na'),
+      fresh: makeSyncKey('shim-ret-fr'),
+    };
+    for (const [name, key] of Object.entries(keys)) {
+      await register(key);
+      await push(key, { feeds: [feed(`shim-ret-${name}`, `https://ex.com/${name}`)] });
+    }
+    const set = (key: string, column: string, value: number) =>
+      db.prepare(`UPDATE users SET ${column} = ? WHERE sync_key = ?`).bind(value, key).run();
+    await set(keys.rotatedOld, 'rotated_at', nowSeconds - 31 * day);
+    await set(keys.rotatedNew, 'rotated_at', nowSeconds - 29 * day);
+    await set(keys.inactive, 'last_active_at', nowSeconds - 366 * day);
+    await set(keys.neverActive, 'created_at', nowSeconds - 400 * day);
+    await set(keys.fresh, 'last_active_at', nowSeconds - day);
+
+    const { runSyncCron } = await import('../server/sync/cron');
+    await runSyncCron(db as unknown as Parameters<typeof createSyncRoutes>[0]);
+
+    const remaining = ((await db.prepare('SELECT * FROM users').all()).results as Array<{ sync_key: string }>).map((row) => row.sync_key);
+    expect(remaining.sort()).toEqual([keys.rotatedNew, keys.fresh].sort());
+    const feedOwners = ((await db.prepare('SELECT * FROM feeds').all()).results as Array<{ sync_key: string }>).map((row) => row.sync_key);
+    expect(feedOwners.sort()).toEqual([keys.rotatedNew, keys.fresh].sort());
+  });
 });
 
 describe('local-d1 persistence', () => {

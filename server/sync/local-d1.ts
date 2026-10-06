@@ -549,7 +549,16 @@ export class LocalD1Database {
     return [];
   }
 
-  _select(sql: string, params: unknown[]): Record<string, unknown>[] {
+  _select(fullSql: string, params: unknown[]): Record<string, unknown>[] {
+    const limitMatch = fullSql.match(/\s+LIMIT\s+(\?|\d+)\s*$/i);
+    const sql = limitMatch ? fullSql.slice(0, limitMatch.index) : fullSql;
+    const rows = this._selectRows(sql, params);
+    if (!limitMatch) return rows;
+    const limit = limitMatch[1] === '?' ? Number(params[params.length - 1]) : parseInt(limitMatch[1], 10);
+    return rows.slice(0, limit);
+  }
+
+  private _selectRows(sql: string, params: unknown[]): Record<string, unknown>[] {
     const m = sql.match(/FROM\s+(\w+)/i);
     if (!m) return [];
     const tableName = m[1];
@@ -586,11 +595,11 @@ export class LocalD1Database {
     if (!trimmed) return true;
 
     // Handle NOT conditions first
-    const notMatch = trimmed.match(/^(\w+)\s+IS\s+NOT\s+NULL/i);
+    const notMatch = trimmed.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i);
     if (notMatch) return row[notMatch[1]] != null;
 
     // Handle IS NULL
-    const isNullMatch = trimmed.match(/^(\w+)\s+IS\s+NULL/i);
+    const isNullMatch = trimmed.match(/^(\w+)\s+IS\s+NULL$/i);
     if (isNullMatch) return row[isNullMatch[1]] == null;
 
     // Handle AND chains — track the param offset through each part.
@@ -633,21 +642,21 @@ export class LocalD1Database {
     const gtMatch = trimmed.match(/^(\w+)\s*>\s*\?$/);
     if (gtMatch) {
       const col = gtMatch[1];
-      return { matches: (row[col] as number) > (_params[offset] as number), nextOffset: offset + 1 };
+      return { matches: row[col] != null && (row[col] as number) > (_params[offset] as number), nextOffset: offset + 1 };
     }
 
     // column >= ?
     const gteMatch = trimmed.match(/^(\w+)\s*>=\s*\?$/);
     if (gteMatch) {
       const col = gteMatch[1];
-      return { matches: (row[col] as number) >= (_params[offset] as number), nextOffset: offset + 1 };
+      return { matches: row[col] != null && (row[col] as number) >= (_params[offset] as number), nextOffset: offset + 1 };
     }
 
     // column < ?
     const ltMatch = trimmed.match(/^(\w+)\s*<\s*\?$/);
     if (ltMatch) {
       const col = ltMatch[1];
-      return { matches: (row[col] as number) < (_params[offset] as number), nextOffset: offset + 1 };
+      return { matches: row[col] != null && (row[col] as number) < (_params[offset] as number), nextOffset: offset + 1 };
     }
 
     // column = 1 (literal integer)
@@ -659,6 +668,10 @@ export class LocalD1Database {
     // column IS NULL
     const isNullMatch = trimmed.match(/^(\w+)\s+IS\s+NULL$/i);
     if (isNullMatch) return { matches: row[isNullMatch[1]] == null, nextOffset: offset };
+
+    // column IS NOT NULL
+    const isNotNullMatch = trimmed.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i);
+    if (isNotNullMatch) return { matches: row[isNotNullMatch[1]] != null, nextOffset: offset };
 
     // deleted = 1 (tombstone check)
     if (/^deleted\s*=\s*1$/.test(trimmed)) return { matches: row.deleted === 1, nextOffset: offset };

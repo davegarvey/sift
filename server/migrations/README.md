@@ -79,8 +79,14 @@ When adding columns to `feeds` or `flags`, update both this directory and
 migrations-only database.
 
 Migration `0009_account_activity.sql` adds
-`users.last_active_at`, which records recent sync activity for polling
-maintenance.
+`users.last_active_at`, which records the last `/sync/pull` (at most hourly).
+Polling maintenance uses it to find active accounts, and the daily cron uses
+it, falling back to `users.created_at`, to delete accounts inactive for 365
+days.
+
+Migration `0010_feeds_live_url_index.sql` adds a partial index on live
+`feeds.feed_url`. `DELETE /sync/account` uses it to check whether another
+account still subscribes to a URL before removing its polling state.
 
 The poll database has its own migration sequence. Migration
 `server/migrations-poll/0001_feed_polling.sql` adds `polled_feeds` (per-URL
