@@ -307,8 +307,11 @@ them:
 - **No bulk "mark all read" or multi-select.** Reading is the marking mechanism.
 - **No per-feed customization** (colors, sort overrides, custom refresh intervals).
 - **Service Worker background sync is not used** — without server-side polling, feeds don't refresh when the tab is closed.
-- **Search** searches only items currently in IndexedDB (not historical items that
-  may have been evicted).
+- **Search** matches article titles and summaries, not article text, and covers
+  only the articles stored on the device.
+- **Stored articles are not removed automatically.** Articles and their text stay
+  in IndexedDB until the feed is unsubscribed; there is no size-based eviction or
+  age-based clean-up yet.
 - **OPML import/export covers only the subscription list.** Read/starred state is
   intentionally not exported in v0 (no standard format).
 - **MCP is experimental.** The MCP server tools and SSE relay may change in breaking ways.

@@ -76,9 +76,10 @@ function mergeFeedStats(source: FeedStats, target: FeedStats, feedId: string): F
 export async function rekeyFeedId(fromId: string, toId: string): Promise<void> {
   if (fromId === toId) return;
   const db = await getDb();
-  const tx = db.transaction(['feeds', 'items', 'itemFlags', 'feedStats', 'readMarkers'], 'readwrite');
+  const tx = db.transaction(['feeds', 'items', 'itemBodies', 'itemFlags', 'feedStats', 'readMarkers'], 'readwrite');
   const feeds = tx.objectStore('feeds');
   const items = tx.objectStore('items');
+  const bodies = tx.objectStore('itemBodies');
   const flags = tx.objectStore('itemFlags');
   const stats = tx.objectStore('feedStats');
   const markers = tx.objectStore('readMarkers');
@@ -97,6 +98,14 @@ export async function rekeyFeedId(fromId: string, toId: string): Promise<void> {
     const targetItem = await items.get(targetId);
     await items.put(targetItem ? mergeItems(sourceItem, targetItem, targetId, toId) : { ...sourceItem, id: targetId, feedId: toId });
     await items.delete(sourceItem.id);
+  }
+
+  const sourceBodies = await bodies.index('by-feed-id').getAll(IDBKeyRange.only(fromId));
+  for (const sourceBody of sourceBodies) {
+    const targetId = `${toId}::${sourceBody.id.slice(fromId.length + 2)}`;
+    const targetBody = await bodies.get(targetId);
+    await bodies.put({ ...sourceBody, ...targetBody, id: targetId, feedId: toId });
+    await bodies.delete(sourceBody.id);
   }
 
   const sourceFlags = await flags.index('by-feed-id').getAll(IDBKeyRange.only(fromId));

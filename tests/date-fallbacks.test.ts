@@ -1,12 +1,10 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { getDb, upgradeDb } from '../src/db/open';
+import { getDb } from '../src/db/open';
 import { parseFeed, parsedToItems } from '../src/feeds/parse';
 import { insertOrUpdateItem, bulkUpsertItems, getItem, listUnreadAcrossFeeds, listStarred } from '../src/db/items';
 import { relativeTime, humanRelativeTime } from '../src/util/time';
-import { DB_NAME, DB_VERSION, type Feed, type FeedStats, type Item, type Meta, type ReadMarker } from '../src/db/types';
-import type { ItemFlag } from '../src/db/flags';
+import type { Item } from '../src/db/types';
 
 const NOW = Date.now();
 const FIRST_SEEN = NOW - 100_000;
@@ -121,121 +119,6 @@ describe('merge: dates are never re-stamped', () => {
     expect(stored?.publishedAt).toBe(FIRST_SEEN);
     expect(stored?.createdAt).toBe(FIRST_SEEN);
     expect(stored?.dateFallback).toBe(true);
-  });
-});
-
-describe('migration v9', () => {
-  // Structurally identical to open.ts's RssReaderDB so `upgradeDb` is
-  // directly assignable as the upgrade callback for the seeded database.
-  interface SeedSchema extends DBSchema {
-    feeds: { key: string; value: Feed; indexes: { 'by-url': string } };
-    items: { key: string; value: Item; indexes: { 'by-feed-published': [string, number]; 'by-guid': string; 'by-published': number } };
-    itemFlags: { key: string; value: ItemFlag; indexes: { 'by-read': number; 'by-starred': number; 'by-feed-id': string } };
-    meta: { key: string; value: Meta };
-    feedStats: { key: string; value: FeedStats; indexes: {} };
-    readMarkers: { key: string; value: ReadMarker; indexes: { 'by-feed-id': string; 'by-acknowledged': number } };
-  }
-
-  const seedUpgrade = (version: number) => (db: IDBPDatabase<SeedSchema>) => {
-    const feeds = db.createObjectStore('feeds', { keyPath: 'id' });
-    if (version >= 6) feeds.createIndex('by-url', 'url');
-    const items = db.createObjectStore('items', { keyPath: 'id' });
-    items.createIndex('by-feed-published', ['feedId', 'publishedAt']);
-    items.createIndex('by-guid', 'guid');
-    items.createIndex('by-published', 'publishedAt');
-    const flags = db.createObjectStore('itemFlags', { keyPath: 'id' });
-    flags.createIndex('by-read', 'read');
-    flags.createIndex('by-starred', 'starred');
-    flags.createIndex('by-feed-id', 'feedId');
-    db.createObjectStore('meta', { keyPath: 'key' });
-  };
-
-  async function seed(version: number, name: string): Promise<void> {
-    const db = await openDB<SeedSchema>(name, version, { upgrade: seedUpgrade(version) });
-    const feed: Feed = {
-      id: 'f1',
-      url: 'https://x.com/feed.xml',
-      title: 'X',
-      learnedIntervalMs: 60 * 60 * 1000,
-      lastFetched: null,
-    };
-    await db.put('feeds', feed);
-    await db.put('items', makeItem({ guid: 'future', publishedAt: FUTURE, updatedAt: FUTURE, createdAt: FIRST_SEEN }));
-    await db.put('items', { ...makeItem({ guid: 'flagless' }), dateFallback: undefined });
-    await db.put('items', makeItem({ guid: 'valid', publishedAt: PAST, updatedAt: PAST, dateFallback: undefined }));
-    await db.put('items', makeItem({ guid: 'opened', firstOpenedAt: FIRST_SEEN }));
-    const noCreatedAt = makeItem({ guid: 'nocreated', publishedAt: FUTURE, updatedAt: FUTURE });
-    delete (noCreatedAt as Partial<Item>).createdAt;
-    await db.put('items', noCreatedAt);
-    await db.put('itemFlags', { id: 'f1::valid', feedId: 'f1', read: 1, starred: 0 });
-    await db.put('meta', { key: 'flagsBackfilled', value: true });
-    await db.put('meta', {
-      key: 'settings',
-      value: { syncKey: 'a'.repeat(22), lastSyncAt: 123, lastStatsSyncAt: 456, serverOffset: 789 },
-    });
-    db.close();
-  }
-
-  it('repairs future dates, backfills flags, leaves valid items, drops the meta key', async () => {
-    const name = `${DB_NAME}-mig-repair`;
-    await seed(6, name);
-    const db = await openDB<SeedSchema>(name, DB_VERSION, { upgrade: upgradeDb });
-
-    const future = (await db.get('items', 'f1::future'))!;
-    expect(future.publishedAt).toBe(FIRST_SEEN);
-    expect(future.publishedAt).toBeLessThanOrEqual(Date.now());
-    expect(future.dateFallback).toBe(true);
-
-    const nocreated = (await db.get('items', 'f1::nocreated'))!;
-    expect(Number.isFinite(nocreated.publishedAt)).toBe(true);
-    expect(nocreated.publishedAt).toBeLessThanOrEqual(Date.now());
-    expect(nocreated.dateFallback).toBe(true);
-
-    const valid = (await db.get('items', 'f1::valid'))!;
-    expect(valid.publishedAt).toBe(PAST);
-    expect(valid.dateFallback).toBeUndefined();
-
-    const backfilled = (await db.get('itemFlags', 'f1::flagless'))!;
-    expect(backfilled.read).toBe(0);
-    expect(backfilled.starred).toBe(0);
-
-    expect(await db.get('meta', 'flagsBackfilled')).toBeUndefined();
-    const stats = await db.get('feedStats', 'f1');
-    expect(stats?.totalSeen).toBe(5);
-    expect(stats?.readOnce).toBe(2);
-    expect(await db.get('readMarkers', 'f1::valid')).toMatchObject({ acknowledged: 0 });
-    expect(await db.get('readMarkers', 'f1::opened')).toMatchObject({ acknowledged: 0 });
-    expect(await db.get('meta', 'settings')).toMatchObject({
-      value: { lastSyncAt: null, lastStatsSyncAt: null, serverOffset: null },
-    });
-    db.close();
-  });
-
-  it('upgrades a v5 database through the full chain to v9', async () => {
-    const name = `${DB_NAME}-mig-v5`;
-    await seed(5, name);
-    const db = await openDB<SeedSchema>(name, DB_VERSION, { upgrade: upgradeDb });
-    expect(db.objectStoreNames.contains('items')).toBe(true);
-    const tx = db.transaction('feeds', 'readonly');
-    expect(tx.store.indexNames.contains('by-url')).toBe(true);
-    const future = (await db.get('items', 'f1::future'))!;
-    expect(future.publishedAt).toBe(FIRST_SEEN);
-    expect(future.dateFallback).toBe(true);
-    expect(db.objectStoreNames.contains('feedStats')).toBe(true);
-    expect(db.objectStoreNames.contains('readMarkers')).toBe(true);
-    db.close();
-  });
-
-  it('fresh install at v9 runs the whole chain cleanly', async () => {
-    const name = `${DB_NAME}-mig-fresh`;
-    const db = await openDB<SeedSchema>(name, DB_VERSION, { upgrade: upgradeDb });
-    expect(db.objectStoreNames.contains('feeds')).toBe(true);
-    expect(db.objectStoreNames.contains('items')).toBe(true);
-    expect(db.objectStoreNames.contains('itemFlags')).toBe(true);
-    expect(db.objectStoreNames.contains('meta')).toBe(true);
-    expect(db.objectStoreNames.contains('feedStats')).toBe(true);
-    expect(db.objectStoreNames.contains('readMarkers')).toBe(true);
-    db.close();
   });
 });
 

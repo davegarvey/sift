@@ -1,5 +1,5 @@
 import { extractFromXml, type FeedData, type FeedEntry } from '@extractus/feed-extractor';
-import type { Item } from '../db/types';
+import type { ItemInput } from '../db/types';
 
 export interface ParsedFeed {
   title: string;
@@ -233,12 +233,12 @@ function parseDate(value: string | undefined, now = Date.now()): number | null {
  * is flagged `dateFallback`, so refreshes never re-stamp it with a fresh
  * timestamp.
  */
-export function parsedToItems(parsed: ParsedFeed, feedId: string): Item[] {
+export function parsedToItems(parsed: ParsedFeed, feedId: string): ItemInput[] {
   const now = Date.now();
   return parsed.items.map((p) => parsedItemToItem(p, feedId, now));
 }
 
-export function parsedItemToItem(p: ParsedItem, feedId: string, now: number): Item {
+export function parsedItemToItem(p: ParsedItem, feedId: string, now: number): ItemInput {
   const fallback = p.publishedAt == null;
   return {
     id: `${feedId}::${p.guid}`,
@@ -252,11 +252,10 @@ export function parsedItemToItem(p: ParsedItem, feedId: string, now: number): It
     excerpt: p.excerpt,
     html: p.html,
     thumbnail: p.thumbnail ?? null,
-    extractedHtml: null,
     firstOpenedAt: null,
     read: false,
     starred: false,
     createdAt: now,
     dateFallback: fallback || undefined,
-  } satisfies Item;
+  } satisfies ItemInput;
 }

@@ -17,13 +17,14 @@ vi.stubGlobal('window', { addEventListener: () => {} });
 import 'fake-indexeddb/auto';
 import { getDb } from '../src/db/open';
 import { upsertFeed, getFeed } from '../src/db/feeds';
-import { bulkUpsertItems } from '../src/db/items';
+import { bulkUpsertItems, getItemBody, saveExtractedHtml } from '../src/db/items';
 import { parseFeed, parsedToItems } from '../src/feeds/parse';
 
 beforeEach(async () => {
   const db = await getDb();
   await db.clear('feeds');
   await db.clear('items');
+  await db.clear('itemBodies');
   await db.clear('itemFlags');
   await db.clear('feedStats');
   await db.clear('readMarkers');
@@ -300,6 +301,30 @@ describe('refreshFeed', () => {
     await refreshFeed((await getFeed(id))!);
 
     expect((await getFeed(id))!.learnedIntervalMs).toBe(60 * 60_000);
+  });
+
+  it('stores feed HTML in the body store on refresh and replaces a cached extraction when it changes', async () => {
+    const { refreshFeed } = await import('../src/feeds/scheduler');
+    const id = 'feed-with-content';
+    const date = new Date(Date.now() - 60_000).toUTCString();
+    const rss = (html: string) => `<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>X</title><link>https://x.example</link><description>d</description><item><guid>post</guid><title>Post</title><link>https://x.example/post</link><pubDate>${date}</pubDate><content:encoded><![CDATA[${html}]]></content:encoded></item></channel></rss>`;
+    await upsertFeed({
+      id,
+      url: 'https://x.example/feed.xml',
+      title: 'X',
+      learnedIntervalMs: 3_600_000,
+      lastFetched: null,
+    });
+
+    stubFetch(200, rss('<p>First version</p>'));
+    await refreshFeed((await getFeed(id))!);
+    expect(await getItemBody(`${id}::post`)).toEqual({ id: `${id}::post`, feedId: id, html: '<p>First version</p>' });
+    expect('html' in ((await (await getDb()).get('items', `${id}::post`)) ?? {})).toBe(false);
+
+    await saveExtractedHtml({ id: `${id}::post`, feedId: id }, '<p>Extracted</p>');
+    stubFetch(200, rss('<p>Second version</p>'));
+    await refreshFeed((await getFeed(id))!);
+    expect(await getItemBody(`${id}::post`)).toEqual({ id: `${id}::post`, feedId: id, html: '<p>Second version</p>' });
   });
 
   it('learns cadence from new IDs and respects the minimum interval', async () => {

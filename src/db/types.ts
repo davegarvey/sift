@@ -70,12 +70,8 @@ export interface Item {
   publishedAt: number;
   updatedAt: number;
   excerpt: string;
-  /** Raw HTML content from the feed (may be the full body or just a summary). */
-  html?: string;
   /** Thumbnail image URL from the feed's media:thumbnail or media:content. */
   thumbnail?: string | null;
-  /** Full-text HTML extracted by Readability (cached). Null until extracted. */
-  extractedHtml?: string | null;
   /** Epoch ms of first time the user opened this item; null if never opened. */
   firstOpenedAt?: number | null;
   read: boolean;
@@ -83,6 +79,22 @@ export interface Item {
   createdAt: number;
   /** True when `publishedAt` is the first-seen fallback, not a real feed date. */
   dateFallback?: boolean;
+}
+
+/** An article as parsed from a feed: the record plus the feed's own HTML, which is stored apart from it. */
+export type ItemInput = Item & {
+  /** Raw HTML content from the feed (may be the full body or just a summary). */
+  html?: string;
+};
+
+export interface ItemBody {
+  /** Same id as the article record. */
+  id: string;
+  feedId: string;
+  /** Raw HTML content from the feed (may be the full body or just a summary). */
+  html?: string;
+  /** Full-text HTML extracted by Readability (cached). Absent until extracted. */
+  extractedHtml?: string;
 }
 
 export interface FeedStats {
@@ -116,13 +128,14 @@ export interface Meta {
 export interface DBSchema {
   feeds: Feed;
   items: Item;
+  itemBodies: ItemBody;
   meta: Meta;
   feedStats: FeedStats;
   readMarkers: ReadMarker;
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 9;
+export const DB_VERSION = 10;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;
@@ -132,8 +145,6 @@ export const MAX_LEARNED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const ERROR_RETRY_FLOOR_MS = 30 * 60 * 1000;
 /** Error-backoff ceiling for generic errors: guarantees ≥4 attempts/day while failing. */
 export const ERROR_RETRY_MAX_MS = 6 * 60 * 60 * 1000;
-export const STORAGE_SOFT_CAP_RATIO = 0.05;
-export const EVICTION_CHUNK_SIZE = 500;
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 

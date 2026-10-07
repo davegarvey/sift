@@ -1,9 +1,4 @@
-# query-indexing Specification
-
-## Purpose
-Keep unread and starred article lists fast with large libraries by querying them through IndexedDB indexes that stay in step with flag changes.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Unread items are queried via an indexed lookup
 `listUnreadAcrossFeeds()` SHALL use an IndexedDB index on the `read` field (stored as a number: 0 for unread, 1 for read) instead of scanning the `by-feed-published` index and filtering in JavaScript. When the `read` field is not indexable directly (IDB limitation with booleans), a secondary object store or a numeric key SHALL be used. It SHALL read article records only, which contain no `html` or `extractedHtml`.
@@ -35,17 +30,6 @@ Keep unread and starred article lists fast with large libraries by querying them
 - **WHEN** `listStarred()` returns articles that have stored bodies
 - **THEN** the returned records SHALL contain neither `html` nor `extractedHtml`
 
-### Requirement: Results from indexed queries are sorted by publishedAt descending
-The `by-read` and `by-starred` indexes sort by flag value then primary key, not by `publishedAt`. Query results SHALL be sorted in memory by `publishedAt` descending (newest-first) before being returned to the UI. The sort is bounded to at most 200 items, so the cost is negligible.
-
-#### Scenario: Unread results are ordered newest-first
-- **WHEN** `listUnreadAcrossFeeds(200)` returns items
-- **THEN** the results SHALL be sorted by `publishedAt` descending
-
-#### Scenario: Starred results are ordered newest-first
-- **WHEN** `listStarred(200)` returns items
-- **THEN** the results SHALL be sorted by `publishedAt` descending
-
 ### Requirement: Flag mutations keep the index in sync
 When an item's `read` or `starred` field changes, the corresponding index or secondary store SHALL be updated atomically within the same transaction as the primary item update.
 
@@ -60,3 +44,9 @@ When an item's `read` or `starred` field changes, the corresponding index or sec
 #### Scenario: Deleting items by feed cleans up bodies
 - **WHEN** `deleteItemsByFeed(feedId)` removes items
 - **THEN** the corresponding `itemBodies` records SHALL also be removed
+
+## REMOVED Requirements
+
+### Requirement: Backfill completes before indexed queries are used
+**Reason**: The version 10 baseline removes the accumulated upgrade steps, including the version 3 backfill of `itemFlags`, and the `flagsBackfilled` meta record was already dropped in version 7. Queries read the `itemFlags` store directly with no full-scan fallback.
+**Migration**: None. A database older than version 9 is reset, and a version 9 database already has its flags populated.

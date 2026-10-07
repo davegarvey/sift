@@ -1,7 +1,6 @@
 import { createSignal } from 'solid-js';
 import { listFeeds, updateFeed, upsertFeed } from '../db/feeds';
 import { bulkUpsertItems } from '../db/items';
-import { runEviction } from '../articles/eviction';
 import { fetchFeed, type FeedSourceStatus } from './fetch';
 import { parseFeed, parsedToItems } from './parse';
 import type { RefreshTarget } from './scope';
@@ -79,7 +78,6 @@ export async function refreshStaleFeeds(options: RefreshOptions = {}): Promise<v
     return scheduledFeedDueAt(f, schedulerEpoch, now) <= now;
   });
   await mapConcurrent(stale, (f) => refreshFeed(f), 4);
-  void runEviction();
   if (!forceAll && stale.length > 0 && onRefresh && !isIdle()) {
     onRefresh();
   }

@@ -9,6 +9,16 @@ import type { Feed, Item } from '../src/db/types';
 
 const ctxRef = vi.hoisted(() => ({ value: null as AppContext | null }));
 
+const dbBlock = vi.hoisted(() => ({ status: 'idle' as 'idle' | 'blocked' | 'upgrading', listeners: new Set<() => void>() }));
+
+vi.mock('../src/db/open', () => ({
+  getDbStatus: () => dbBlock.status,
+  onDbStatusChange: (listener: () => void) => {
+    dbBlock.listeners.add(listener);
+    return () => dbBlock.listeners.delete(listener);
+  },
+}));
+
 vi.mock('../src/state', () => ({
   useApp: () => {
     if (!ctxRef.value) throw new Error('test ctx not set');
@@ -112,6 +122,11 @@ function makeCtx() {
   return { ctx, setFeeds, setItems, setHydrated };
 }
 
+function setDbStatus(status: 'idle' | 'blocked' | 'upgrading'): void {
+  dbBlock.status = status;
+  dbBlock.listeners.forEach((listener) => listener());
+}
+
 describe('River loading vs empty state', () => {
   let dispose: (() => void) | undefined;
   let disposeCtx: (() => void) | undefined;
@@ -127,7 +142,45 @@ describe('River loading vs empty state', () => {
     disposeCtx?.();
     disposeCtx = undefined;
     ctxRef.value = null;
+    dbBlock.status = 'idle';
     vi.useRealTimers();
+  });
+
+  it('shows the upgrade message while the library is upgrading, then reverts', () => {
+    const m = createRoot((d) => {
+      disposeCtx = d;
+      return makeCtx();
+    });
+    ctxRef.value = m.ctx;
+    dispose = render(() => <River />, document.body);
+    vi.advanceTimersByTime(600);
+    expect(document.body.textContent).toContain('Loading…');
+
+    setDbStatus('upgrading');
+    expect(document.body.textContent).toContain('Updating your library…');
+    expect(document.body.textContent).not.toContain('Loading…');
+
+    setDbStatus('idle');
+    expect(document.body.textContent).toContain('Loading…');
+    expect(document.body.textContent).not.toContain('Updating your library');
+  });
+
+  it('asks the reader to close other tabs while the open is blocked, in place of the upgrade message', () => {
+    const m = createRoot((d) => {
+      disposeCtx = d;
+      return makeCtx();
+    });
+    ctxRef.value = m.ctx;
+    dispose = render(() => <River />, document.body);
+    vi.advanceTimersByTime(600);
+
+    setDbStatus('blocked');
+    expect(document.body.textContent).toContain('Close other Sift tabs');
+    expect(document.body.textContent).not.toContain('Updating your library');
+
+    setDbStatus('upgrading');
+    expect(document.body.textContent).toContain('Updating your library…');
+    expect(document.body.textContent).not.toContain('Close other Sift tabs');
   });
 
   it('shows the Welcome empty state once boot completes with zero feeds', () => {

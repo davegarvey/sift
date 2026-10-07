@@ -1,5 +1,5 @@
 import { getDb } from './open';
-import type { FeedStats, Item } from './types';
+import type { FeedStats, Item, ItemBody, ItemInput } from './types';
 import { flagToRead, flagToStar, readToFlag, starToFlag, READ_UNREAD, STAR_UNSTARRED } from './flags';
 
 /**
@@ -27,14 +27,14 @@ function mergeItem(existing: Item, incoming: Item): Item {
   };
 }
 
-export async function insertOrUpdateItem(item: Item): Promise<void> {
+export async function insertOrUpdateItem(item: ItemInput): Promise<void> {
   await bulkUpsertItems([item]);
 }
 
-export async function bulkUpsertItems(items: Item[], options: { insertOnly?: boolean } = {}): Promise<string[]> {
-  if (items.length === 0) return [];
+export async function bulkUpsertItems(inputs: ItemInput[], options: { insertOnly?: boolean } = {}): Promise<string[]> {
+  if (inputs.length === 0) return [];
   const db = await getDb();
-  const feedId = items[0].feedId;
+  const feedId = inputs[0].feedId;
 
   // Batch-read existing items and flags for this feed.
   const itemRange = IDBKeyRange.bound([feedId, -Infinity], [feedId, Infinity]);
@@ -44,8 +44,9 @@ export async function bulkUpsertItems(items: Item[], options: { insertOnly?: boo
   const existingFlags = await db.getAllFromIndex('itemFlags', 'by-feed-id', feedId);
   const flagByKey = new Map(existingFlags.map((f) => [f.id, f]));
 
-  const tx = db.transaction(['items', 'itemFlags', 'feedStats', 'readMarkers'], 'readwrite');
+  const tx = db.transaction(['items', 'itemBodies', 'itemFlags', 'feedStats', 'readMarkers'], 'readwrite');
   const itemsStore = tx.objectStore('items');
+  const bodiesStore = tx.objectStore('itemBodies');
   const flagsStore = tx.objectStore('itemFlags');
   const statsStore = tx.objectStore('feedStats');
   const markersStore = tx.objectStore('readMarkers');
@@ -68,13 +69,13 @@ export async function bulkUpsertItems(items: Item[], options: { insertOnly?: boo
     return stats;
   };
 
-  for (const item of items) {
+  for (const { html, ...item } of inputs) {
     const existing = existingByKey.get(item.id);
     if (existing) {
       if (options.insertOnly) continue;
       const merged = mergeItem(existing, item);
-      if (item.html) merged.extractedHtml = null;
       await itemsStore.put(merged);
+      if (html) await bodiesStore.put({ id: item.id, feedId: item.feedId, html } satisfies ItemBody);
       const flag = flagByKey.get(item.id);
       await flagsStore.put({
         id: item.id,
@@ -95,6 +96,7 @@ export async function bulkUpsertItems(items: Item[], options: { insertOnly?: boo
         read: existingFlag ? existingFlag.read : readToFlag(item.read),
         starred: existingFlag ? existingFlag.starred : starToFlag(item.starred),
       });
+      if (html) await bodiesStore.put({ id: item.id, feedId: item.feedId, html } satisfies ItemBody);
       existingByKey.set(item.id, item);
       const stats = await getStats(item.feedId);
       stats.totalSeen += 1;
@@ -115,6 +117,22 @@ export async function bulkUpsertItems(items: Item[], options: { insertOnly?: boo
 export async function getItem(id: string): Promise<Item | undefined> {
   const db = await getDb();
   return db.get('items', id);
+}
+
+export async function getItemBody(id: string): Promise<ItemBody | undefined> {
+  const db = await getDb();
+  return db.get('itemBodies', id);
+}
+
+export async function saveExtractedHtml(item: Pick<Item, 'id' | 'feedId'>, extractedHtml: string): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(['items', 'itemBodies'], 'readwrite');
+  if (await tx.objectStore('items').getKey(item.id) !== undefined) {
+    const bodies = tx.objectStore('itemBodies');
+    const existing = await bodies.get(item.id);
+    await bodies.put({ ...existing, id: item.id, feedId: item.feedId, extractedHtml });
+  }
+  await tx.done;
 }
 
 export async function updateItem(
@@ -268,8 +286,9 @@ export async function searchItems(query: string, limit = 50, signal?: AbortSigna
 
 export async function deleteItemsByFeed(feedId: string): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction(['items', 'itemFlags'], 'readwrite');
+  const tx = db.transaction(['items', 'itemBodies', 'itemFlags'], 'readwrite');
   const itemsStore = tx.objectStore('items');
+  const bodiesStore = tx.objectStore('itemBodies');
   const flagsStore = tx.objectStore('itemFlags');
   const itemIndex = itemsStore.index('by-feed-published');
   let itemCursor = await itemIndex.openCursor(
@@ -278,6 +297,11 @@ export async function deleteItemsByFeed(feedId: string): Promise<void> {
   while (itemCursor) {
     itemCursor.delete();
     itemCursor = await itemCursor.continue();
+  }
+  let bodyCursor = await bodiesStore.index('by-feed-id').openCursor(IDBKeyRange.only(feedId));
+  while (bodyCursor) {
+    bodyCursor.delete();
+    bodyCursor = await bodyCursor.continue();
   }
   let flagCursor = await flagsStore.index('by-feed-id').openCursor(IDBKeyRange.only(feedId));
   while (flagCursor) {

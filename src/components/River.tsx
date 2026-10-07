@@ -2,6 +2,7 @@ import { For, Show, createSignal, createMemo, createEffect, onCleanup } from 'so
 import { useApp } from '../state';
 import { refreshTargetForSelection } from '../feeds/scope';
 import type { Item } from '../db/types';
+import { getDbStatus, onDbStatusChange } from '../db/open';
 import { relativeTime } from '../util/time';
 import { Star, CircleCheck } from 'lucide-solid';
 import { CircleIcon, CircleCheckIcon } from './Icons';
@@ -148,7 +149,11 @@ export function River() {
     const scope = refreshTargetForSelection(ctx.feeds(), ctx.state.riverScope, ctx.state.activeTags);
     return [...scope].some((id) => fetching.has(id)) ? 'loading' : 'empty';
   });
+  const [dbStatus, setDbStatus] = createSignal(getDbStatus());
+  onCleanup(onDbStatusChange(() => setDbStatus(getDbStatus())));
   const loadingMessage = () => {
+    if (dbStatus() === 'blocked') return 'Close other Sift tabs to finish updating…';
+    if (dbStatus() === 'upgrading') return 'Updating your library…';
     const fetching = ctx.fetchingFeeds();
     const scope = refreshTargetForSelection(ctx.feeds(), ctx.state.riverScope, ctx.state.activeTags);
     const isFetchingVisibleFeeds = [...scope].some((id) => fetching.has(id));

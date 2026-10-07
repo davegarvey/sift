@@ -5,7 +5,7 @@ import * as esbuild from 'esbuild';
 import path from 'path';
 import { getDb } from '../src/db/open';
 import { upsertFeed } from '../src/db/feeds';
-import { getItem, updateItem } from '../src/db/items';
+import { getItem, getItemBody, updateItem } from '../src/db/items';
 import { getFeedStats } from '../src/db/stats';
 import { setStoredSyncKey, setStoredLastSyncAt, getStoredLastItemsCursor, setStoredLastItemsCursor } from '../src/sync/key';
 import { triggerFirstTime } from '../src/sync/init';
@@ -127,13 +127,14 @@ describe('server-polled item sync', () => {
     await withMfFetch(() => triggerFirstTime());
     await poll();
     await withMfFetch(() => runPull());
-    await updateItem(`${feedId}::one`, { title: 'Local copy', html: '<p>local</p>' });
+    await updateItem(`${feedId}::one`, { title: 'Local copy' });
+    await (await getDb()).put('itemBodies', { id: `${feedId}::one`, feedId, html: '<p>local</p>' });
 
     await setStoredLastItemsCursor(0);
     await withMfFetch(() => runPull());
     const one = await getItem(`${feedId}::one`);
     expect(one?.title).toBe('Local copy');
-    expect(one?.html).toBe('<p>local</p>');
+    expect((await getItemBody(`${feedId}::one`))?.html).toBe('<p>local</p>');
   });
 });
 
