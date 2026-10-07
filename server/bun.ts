@@ -1,7 +1,5 @@
 import { createApp } from './handle.ts';
-// @ts-expect-error — bun's serve-static exists at runtime; types ship in
-// the bun runtime which isn't installed in this dev environment.
-import { serveStatic } from 'hono/bun/serve-static';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { Relay } from './relay';
 import { loadEnv } from './env';
 import { parseTrustedProxyHops, trustedProxyClientIp } from './proxy-guard';
