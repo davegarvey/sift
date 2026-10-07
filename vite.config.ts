@@ -84,6 +84,9 @@ function honoDevMiddleware() {
             }
             return;
           }
+          if (/^\/(about|privacy|terms)(\?.*)?$/.test(url)) {
+            req.url = url.replace(/^(\/about|\/privacy|\/terms)/, '$1.html');
+          }
           next();
         },
       );
@@ -139,6 +142,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/(?:about|privacy|terms)(?:\.html)?\/?$/],
       },
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png'],
     }),

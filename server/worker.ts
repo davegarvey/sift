@@ -34,7 +34,11 @@ function buildApp(env: WorkerBindings) {
   app.all('*', (c) => {
     const assets = c.env.ASSETS;
     if (assets && typeof assets.fetch === 'function') {
-      return assets.fetch(c.req.raw);
+      const requestUrl = new URL(c.req.url);
+      if (['/about', '/privacy', '/terms'].includes(requestUrl.pathname)) {
+        requestUrl.pathname += '.html';
+      }
+      return assets.fetch(new Request(requestUrl, c.req.raw));
     }
     return c.body('Not Found', { status: 404 });
   });

@@ -254,16 +254,54 @@ function LoadingMessage(props: { message: string }) {
 
 function EmptyState() {
   const ctx = useApp();
+  const [addingSamples, setAddingSamples] = createSignal(false);
+  const [sampleError, setSampleError] = createSignal(false);
   const hasFeeds = ctx.feeds().length > 0;
   const caughtUp = () => ctx.state.readMode === 'unread' && ctx.hasScopedItems() && !Object.keys(ctx.feedErrors()).some((id) => ctx.state.riverScope ? id === ctx.state.riverScope : ctx.feeds().some((feed) => feed.id === id && (ctx.state.activeTags.length === 0 || feed.tags?.some((tag) => ctx.state.activeTags.includes(tag)))));
 
   if (!hasFeeds) {
+    const sampleFeeds = [
+      { url: 'https://hacks.mozilla.org/feed/', title: 'Mozilla Hacks', htmlUrl: 'https://hacks.mozilla.org/' },
+      { url: 'https://www.nasa.gov/news-release/feed/', title: 'NASA News Releases', htmlUrl: 'https://www.nasa.gov/news-release/' },
+    ];
+    const addSampleFeeds = async () => {
+      if (addingSamples()) return;
+      setAddingSamples(true);
+      setSampleError(false);
+      try {
+        for (const feed of sampleFeeds) {
+          if (!ctx.feeds().some((existing) => existing.url === feed.url)) {
+            await ctx.subscribeFeed(feed);
+          }
+        }
+        ctx.setRiverScope(null);
+        void ctx.refreshSelected();
+      } catch {
+        setSampleError(true);
+      } finally {
+        setAddingSamples(false);
+      }
+    };
     return (
       <div class="empty-state">
         <div class="headline">Welcome to Sift</div>
-        <a class="primary-cta" onClick={() => ctx.openModal({ kind: 'add-feed' })}>
+        <p class="welcome-copy">A quiet place to read the sites you follow. Your library stays in this browser; no account is needed.</p>
+        <div class="welcome-actions">
+        <button type="button" class="primary-cta" onClick={() => ctx.openModal({ kind: 'add-feed' })}>
           Add your first feed
-        </a>
+        </button>
+        <button type="button" class="secondary-cta" disabled={addingSamples()} onClick={() => void addSampleFeeds()}>
+          {addingSamples() ? 'Adding feeds…' : 'Try sample feeds'}
+        </button>
+        <button type="button" class="secondary-cta" onClick={() => ctx.openModal({ kind: 'settings' })}>
+          Import OPML
+        </button>
+        <button type="button" class="secondary-cta" onClick={() => ctx.openModal({ kind: 'settings' })}>
+          Pair a device
+        </button>
+        </div>
+        <Show when={sampleError()}><p class="welcome-copy" role="status">A sample feed could not be added. Try again or add a feed manually.</p></Show>
+        <a class="welcome-about" href="/about">About Sift</a>
       </div>
     );
   }

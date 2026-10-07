@@ -141,6 +141,10 @@ export function SettingsDrawer() {
 
       </div>
       <div class="modal-footer">
+        <nav class="settings-legal-links" aria-label="Legal information">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+        </nav>
         <span style={{ display: 'flex', 'align-items': 'center', gap: '6px', color: 'var(--overlay)', 'margin-right': 'auto' }}>
           <span>v{version}</span>
           <a

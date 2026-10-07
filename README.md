@@ -16,6 +16,8 @@ provides multi-device sync and AI agent integration.
 - **Unread filter**: switch between Unread and All within the selected feed or tags. The choice is remembered on each device; Starred shows both read and unread saved articles.
 - **Full-text**: summary-only feeds get full-text extraction via Readability.
 
+Learn more about [Sift](https://sift.davegarvey.workers.dev/about), including its [privacy policy](https://sift.davegarvey.workers.dev/privacy) and [terms](https://sift.davegarvey.workers.dev/terms).
+
 ## Develop
 
 ```sh
