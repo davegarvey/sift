@@ -4,12 +4,25 @@ import { createApp } from './handle.ts';
 import { serveStatic } from 'hono/bun/serve-static';
 import { Relay } from './relay';
 import { loadEnv } from './env';
+import { parseTrustedProxyHops, trustedProxyClientIp } from './proxy-guard';
+import { getConnInfo } from 'hono/bun';
 
 loadEnv();
 
 const mcpEnabled = process.env.MCP_ENABLED === 'true';
 const relay = mcpEnabled ? new Relay() : undefined;
-const app = createApp({ relay });
+const app = createApp({
+  relay,
+  proxy: {
+    clientIp: trustedProxyClientIp((c) => {
+      try {
+        return getConnInfo(c).remote.address;
+      } catch {
+        return undefined;
+      }
+    }, parseTrustedProxyHops(process.env.TRUST_PROXY_HOPS)),
+  },
+});
 app.use('/assets/*', serveStatic({ root: './dist/assets' }));
 app.use('*', serveStatic({ root: './dist' }));
 

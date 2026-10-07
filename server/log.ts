@@ -9,7 +9,9 @@
  * item IDs, or any other user-identifying data through these functions. The
  * origin governor may emit structured diagnostics containing only a one-way
  * origin hash, fixed route/status/source values, retry timing, and a bounded
- * allowlist of upstream response headers.
+ * allowlist of upstream response headers. The proxy guard emits only fixed
+ * route/status/reason/source values for same-site and per-client rejections,
+ * never a client address or URL.
  *
  * Locations that handle sensitive data and MUST call these helpers before
  * any logging:
@@ -17,6 +19,7 @@
  *  - server/sync/routes.ts (request bodies and row data)
  *  - server/sync/cron.ts (row data being deleted)
  *  - server/origin-governor.ts (hashed origin policy diagnostics only)
+ *  - server/proxy-guard.ts (client addresses are used as limiter keys only)
  */
 
 export function assertNoUrlLog(_url: string): void {

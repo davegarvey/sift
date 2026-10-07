@@ -6,6 +6,8 @@ import { createApp } from './server/handle.ts';
 import { Relay } from './server/relay.ts';
 import { loadEnv } from './server/env.ts';
 import { LocalD1Database } from './server/sync/local-d1.ts';
+import { nodeClientIp } from './server/node-client-ip.ts';
+import { parseTrustedProxyHops } from './server/proxy-guard.ts';
 
 loadEnv();
 
@@ -21,7 +23,11 @@ function honoDevMiddleware() {
         // Persist dev sync state across restarts (matches production D1).
         persistPath: 'node_modules/.cache/sift-local-d1.json',
       }) as any; // why: LocalD1Database is a partial D1 shim, not the full interface
-      const devApp = createApp({ relay, db });
+      const devApp = createApp({
+        relay,
+        db,
+        proxy: { clientIp: nodeClientIp(parseTrustedProxyHops(process.env.TRUST_PROXY_HOPS)) },
+      });
       server.middlewares.use(
         async (
           req: IncomingMessage,
@@ -54,7 +60,7 @@ function honoDevMiddleware() {
                   headers: req.headers as unknown as Headers, // why: IncomingMessage.headers is IncomingHttpHeaders, not HeadersInit
                   body: bodyInit,
                 });
-              const response = await devApp.fetch(request);
+              const response = await devApp.fetch(request, { incoming: req });
               const headers: Record<string, string> = {};
               response.headers.forEach((value, key) => {
                 headers[key] = value;

@@ -39,7 +39,7 @@ export function isPairingCode(s: string): boolean {
 }
 
 export function clientIp(c: Context): string {
-  return c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? '0.0.0.0';
+  return c.req.header('cf-connecting-ip') ?? '0.0.0.0';
 }
 
 export type Principal =
