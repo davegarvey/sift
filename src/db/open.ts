@@ -17,6 +17,7 @@ interface RssReaderDB extends DBSchema {
       'by-feed-published': [string, number];
       'by-guid': string;
       'by-published': number;
+      'by-last-seen': [number, string];
     };
   };
   itemBodies: {
@@ -58,7 +59,8 @@ type VersionChangeTransaction = IDBPTransaction<RssReaderDB, StoreNames<RssReade
 
 type StoredItemWithBodies = Item & { html?: string; extractedHtml?: string | null };
 
-const PREVIOUS_VERSION = 9;
+const BODY_SPLIT_VERSION = 9;
+const PREVIOUS_VERSION = 10;
 
 let dbPromise: Promise<IDBPDatabase<RssReaderDB>> | null = null;
 let dbStatus: DbStatus = 'idle';
@@ -87,6 +89,7 @@ function createLayout(db: IDBPDatabase<RssReaderDB>): void {
   items.createIndex('by-feed-published', ['feedId', 'publishedAt']);
   items.createIndex('by-guid', 'guid');
   items.createIndex('by-published', 'publishedAt');
+  items.createIndex('by-last-seen', ['lastSeenAt', 'id']);
   createBodiesStore(db);
   const flags = db.createObjectStore('itemFlags', { keyPath: 'id' });
   flags.createIndex('by-read', 'read');
@@ -131,14 +134,31 @@ export async function upgradeDb<T extends DBSchema>(
   const db = legacyDb as unknown as IDBPDatabase<RssReaderDB>;
   const transaction = legacyTransaction as unknown as VersionChangeTransaction;
   if (oldVersion === PREVIOUS_VERSION) {
+    const items = transaction.objectStore('items');
+    items.createIndex('by-last-seen', ['lastSeenAt', 'id']);
+    const now = Date.now();
+    let cursor = await items.openCursor();
+    while (cursor) {
+      if (typeof cursor.value.lastSeenAt !== 'number') await cursor.update({ ...cursor.value, lastSeenAt: now });
+      cursor = await cursor.continue();
+    }
+    return;
+  }
+  if (oldVersion === BODY_SPLIT_VERSION) {
     transaction.done.catch(() => {});
     try {
       await dropBodiesFromItems(db, transaction);
+      const items = transaction.objectStore('items');
+      items.createIndex('by-last-seen', ['lastSeenAt', 'id']);
+      const now = Date.now();
+      let cursor = await items.openCursor();
+      while (cursor) {
+        await cursor.update({ ...cursor.value, lastSeenAt: now });
+        cursor = await cursor.continue();
+      }
     } catch (error) {
       console.error('Database upgrade failed', error);
-      try {
-        transaction.abort();
-      } catch {}
+      try { transaction.abort(); } catch {}
     }
     return;
   }

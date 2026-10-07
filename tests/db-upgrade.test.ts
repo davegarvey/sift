@@ -12,7 +12,7 @@ const FRESH_LAYOUT: Record<string, { keyPath: string; indexes: Record<string, st
   feeds: { keyPath: 'id', indexes: { 'by-url': 'url' } },
   items: {
     keyPath: 'id',
-    indexes: { 'by-feed-published': ['feedId', 'publishedAt'], 'by-guid': 'guid', 'by-published': 'publishedAt' },
+    indexes: { 'by-feed-published': ['feedId', 'publishedAt'], 'by-guid': 'guid', 'by-published': 'publishedAt', 'by-last-seen': ['lastSeenAt', 'id'] },
   },
   itemBodies: { keyPath: 'id', indexes: { 'by-feed-id': 'feedId' } },
   itemFlags: { keyPath: 'id', indexes: { 'by-read': 'read', 'by-starred': 'starred', 'by-feed-id': 'feedId' } },
@@ -80,24 +80,46 @@ async function seedV9(name: string, options: { withBodiesStore?: boolean } = {})
   db.close();
 }
 
+async function seedV10(name: string): Promise<void> {
+  await seedV9(name, { withBodiesStore: true });
+  const db = await openDB(name, 10, {
+    async upgrade(upgrading, _oldVersion, _newVersion, transaction) {
+      const items = transaction.objectStore('items');
+      const bodies = transaction.objectStore('itemBodies');
+      bodies.createIndex('by-feed-id', 'feedId');
+      let cursor = await items.openCursor();
+      while (cursor) {
+        const item = cursor.value as Record<string, unknown> & { id: string; feedId: string };
+        const { html, extractedHtml, ...record } = item;
+        if (html || extractedHtml) {
+          await bodies.put({ id: item.id, feedId: item.feedId, ...(html ? { html } : {}), ...(extractedHtml ? { extractedHtml } : {}) });
+        }
+        await cursor.update(record);
+        cursor = await cursor.continue();
+      }
+    },
+  });
+  db.close();
+}
+
 async function snapshot(db: AnyDb, store: string): Promise<unknown[]> {
   return db.getAll(store);
 }
 
-describe('database version 10', () => {
+describe('database version 11', () => {
   it('is the current version', () => {
-    expect(DB_VERSION).toBe(10);
+    expect(DB_VERSION).toBe(11);
   });
 
-  it('creates the version 10 layout directly for a new database', async () => {
+  it('creates the version 11 layout directly for a new database', async () => {
     const db = await openDB(freshName(), DB_VERSION, { upgrade });
-    expect(db.version).toBe(10);
+    expect(db.version).toBe(11);
     expect(describeLayout(db)).toEqual(FRESH_LAYOUT);
     for (const store of Object.keys(FRESH_LAYOUT)) expect(await db.count(store)).toBe(0);
     db.close();
   });
 
-  it('migrates a version 9 database, dropping bodies from article records', async () => {
+  it('migrates a version 9 database and stamps items while dropping bodies from article records', async () => {
     const name = freshName();
     await seedV9(name);
     const before = await openDB(name, 9);
@@ -107,7 +129,7 @@ describe('database version 10', () => {
     before.close();
 
     const db = await openDB(name, DB_VERSION, { upgrade });
-    expect(db.version).toBe(10);
+    expect(db.version).toBe(11);
     expect(describeLayout(db)).toEqual(FRESH_LAYOUT);
 
     for (const store of untouched) expect(await snapshot(db, store)).toEqual(expected[store]);
@@ -119,7 +141,7 @@ describe('database version 10', () => {
       expect('extractedHtml' in item).toBe(false);
       const original = itemsBefore.find((candidate) => candidate.id === item.id)!;
       const { html: _html, extractedHtml: _extracted, ...rest } = original;
-      expect(item).toEqual(rest);
+      expect(item).toEqual({ ...rest, lastSeenAt: expect.any(Number) });
     }
 
     expect(await db.count('itemBodies')).toBe(0);
@@ -134,6 +156,25 @@ describe('database version 10', () => {
     const db = await openDB(name, DB_VERSION, { upgrade });
     expect(openCursor).toHaveBeenCalled();
     expect(getAll).not.toHaveBeenCalled();
+    db.close();
+  });
+
+  it('migrates version 10 items in place and preserves body records', async () => {
+    const name = freshName();
+    await seedV10(name);
+    const before = await openDB(name, 10);
+    const feed = await before.get('feeds', 'f1');
+    const body = await before.get('itemBodies', 'f1::both');
+    const flags = await snapshot(before, 'itemFlags');
+    before.close();
+
+    const db = await openDB(name, DB_VERSION, { upgrade });
+    expect(db.version).toBe(11);
+    expect(await db.get('feeds', 'f1')).toEqual(feed);
+    expect(await db.get('itemBodies', 'f1::both')).toEqual(body);
+    expect(await snapshot(db, 'itemFlags')).toEqual(flags);
+    for (const item of await db.getAll('items')) expect(item.lastSeenAt).toEqual(expect.any(Number));
+    expect(db.transaction('items').store.indexNames.contains('by-last-seen')).toBe(true);
     db.close();
   });
 
@@ -152,7 +193,7 @@ describe('database version 10', () => {
     db.close();
   });
 
-  it.each([2, 5, 8])('resets a version %i database to an empty version 10 layout', async (version) => {
+  it.each([2, 5, 8])('resets a version %i database to an empty version 11 layout', async (version) => {
     const name = freshName();
     const old = await openDB(name, version, {
       upgrade(upgrading) {
@@ -168,7 +209,7 @@ describe('database version 10', () => {
     old.close();
 
     const db = await openDB(name, DB_VERSION, { upgrade });
-    expect(db.version).toBe(10);
+    expect(db.version).toBe(11);
     expect(describeLayout(db)).toEqual(FRESH_LAYOUT);
     for (const store of Object.keys(FRESH_LAYOUT)) expect(await db.count(store)).toBe(0);
     db.close();

@@ -11,6 +11,7 @@ import { fingerprintSyncKey } from '../sync/key';
 import { lastPullAt, lastPushAt, pendingCount, lastError, lastErrorAt, keyRejected } from '../sync/status';
 import { deleteSyncAccount } from '../sync/client';
 import { humanRelativeTime } from '../util/time';
+import { getStorageStatus, requestPersistentStorage, type StorageStatus } from '../db/storage-retention';
 
 export function SettingsDrawer() {
   const ctx = useApp();
@@ -111,6 +112,8 @@ export function SettingsDrawer() {
           </div>
         </div>
 
+        <StorageSection />
+
         <Show when={ctx.mcpAvailable()}>
           <div class="group">
             <h3>MCP Server</h3>
@@ -157,11 +160,45 @@ export function SettingsDrawer() {
   );
 }
 
-const [deleteError, setDeleteError] = createSignal<string | null>(null);
+function formatStorageBytes(bytes: number | null): string {
+  if (bytes === null) return 'Unavailable';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function StorageSection() {
+  const [status, setStatus] = createSignal<StorageStatus | null>(null);
+  const [requesting, setRequesting] = createSignal(false);
+  const refresh = async () => setStatus(await getStorageStatus());
+  onMount(() => void refresh());
+  const request = async () => {
+    setRequesting(true);
+    try {
+      await requestPersistentStorage(true);
+      await refresh();
+    } finally {
+      setRequesting(false);
+    }
+  };
+  return (
+    <div class="group">
+      <h3>Storage</h3>
+      <Show when={status()} fallback={<div class="row"><label>Reading storage status…</label></div>}>
+        <div class="row"><label>Usage</label><span>{formatStorageBytes(status()?.usage ?? null)} of {formatStorageBytes(status()?.quota ?? null)}</span></div>
+        <div class="row"><label>Persistent storage</label><span>{status()?.persistent === null ? 'Unavailable' : status()?.persistent ? 'On' : 'Off'}</span></div>
+        <div class="row"><label>Articles</label><span>{status()?.items} ({status()?.bodies} with saved content)</span></div>
+        <Show when={status()?.persistent === false}>
+          <div class="row"><label>Keep local data safer</label><button class="btn" disabled={requesting()} onClick={() => void request()}>{requesting() ? 'Requesting…' : 'Request persistent storage'}</button></div>
+        </Show>
+      </Show>
+    </div>
+  );
+}
 
 function SyncSection() {
   const ctx = useApp();
   const [syncError, setSyncError] = createSignal<string | null>(null);
+  const [deleteError, setDeleteError] = createSignal<string | null>(null);
   const [fingerprint, setFingerprint] = createSignal<string | null>(null);
   const [syncing, setSyncing] = createSignal(false);
   const enabled = () => Boolean(ctx.syncKey());

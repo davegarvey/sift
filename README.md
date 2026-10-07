@@ -372,9 +372,10 @@ them:
 - **Service Worker background sync is not used** — without server-side polling, feeds don't refresh when the tab is closed.
 - **Search** matches article titles and summaries, not article text, and covers
   only the articles stored on the device.
-- **Stored articles are not removed automatically.** Articles and their text stay
-  in IndexedDB until the feed is unsubscribed; there is no size-based eviction or
-  age-based clean-up yet.
+- **Local article retention.** Unstarred article bodies are removed after 90 days
+  without appearing in a feed refresh or sync pull. Unstarred unread records are
+  removed after 365 days; read and starred records remain. Settings shows local
+  storage usage and lets you request persistent browser storage.
 - **OPML import/export covers only the subscription list.** Read/starred state is
   intentionally not exported in v0 (no standard format).
 - **MCP is experimental.** The MCP server tools and SSE relay may change in breaking ways.

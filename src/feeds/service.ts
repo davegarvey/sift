@@ -4,6 +4,8 @@ import { scheduleFlush } from '../sync/push';
 import { DEFAULT_LEARNED_INTERVAL_MS } from '../db/types';
 import type { Feed } from '../db/types';
 import { ensureFeedStats, getFeedStats, updateFeedStatsLabel } from '../db/stats';
+import { getDb } from '../db/open';
+import { requestPersistenceAfterFirstFeed } from '../db/storage-retention';
 
 export interface SubscribeInput {
   url: string;
@@ -14,6 +16,8 @@ export interface SubscribeInput {
 }
 
 export async function subscribeFeed(input: SubscribeInput): Promise<string> {
+  const db = await getDb();
+  const firstFeed = await db.count('feeds') === 0;
   const now = Date.now();
   const id = crypto.randomUUID();
   const feed: Feed = {
@@ -33,6 +37,7 @@ export async function subscribeFeed(input: SubscribeInput): Promise<string> {
     lastItemPublishedAt: null,
   };
   await upsertFeed(feed);
+  if (firstFeed) void requestPersistenceAfterFirstFeed();
   await ensureFeedStats(feed);
   await enqueueStatsIfSync({ feedId: feed.id, totalSeen: 0, feedUrl: feed.url, title: feed.title });
   enqueueFeed({

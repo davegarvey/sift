@@ -77,6 +77,8 @@ export interface Item {
   read: boolean;
   starred: boolean;
   createdAt: number;
+  /** Epoch ms when this item was most recently included in a fetched or synced feed. */
+  lastSeenAt?: number;
   /** True when `publishedAt` is the first-seen fallback, not a real feed date. */
   dateFallback?: boolean;
 }
@@ -135,7 +137,7 @@ export interface DBSchema {
 }
 
 export const DB_NAME = 'sift';
-export const DB_VERSION = 10;
+export const DB_VERSION = 11;
 
 export const DEFAULT_LEARNED_INTERVAL_MS = 60 * 60 * 1000;
 export const MIN_LEARNED_INTERVAL_MS = 30 * 60 * 1000;
