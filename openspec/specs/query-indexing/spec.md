@@ -6,7 +6,7 @@ Keep unread and starred article lists fast with large libraries by querying them
 ## Requirements
 
 ### Requirement: Unread items are queried via an indexed lookup
-`listUnreadAcrossFeeds()` SHALL use an IndexedDB index on the `read` field (stored as a number: 0 for unread, 1 for read) instead of scanning the `by-feed-published` index and filtering in JavaScript. When the `read` field is not indexable directly (IDB limitation with booleans), a secondary object store or a numeric key SHALL be used.
+`listUnreadAcrossFeeds()` SHALL use an IndexedDB index on the `read` field (stored as a number: 0 for unread, 1 for read) instead of scanning the `by-feed-published` index and filtering in JavaScript. When the `read` field is not indexable directly (IDB limitation with booleans), a secondary object store or a numeric key SHALL be used. It SHALL read article records only, which contain no `html` or `extractedHtml`.
 
 #### Scenario: Unread query returns items quickly with many read items
 - **WHEN** the database contains 50,000 items of which 200 are unread
@@ -16,8 +16,12 @@ Keep unread and starred article lists fast with large libraries by querying them
 - **WHEN** an item is marked read via `markRead()`
 - **THEN** subsequent `listUnreadAcrossFeeds()` queries SHALL NOT include that item
 
+#### Scenario: Unread query returns no bodies
+- **WHEN** `listUnreadAcrossFeeds()` returns articles that have stored bodies
+- **THEN** the returned records SHALL contain neither `html` nor `extractedHtml`
+
 ### Requirement: Starred items are queried via an indexed lookup
-`listStarred()` SHALL use an IndexedDB index on the `starred` field (stored as a number: 0 for unstarred, 1 for starred) instead of scanning the full index and filtering in JavaScript.
+`listStarred()` SHALL use an IndexedDB index on the `starred` field (stored as a number: 0 for unstarred, 1 for starred) instead of scanning the full index and filtering in JavaScript. It SHALL read article records only, which contain no `html` or `extractedHtml`.
 
 #### Scenario: Starred query returns items efficiently
 - **WHEN** the database contains 50,000 items of which 50 are starred
@@ -26,6 +30,10 @@ Keep unread and starred article lists fast with large libraries by querying them
 #### Scenario: Starred query respects the star toggle
 - **WHEN** an item is unstarred via `toggleStar()`
 - **THEN** subsequent `listStarred()` queries SHALL NOT include that item
+
+#### Scenario: Starred query returns no bodies
+- **WHEN** `listStarred()` returns articles that have stored bodies
+- **THEN** the returned records SHALL contain neither `html` nor `extractedHtml`
 
 ### Requirement: Results from indexed queries are sorted by publishedAt descending
 The `by-read` and `by-starred` indexes sort by flag value then primary key, not by `publishedAt`. Query results SHALL be sorted in memory by `publishedAt` descending (newest-first) before being returned to the UI. The sort is bounded to at most 200 items, so the cost is negligible.
@@ -49,13 +57,6 @@ When an item's `read` or `starred` field changes, the corresponding index or sec
 - **WHEN** `deleteItemsByFeed(feedUrl)` removes items
 - **THEN** the corresponding flag index entries for those items SHALL also be removed
 
-### Requirement: Backfill completes before indexed queries are used
-The v2-to-v3 migration that populates the `itemFlags` store from existing items SHALL run to completion before `listUnreadAcrossFeeds` and `listStarred` switch to indexed queries. Completion SHALL be tracked via a `meta` record (key: `flagsBackfilled`). Until the flag reads `true`, the query functions SHALL fall back to the original full-scan approach.
-
-#### Scenario: Queries fall back during backfill
-- **WHEN** the migration has not yet completed (`flagsBackfilled` is absent or `false`)
-- **THEN** `listUnreadAcrossFeeds()` and `listStarred()` SHALL use the original full-scan implementation
-
-#### Scenario: Queries use indexes after backfill
-- **WHEN** `flagsBackfilled` is `true`
-- **THEN** `listUnreadAcrossFeeds()` and `listStarred()` SHALL use the indexed `itemFlags` store
+#### Scenario: Deleting items by feed cleans up bodies
+- **WHEN** `deleteItemsByFeed(feedId)` removes items
+- **THEN** the corresponding `itemBodies` records SHALL also be removed
