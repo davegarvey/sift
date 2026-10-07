@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from 'solid-js';
 import { useApp } from '../state';
-import { Settings, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, CircleDot, MoreHorizontal, GripVertical, ChartNoAxesCombined } from 'lucide-solid';
+import { Settings, Info, Plus, Search, ChevronLeft, ChevronRight, TriangleAlert, Star, CircleDot, MoreHorizontal, GripVertical, ChartNoAxesCombined } from 'lucide-solid';
 import { HelpIcon, RefreshIcon } from './Icons';
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../db/types';
 import { usesCollapsedFeedNavigation } from '../desktopLayout';
@@ -211,6 +211,10 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             <Settings size={14} />
             <span>Settings</span>
           </button>
+          <a class="sidebar-action sidebar-link" href="/about" title="About Sift">
+            <Info size={14} />
+            <span>About</span>
+          </a>
           <button
             class="sidebar-action desktop-only"
             title="Keyboard shortcuts (?)"
@@ -302,6 +306,9 @@ export function Sidebar(props: { onNavigate?: () => void }) {
             <button class="collapsed-action" title="Settings" onClick={() => ctx.openModal({ kind: 'settings' })}>
             <Settings size={14} />
             </button>
+            <a class="collapsed-action sidebar-link" title="About Sift" aria-label="About Sift" href="/about" onClick={(e) => e.stopPropagation()}>
+              <Info size={14} />
+            </a>
             <button class="collapsed-action desktop-only" title="Keyboard shortcuts (?)" onClick={() => ctx.openModal({ kind: 'shortcuts' })}>
               <HelpIcon />
             </button>

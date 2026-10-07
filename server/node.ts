@@ -29,6 +29,9 @@ const app = createApp({
   pollDb: process.env.FEED_POLLING === 'true' ? databases?.poll as unknown as D1Database | undefined : undefined,
   proxy: { clientIp: nodeClientIp(parseTrustedProxyHops(process.env.TRUST_PROXY_HOPS)) },
 });
+for (const page of ['about', 'privacy', 'terms']) {
+  app.get(`/${page}`, serveStatic({ path: `./dist/${page}.html` }));
+}
 app.use('/assets/*', serveStatic({ root: './dist/assets' }));
 app.use('*', serveStatic({ root: './dist' }));
 

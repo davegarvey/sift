@@ -6,6 +6,7 @@ Sift is now indexed by search engines and receives visitors other than its autho
 
 - Expand the no-feeds empty state into a short welcome: a one- or two-sentence description, the data-location statement, and actions to add a feed, import OPML, pair a device, and try a small set of sample feeds. Link to the About page. The state appears only when there are no feeds, so existing readers never see it.
 - Add a sample-feeds action that subscribes to a small curated set of public feeds so a visitor can see the reader working immediately. The feeds remain ordinary subscriptions that the reader can delete.
+- Curate two stable, low-volume public feeds: Mozilla Hacks (`https://hacks.mozilla.org/feed/`) and NASA News Releases (`https://www.nasa.gov/news-release/feed/`). Both are published by their operators as RSS feeds.
 - Add static, crawlable `/about`, `/privacy` and `/terms` pages, served outside the SolidJS app, each with a link back to the reader.
 - Add an About entry, using the Lucide `Info` icon, to the sidebar footer beside Settings and to the collapsed desktop rail. Link Privacy and Terms from the About page and the settings drawer.
 - Exclude the static pages from the service worker's `navigateFallback`, so installed clients load them rather than the app shell.
@@ -36,6 +37,8 @@ Sift is now indexed by search engines and receives visitors other than its autho
 
 - Which sample feeds to include. They should be stable, well-formed, low-volume and uncontroversial, and their publishers should not object to the extra traffic.
 - Whether the welcome state should also link to the GitHub repository for self-hosting, or leave that to the About page.
+
+The self-hosting link belongs on the About page; the welcome state links there without adding another action.
 
 ## Non-goals
 
