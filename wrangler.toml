@@ -23,6 +23,16 @@ database_name = "sift-poll"
 database_id = "52c8076e-5053-4425-aadf-0526a8482f54"
 migrations_dir = "server/migrations-poll"
 
+[[ratelimits]]
+name = "PROXY_FETCH_LIMITER"
+namespace_id = "7301"
+simple = { limit = 2000, period = 60 }
+
+[[ratelimits]]
+name = "PROXY_IMAGE_LIMITER"
+namespace_id = "7302"
+simple = { limit = 600, period = 60 }
+
 [vars]
 FEED_POLLING = "true"
 

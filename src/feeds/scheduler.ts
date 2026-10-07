@@ -14,6 +14,7 @@ import {
 import { isIdle } from '../util/idle';
 import { ensureFeedStats, getFeedStats } from '../db/stats';
 import { enqueueStatsIfSync } from '../sync/queue';
+import { runStorageRetention } from '../db/storage-retention';
 
 const TICK_MS = 5 * 60 * 1000;
 const QUIET_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -78,6 +79,7 @@ export async function refreshStaleFeeds(options: RefreshOptions = {}): Promise<v
     return scheduledFeedDueAt(f, schedulerEpoch, now) <= now;
   });
   await mapConcurrent(stale, (f) => refreshFeed(f), 4);
+  await runStorageRetention().catch(() => undefined);
   if (!forceAll && stale.length > 0 && onRefresh && !isIdle()) {
     onRefresh();
   }

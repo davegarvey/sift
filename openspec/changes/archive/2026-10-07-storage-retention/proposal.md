@@ -41,12 +41,13 @@ Persistent storage removes the quota as the limiting factor, so retention is abo
 
 - `split-item-bodies` must land first. It moves bodies into their own store, which makes body deletion a single-record delete, and removes the size-based eviction this change would otherwise replace.
 
-## Open questions
+## Decisions
 
-- **Retention periods.** 90 days for bodies and 365 days for unread records are proposals. The Settings status should be used to check them against a real library before release. Per-feed overrides are out of scope.
-- **Read records.** Keeping read records indefinitely is affordable on current estimates (tens of megabytes a year at around 50 new articles a day) but unmeasured. A very long limit could follow if the Settings figures show otherwise.
-- **When to request persistence.** After the first feed is added is proposed. Requesting only from Settings would avoid a Firefox prompt during onboarding.
-- **Server flags.** The server's `flags` table keeps read and starred state for every synced article indefinitely. Device retention does not affect it. A server rule would have to use each flag's `row_at`, because the server does not know when an article was last in its feed; inactive-account deletion in `delete-sync-data` covers whole accounts.
+- **Retention periods.** Remove unstarred bodies after 90 days unseen and unstarred unread records after 365 days unseen. These leave a long recovery window for infrequently opened feeds while removing the larger stored HTML first. Settings exposes counts and usage so a later change can use observed library size.
+- **Read records.** Keep read records indefinitely. Their metadata is small and supports search, history and reading statistics; no time limit is introduced without evidence that the metadata is a meaningful storage cost.
+- **When to request persistence.** Request once after the first feed is added; record the outcome to avoid repeated prompts. Settings provides an explicit retry action whenever the browser has not granted persistence.
+- **Server flags.** Retain server flag behavior. Client retention is per device; the server does not know when an item was last present in a feed. Whole-account inactive and rotated-data retention is handled by `delete-sync-data`.
+- **Schema migration.** Increment IndexedDB to version 11. Migrate version 10 in place by adding `lastSeenAt` and its index, stamping existing articles at migration time. Direct upgrades from version 9 also apply the body split and stamp. Earlier versions continue to reset as documented.
 
 ## Non-goals
 

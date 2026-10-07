@@ -52,6 +52,7 @@ export async function bulkUpsertItems(inputs: ItemInput[], options: { insertOnly
   const markersStore = tx.objectStore('readMarkers');
   const statsByFeed = new Map<string, FeedStats>();
   const insertedIds: string[] = [];
+  const lastSeenAt = Date.now();
 
   const getStats = async (feedId: string): Promise<FeedStats> => {
     const cached = statsByFeed.get(feedId);
@@ -72,8 +73,11 @@ export async function bulkUpsertItems(inputs: ItemInput[], options: { insertOnly
   for (const { html, ...item } of inputs) {
     const existing = existingByKey.get(item.id);
     if (existing) {
-      if (options.insertOnly) continue;
-      const merged = mergeItem(existing, item);
+      if (options.insertOnly) {
+        await itemsStore.put({ ...existing, lastSeenAt });
+        continue;
+      }
+      const merged = { ...mergeItem(existing, item), lastSeenAt };
       await itemsStore.put(merged);
       if (html) await bodiesStore.put({ id: item.id, feedId: item.feedId, html } satisfies ItemBody);
       const flag = flagByKey.get(item.id);
@@ -87,9 +91,10 @@ export async function bulkUpsertItems(inputs: ItemInput[], options: { insertOnly
     } else {
       insertedIds.push(item.id);
       const existingFlag = flagByKey.get(item.id);
+      const stored = { ...item, lastSeenAt };
       await itemsStore.put(existingFlag
-        ? { ...item, read: flagToRead(existingFlag.read), starred: flagToStar(existingFlag.starred) }
-        : item);
+        ? { ...stored, read: flagToRead(existingFlag.read), starred: flagToStar(existingFlag.starred) }
+        : stored);
       await flagsStore.put({
         id: item.id,
         feedId: item.feedId,
@@ -97,7 +102,7 @@ export async function bulkUpsertItems(inputs: ItemInput[], options: { insertOnly
         starred: existingFlag ? existingFlag.starred : starToFlag(item.starred),
       });
       if (html) await bodiesStore.put({ id: item.id, feedId: item.feedId, html } satisfies ItemBody);
-      existingByKey.set(item.id, item);
+      existingByKey.set(item.id, stored);
       const stats = await getStats(item.feedId);
       stats.totalSeen += 1;
       if (item.read && !(await markersStore.get(item.id))) {

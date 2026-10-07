@@ -8,6 +8,8 @@ interface WorkerBindings {
   ASSETS: { fetch: (request: Request) => Response };
   DB?: D1Database;
   POLL_DB?: D1Database;
+  PROXY_FETCH_LIMITER?: RateLimit;
+  PROXY_IMAGE_LIMITER?: RateLimit;
   FEED_POLLING?: string;
   FEED_POLL_BATCH?: string;
   POLL_DB_MAX_BYTES?: string;
@@ -20,7 +22,15 @@ function pollDatabase(env: WorkerBindings): D1Database | undefined {
 }
 
 function buildApp(env: WorkerBindings) {
-  const app = createApp<WorkerEnv>({ db: env.DB, pollDb: pollDatabase(env) });
+  const app = createApp<WorkerEnv>({
+    db: env.DB,
+    pollDb: pollDatabase(env),
+    proxy: {
+      fetchLimiter: env.PROXY_FETCH_LIMITER,
+      imageLimiter: env.PROXY_IMAGE_LIMITER,
+      clientIp: (c) => c.req.header('CF-Connecting-IP'),
+    },
+  });
   app.all('*', (c) => {
     const assets = c.env.ASSETS;
     if (assets && typeof assets.fetch === 'function') {

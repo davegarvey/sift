@@ -32,6 +32,13 @@ npm start           # node + tsx serving dist/, proxy, and API routes
 bun server/bun.ts   # bun runtime
 ```
 
+Node and Bun can store sync data in local SQLite files when `SIFT_DATA_DIR` is
+set. Node requires 22.13 or later for `node:sqlite`. The sync and polling
+databases are separate files; both runtimes apply the shared SQL migrations at
+startup. Set `FEED_POLLING=true` to enable polling and daily maintenance.
+Self-hosted SQLite supports one running Sift server process per data directory;
+it is not a shared database for horizontal scaling.
+
 ## Deploy
 
 ### Cloudflare Workers
@@ -61,6 +68,19 @@ queries and 555 subrequests, within Workers Paid limits but above the Free
 plan's 50 subrequests per invocation. Remove `FEED_POLLING` to disable polling;
 browsers continue fetching feeds either way.
 
+Two Workers rate limiting bindings, `PROXY_FETCH_LIMITER` and
+`PROXY_IMAGE_LIMITER`, enforce the per-client proxy limits described under
+[Proxy limits](#proxy-limits). They are declared in `wrangler.toml` and need
+Wrangler 4.36 or later. Their `namespace_id` values (`7301` and `7302`) must be
+unique within your Cloudflare account; change them if your account already uses
+those IDs. Without the bindings the Worker falls back to a per-isolate limiter,
+which is less accurate but keeps the proxy working.
+
+Set a billing alert in the Cloudflare dashboard (Billing, Notifications) for
+Workers usage. A per-address limit bounds one source but not many, and an
+alert is the quickest way to notice a public instance being used as a general
+fetcher.
+
 ### Docker
 
 ```sh
@@ -68,11 +88,42 @@ docker build -t sift .
 docker run -p 8787:8787 sift
 ```
 
+For a persistent instance, mount `/data`. The GHCR image uses Bun and enables
+sync by default; polling remains opt-in:
+
+```sh
+docker run -d --name sift -p 8787:8787 -v sift-data:/data \
+  -e FEED_POLLING=true ghcr.io/davegarvey/sift:latest
+```
+
+Compose:
+
+```yaml
+services:
+  sift:
+    image: ghcr.io/davegarvey/sift:latest
+    ports:
+      - "8787:8787"
+    volumes:
+      - sift-data:/data
+    environment:
+      FEED_POLLING: "true"
+volumes:
+  sift-data:
+```
+
 ## Configuration
 
 Copy `.env.example` to `.env` and set:
 
 - `MCP_ENABLED=true` — enable the MCP server and SSE relay at `/mcp` and `/api/events`
+- `TRUST_PROXY_HOPS` — number of reverse proxies in front of Node or Bun whose `X-Forwarded-For` entry may identify the client for proxy limits (default 0, which ignores the header and uses the socket address)
+
+For Node and Bun:
+
+- `SIFT_DATA_DIR` — enable sync and store the `sift-sync.sqlite` and `sift-poll.sqlite` files in this directory
+- `FEED_POLLING=true` — enable server-side polling when `SIFT_DATA_DIR` is set; the process checks every 10 minutes
+- `FEED_POLL_BATCH` and `POLL_DB_MAX_BYTES` — polling batch size and poll-database limit, with the same defaults as Workers
 
 Cloudflare Workers variables (`wrangler.toml` `[vars]`):
 
@@ -83,6 +134,34 @@ Cloudflare Workers variables (`wrangler.toml` `[vars]`):
 Polling covers at most 500 feeds per account. Accounts with more feeds still
 fetch the rest in their browsers. Daily maintenance rebuilds the URL registry
 from accounts active in the last 14 days and deletes items older than 7 days.
+
+### Proxy limits
+
+`/feed`, `/article` and `/img` accept only requests from Sift's own origin:
+a request with a `Sec-Fetch-Site` header other than `same-origin` or `none`
+receives `403`, so other websites cannot embed or call the proxy. Requests
+without the header, such as `curl`, are not rejected on that basis.
+
+Each client address is also limited to 2000 `/feed` and `/article` requests
+and, separately, 600 `/img` requests in each 60-second window; the excess
+receives `429` with `Retry-After`. The budgets allow a 1000-feed OPML import
+plus a 500-feed refresh, or three articles of 200 images each, in one minute
+from one household behind one address. Cache hits count. A limited request is rejected
+before any target lookup, so it uses none of the per-origin budget.
+
+On Workers the limit uses the Workers rate limiting binding, keyed by
+`CF-Connecting-IP`, with no D1 writes. Cloudflare counts per location and
+eventually consistently, so enforcement is approximate. Node and Bun, and
+Workers without the binding, use a process-local limiter keyed by the socket
+address; behind a reverse proxy or Docker network address translation, all
+clients then share one budget unless `TRUST_PROXY_HOPS` is set. IPv6 clients
+are keyed by /64 prefix.
+
+`/feed` responses are capped at 2 MiB, `/article` at 5 MiB and `/img` at
+10 MiB. A larger declared `Content-Length` returns `502`; a larger streamed
+body is aborted at the cap, which the browser sees as a failed request.
+Sync rate limits use Cloudflare's `CF-Connecting-IP`; `X-Forwarded-For` is
+ignored because clients can supply it themselves.
 
 ## Scripts
 
@@ -140,7 +219,8 @@ metadata in the sync D1 database; neither is exposed through the sync API.
 Successful proxy bodies and validators use the existing cache layers, with
 failure markers stored under separate keys. Diagnostics contain only a hashed
 origin, route, status, retry timing, and a short allowlist of response
-metadata. The ordinary proxy does not persist upstream URLs, query strings,
+metadata. Same-site and per-client rejections are logged with only the route,
+status and reason, never a client address or URL. The ordinary proxy does not persist upstream URLs, query strings,
 response bodies, or article IDs. Worker cache hits still count as Worker
 requests against the account plan limits. Target checks are application-level
 filtering and do not pin a hostname to one DNS answer for the lifetime of a
@@ -322,16 +402,17 @@ them:
 
 ## Known v0 limitations
 
-- **Sync is Workers-only.** The `/sync/*` routes require Cloudflare D1; the Node/Bun adapters don't include them.
+- **Self-hosted sync is single-process.** Node, Bun and Docker can use local SQLite, but multiple Sift processes cannot share the same data directory.
 - **No push notifications.** Browser refresh runs only while the app is open; on Workers with polling enabled, synced devices receive items polled in the meantime on their next sync.
 - **No bulk "mark all read" or multi-select.** Reading is the marking mechanism.
 - **No per-feed customization** (colors, sort overrides, custom refresh intervals).
 - **Service Worker background sync is not used** — without server-side polling, feeds don't refresh when the tab is closed.
 - **Search** matches article titles and summaries, not article text, and covers
   only the articles stored on the device.
-- **Stored articles are not removed automatically.** Articles and their text stay
-  in IndexedDB until the feed is unsubscribed; there is no size-based eviction or
-  age-based clean-up yet.
+- **Local article retention.** Unstarred article bodies are removed after 90 days
+  without appearing in a feed refresh or sync pull. Unstarred unread records are
+  removed after 365 days; read and starred records remain. Settings shows local
+  storage usage and lets you request persistent browser storage.
 - **OPML import/export covers only the subscription list.** Read/starred state is
   intentionally not exported in v0 (no standard format).
 - **MCP is experimental.** The MCP server tools and SSE relay may change in breaking ways.

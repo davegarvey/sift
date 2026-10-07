@@ -7,8 +7,7 @@ This capability lets a Workers deployment poll the feeds that active synced acco
 ## Requirements
 
 ### Requirement: Polling is opt-in per deployment
-
-The Worker SHALL poll feeds and serve item sync only when its `FEED_POLLING` variable is `"true"` and a poll database is bound as `POLL_DB`. Polling state and items SHALL be stored in the poll database, not in the sync database. `/sync/capabilities` SHALL report `items: true` only in that case. Node, Bun and the development server SHALL report `items: false` or omit it.
+The Worker SHALL poll feeds and serve item sync only when its `FEED_POLLING` variable is `"true"` and a poll database is bound as `POLL_DB`. Node and Bun SHALL poll only when `SIFT_DATA_DIR` is configured and `FEED_POLLING=true`, using the separate local poll database. Polling state and items SHALL be stored in the poll database, not the sync database. `/sync/capabilities` SHALL report `items: true` only when polling is enabled and the poll database is available.
 
 #### Scenario: Polling disabled
 - **WHEN** `FEED_POLLING` is unset
@@ -19,6 +18,12 @@ The Worker SHALL poll feeds and serve item sync only when its `FEED_POLLING` var
 #### Scenario: Poll database missing
 - **WHEN** `FEED_POLLING` is `"true"` and no `POLL_DB` binding exists
 - **THEN** polling and item sync SHALL be disabled
+
+#### Scenario: Polling on Node or Bun
+- **WHEN** Node or Bun starts with `SIFT_DATA_DIR` configured and `FEED_POLLING=true`
+- **THEN** it SHALL use `sift-poll.sqlite` separately from `sift-sync.sqlite`
+- **AND** it SHALL check for due feeds every 10 minutes
+- **AND** `/sync/capabilities` SHALL report `items: true`
 
 ### Requirement: Registry of URLs to poll
 
