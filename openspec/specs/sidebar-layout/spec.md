@@ -61,3 +61,17 @@ When no feeds are subscribed, the sidebar SHALL keep the add-feed icon visible a
 #### Scenario: Empty result from tag filter
 - **WHEN** feeds are subscribed but the active tag filter matches none of them
 - **THEN** both heading action icons remain visible and no empty-state CTA is shown in the sidebar
+
+### Requirement: About page navigation
+
+The expanded sidebar footer and collapsed desktop rail SHALL provide an accessible About link using the Lucide `Info` icon.
+
+#### Scenario: Expanded sidebar
+
+- **WHEN** the sidebar is expanded
+- **THEN** its footer SHALL include an About link to `/about` beside Settings
+
+#### Scenario: Collapsed desktop rail
+
+- **WHEN** the sidebar is collapsed on desktop
+- **THEN** the rail SHALL include an accessible About link to `/about`
