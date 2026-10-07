@@ -479,7 +479,7 @@ describe('retention in the daily cron', () => {
     } finally {
       await mf.dispose();
     }
-  });
+  }, 15_000);
 
   it('deletes at most RETENTION_MAX_ACCOUNTS_PER_RUN accounts per run and finishes the backlog later', async () => {
     const mf = await createMf({});

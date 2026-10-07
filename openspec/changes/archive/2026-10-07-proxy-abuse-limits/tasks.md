@@ -30,4 +30,4 @@
 - [x] 5.7 Run typecheck, lint, tests, build, spec validation and the smoke tests.
 - [x] 5.8 In a browser, add feeds, refresh, open an image-heavy article and search without being limited.
 - [x] 5.9 Validate the OpenSpec change with strict validation.
-- [ ] 5.10 After merge, verify both Workers rate limiting bindings in the deployed Cloudflare Worker.
+- [x] 5.10 After merge, verify both Workers rate limiting bindings in the deployed Cloudflare Worker. `PROXY_FETCH_LIMITER` and `PROXY_IMAGE_LIMITER` are present in the deployed `wrangler.toml`; the production Workers build succeeded, and the live Worker returns the proxy guard's cross-site 403 with isolation headers.
