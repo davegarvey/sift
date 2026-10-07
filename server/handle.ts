@@ -8,7 +8,7 @@ import {
   badGateway,
 } from './fetch';
 import { assertNoUrlLog } from './log';
-import { ARTICLE_MAX_BYTES, IMAGE_MAX_BYTES, capBody, declaredLengthExceeds } from './body-cap';
+import { ARTICLE_MAX_BYTES, FEED_MAX_BYTES, IMAGE_MAX_BYTES, capBody, declaredLengthExceeds } from './body-cap';
 import { proxyGuard, type ProxyGuardOptions } from './proxy-guard';
 import { Relay, sseResponse } from './relay';
 import { createMcpHttpHandler } from './mcp';
@@ -86,6 +86,11 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
     const upstreamRes = feedResult.response;
 
+    if (upstreamRes.status !== 304 && declaredLengthExceeds(upstreamRes.headers, FEED_MAX_BYTES)) {
+      void cancelResponse(upstreamRes);
+      return badGateway('Upstream response is too large');
+    }
+
     // Pass through 304 with no body.
     const retryAfter = upstreamRes.headers.get('X-Sift-Retry-After');
 
@@ -102,7 +107,12 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     }
 
     // For non-2xx (other than 304), return the upstream status to the client.
-    if (upstreamRes.status < 200 || upstreamRes.status >= 300) return proxyError(upstreamRes);
+    if (upstreamRes.status < 200 || upstreamRes.status >= 300) {
+      return proxyError(new Response(capBody(upstreamRes.body, FEED_MAX_BYTES), {
+        status: upstreamRes.status,
+        headers: upstreamRes.headers,
+      }));
+    }
 
     const headers = new Headers();
     headers.set('Content-Type', 'application/xml; charset=utf-8');
@@ -115,7 +125,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     const lastModified = upstreamRes.headers.get('Last-Modified');
     if (lastModified) headers.set('Last-Modified', lastModified);
     if (retryAfter) headers.set('X-Sift-Retry-After', retryAfter);
-    return new Response(upstreamRes.body, { status: 200, headers });
+    return new Response(capBody(upstreamRes.body, FEED_MAX_BYTES), { status: 200, headers });
   });
 
   /**
@@ -138,11 +148,16 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
       return response;
     }
 
-    if (upstreamRes.status < 200 || upstreamRes.status >= 300) return proxyError(upstreamRes);
-
     if (declaredLengthExceeds(upstreamRes.headers, ARTICLE_MAX_BYTES)) {
       void cancelResponse(upstreamRes);
       return badGateway('Upstream response is too large');
+    }
+
+    if (upstreamRes.status < 200 || upstreamRes.status >= 300) {
+      return proxyError(new Response(capBody(upstreamRes.body, ARTICLE_MAX_BYTES), {
+        status: upstreamRes.status,
+        headers: upstreamRes.headers,
+      }));
     }
 
     const headers = new Headers();
@@ -178,17 +193,22 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
       return response;
     }
 
-    if (upstreamRes.status < 200 || upstreamRes.status >= 300) return proxyError(upstreamRes);
+    if (declaredLengthExceeds(upstreamRes.headers, IMAGE_MAX_BYTES)) {
+      void cancelResponse(upstreamRes);
+      return badGateway('Upstream response is too large');
+    }
+
+    if (upstreamRes.status < 200 || upstreamRes.status >= 300) {
+      return proxyError(new Response(capBody(upstreamRes.body, IMAGE_MAX_BYTES), {
+        status: upstreamRes.status,
+        headers: upstreamRes.headers,
+      }));
+    }
 
     const contentType = upstreamRes.headers.get('Content-Type')?.trim();
     if (!contentType || !/^image\//i.test(contentType)) {
       void cancelResponse(upstreamRes);
       return badGateway('Upstream response is not an image');
-    }
-
-    if (declaredLengthExceeds(upstreamRes.headers, IMAGE_MAX_BYTES)) {
-      void cancelResponse(upstreamRes);
-      return badGateway('Upstream response is too large');
     }
 
     const headers = new Headers();

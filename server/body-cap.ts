@@ -1,3 +1,4 @@
+export const FEED_MAX_BYTES = 2 * 1024 * 1024;
 export const ARTICLE_MAX_BYTES = 5 * 1024 * 1024;
 export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 

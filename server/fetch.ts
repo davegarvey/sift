@@ -1,6 +1,7 @@
 import { clearSharedFeedFailure, getSharedFeedFailure, recordSharedFeedFailure } from './feed-state';
 import { fetchOriginRequest, type OriginPolicyOptions } from './origin-governor';
 import { sha256Hex } from './sync/tokens';
+import { FEED_MAX_BYTES } from './body-cap';
 
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 export const READER_USER_AGENT = 'sift/0.0 (+https://github.com/dave/sift)';
@@ -8,7 +9,7 @@ export const FEED_CACHE_TTL_MS = 15 * 60_000;
 export const FEED_CACHE_MAX_FRESHNESS_MS = 24 * 60 * 60_000;
 export const FEED_STALE_RETENTION_MS = 24 * 60 * 60_000;
 export const FEED_CACHE_MAX_ENTRIES = 256;
-export const FEED_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
+export const FEED_CACHE_MAX_BODY_BYTES = FEED_MAX_BYTES;
 export const FEED_RETRY_FALLBACK_MS = 30 * 60_000;
 export const FEED_RETRY_MAX_MS = 24 * 60 * 60_000;
 
@@ -300,9 +301,9 @@ export function fetchUpstreamWithPolicy(
   const existing = upstreamRequests.get(key);
   if (existing) return existing.then((response) => response.clone());
 
-  const request = performUpstreamWithPolicy(upstream, init, headers, policy).then((response) => response.clone());
+  const request = performUpstreamWithPolicy(upstream, init, headers, policy);
   upstreamRequests.set(key, request);
-  return request.then((response) => response.clone()).finally(() => {
+  return request.finally(() => {
     if (upstreamRequests.get(key) === request) upstreamRequests.delete(key);
   });
 }
@@ -764,16 +765,42 @@ async function revalidateFeed(
 
   const contentLength = Number(response.headers.get('Content-Length') ?? '');
   if (Number.isFinite(contentLength) && contentLength > FEED_CACHE_MAX_BODY_BYTES) {
-    return { kind: 'response', response, state: 'bypass' };
-  }
-
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > FEED_CACHE_MAX_BODY_BYTES) {
+    void response.body?.cancel().catch(() => undefined);
     return {
       kind: 'response',
-      response: new Response(bytes, { status: response.status, headers: response.headers }),
+      response: new Response(null, {
+        status: 502,
+        headers: { 'Cache-Control': 'no-store', 'X-Sift-Request-Source': 'local-gate' },
+      }),
       state: 'bypass',
     };
+  }
+
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteLength += value.byteLength;
+        if (byteLength > FEED_CACHE_MAX_BODY_BYTES) {
+          void reader.cancel().catch(() => undefined);
+          throw new Error('Upstream feed body exceeds the size limit');
+        }
+        chunks.push(value);
+      }
+    } catch (error) {
+      void reader.cancel(error).catch(() => undefined);
+      throw error;
+    }
+  }
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
   }
 
   const fetchedAt = Date.now();

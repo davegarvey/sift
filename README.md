@@ -120,10 +120,11 @@ address; behind a reverse proxy or Docker network address translation, all
 clients then share one budget unless `TRUST_PROXY_HOPS` is set. IPv6 clients
 are keyed by /64 prefix.
 
-`/article` responses are capped at 5 MiB and `/img` responses at 10 MiB. A
-larger declared `Content-Length` returns `502`; a larger streamed body is
-aborted at the cap, which the browser sees as a failed request. `/feed`
-responses larger than 2 MiB are passed through but not cached.
+`/feed` responses are capped at 2 MiB, `/article` at 5 MiB and `/img` at
+10 MiB. A larger declared `Content-Length` returns `502`; a larger streamed
+body is aborted at the cap, which the browser sees as a failed request.
+Sync rate limits use Cloudflare's `CF-Connecting-IP`; `X-Forwarded-For` is
+ignored because clients can supply it themselves.
 
 ## Scripts
 

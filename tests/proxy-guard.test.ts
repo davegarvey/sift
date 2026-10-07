@@ -11,7 +11,7 @@ import {
   trustedProxyClientIp,
   type ProxyGuardOptions,
 } from '../server/proxy-guard';
-import { ARTICLE_MAX_BYTES, IMAGE_MAX_BYTES } from '../server/body-cap';
+import { ARTICLE_MAX_BYTES, FEED_MAX_BYTES, IMAGE_MAX_BYTES } from '../server/body-cap';
 
 vi.mock('../server/origin-governor', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../server/origin-governor')>();
@@ -414,9 +414,14 @@ describe('client address', () => {
 });
 
 describe('response body caps', () => {
-  function streamOf(totalBytes: number, chunkBytes = MIB): { stream: ReadableStream<Uint8Array>; pulls: () => number } {
+  function streamOf(totalBytes: number, chunkBytes = MIB): {
+    stream: ReadableStream<Uint8Array>;
+    pulls: () => number;
+    cancelled: () => boolean;
+  } {
     let sent = 0;
     let pulls = 0;
+    let cancelled = false;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
         pulls += 1;
@@ -428,12 +433,15 @@ describe('response body caps', () => {
         sent += size;
         controller.enqueue(new Uint8Array(size));
       },
+      cancel() {
+        cancelled = true;
+      },
     });
-    return { stream, pulls: () => pulls };
+    return { stream, pulls: () => pulls, cancelled: () => cancelled };
   }
 
-  function stubStream(body: ReadableStream<Uint8Array>, headers: Record<string, string>) {
-    vi.stubGlobal('fetch', (async () => new Response(body, { status: 200, headers })) as typeof globalThis.fetch);
+  function stubStream(body: ReadableStream<Uint8Array>, headers: Record<string, string>, status = 200) {
+    vi.stubGlobal('fetch', (async () => new Response(body, { status, headers })) as typeof globalThis.fetch);
   }
 
   async function byteLength(response: Response): Promise<number> {
@@ -441,10 +449,11 @@ describe('response body caps', () => {
   }
 
   it.each([
+    ['/feed', FEED_MAX_BYTES, 'application/xml', PAGE_CSP],
     ['/article', ARTICLE_MAX_BYTES, 'text/html', PAGE_CSP],
     ['/img', IMAGE_MAX_BYTES, 'image/png', 'sandbox'],
   ] as const)('rejects a declared oversize %s before reading it', async (path, cap, type, csp) => {
-    const { stream, pulls } = streamOf(cap + 1);
+    const { stream, cancelled } = streamOf(cap + 1);
     stubStream(stream, { 'Content-Type': type, 'Content-Length': String(cap + 1) });
 
     const response = await appWith().request(target(path));
@@ -452,16 +461,17 @@ describe('response body caps', () => {
     expect(response.status).toBe(502);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Sift-Request-Source')).toBe('local-gate');
-    expect(await response.text()).toBe('Upstream response is too large');
+    if (path === '/feed') expect(await response.text()).toBe('');
+    else expect(await response.text()).toBe('Upstream response is too large');
     expectIsolated(response, csp);
-    expect(pulls()).toBeLessThan(cap / MIB);
+    expect(cancelled()).toBe(true);
   });
 
   it.each([
     ['/article', ARTICLE_MAX_BYTES, 'text/html'],
     ['/img', IMAGE_MAX_BYTES, 'image/png'],
   ] as const)('aborts a streamed oversize %s without reading it all', async (path, cap, type) => {
-    const { stream, pulls } = streamOf(Number.MAX_SAFE_INTEGER);
+    const { stream, pulls, cancelled } = streamOf(Number.MAX_SAFE_INTEGER);
     stubStream(stream, { 'Content-Type': type });
 
     const response = await appWith().request(target(path));
@@ -469,6 +479,7 @@ describe('response body caps', () => {
     expect(response.status).toBe(200);
     await expect(response.arrayBuffer()).rejects.toThrow();
     expect(pulls()).toBeLessThanOrEqual(cap / MIB + 6);
+    expect(cancelled()).toBe(true);
   });
 
   it.each([
@@ -484,6 +495,7 @@ describe('response body caps', () => {
   });
 
   it.each([
+    ['/feed', FEED_MAX_BYTES, 'application/xml'],
     ['/article', ARTICLE_MAX_BYTES, 'text/html'],
     ['/img', IMAGE_MAX_BYTES, 'image/png'],
   ] as const)('delivers a %s body of exactly the cap', async (path, cap, type) => {
@@ -496,13 +508,32 @@ describe('response body caps', () => {
     expect(await byteLength(response)).toBe(cap);
   });
 
-  it('does not cap /feed bodies beyond the existing cache limit', async () => {
-    const { stream } = streamOf(3 * MIB);
+  it('aborts an oversized streamed /feed without buffering the whole body', async () => {
+    const { stream, pulls, cancelled } = streamOf(Number.MAX_SAFE_INTEGER);
     stubStream(stream, { 'Content-Type': 'application/xml' });
 
     const response = await appWith().request(target('/feed'));
 
-    expect(response.status).toBe(200);
-    expect(await byteLength(response)).toBe(3 * MIB);
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('Failed to fetch upstream feed');
+    expect(pulls()).toBeLessThanOrEqual(FEED_MAX_BYTES / MIB + 3);
+    expect(cancelled()).toBe(true);
+  });
+
+  it.each([
+    ['/feed', FEED_MAX_BYTES, 'application/xml', PAGE_CSP],
+    ['/article', ARTICLE_MAX_BYTES, 'text/html', PAGE_CSP],
+    ['/img', IMAGE_MAX_BYTES, 'image/png', 'sandbox'],
+  ] as const)('caps streamed error responses from %s', async (path, cap, type, csp) => {
+    const { stream, pulls, cancelled } = streamOf(Number.MAX_SAFE_INTEGER);
+    stubStream(stream, { 'Content-Type': type }, 500);
+
+    const response = await appWith().request(target(path));
+
+    expect(response.status).toBe(500);
+    expectIsolated(response, csp);
+    await expect(response.arrayBuffer()).rejects.toThrow();
+    expect(pulls()).toBeLessThanOrEqual(cap / MIB + 3);
+    expect(cancelled()).toBe(true);
   });
 });

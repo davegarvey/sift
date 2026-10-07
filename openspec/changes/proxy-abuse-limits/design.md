@@ -1,6 +1,6 @@
 ## Context
 
-`/feed`, `/article` and `/img` fetch any public URL for any caller. The existing controls protect upstream sites and private networks. Nothing limits a single client, checks that the caller is Sift's own front end, or bounds `/article` and `/img` body sizes. The hosted instance runs on Cloudflare Workers, where the exposures are request volume, CPU time and the domain's reputation. The browser client already calls the proxy from the same origin, so the changes are server-side only.
+`/feed`, `/article` and `/img` fetch any public URL for any caller. The existing controls protect upstream sites and private networks. Nothing limits a single client, checks that the caller is Sift's own front end, or bounds proxy response sizes. The hosted instance runs on Cloudflare Workers, where the exposures are request volume, CPU time and the domain's reputation. The browser client already calls the proxy from the same origin, so the changes are server-side only.
 
 ## Goals / Non-Goals
 
@@ -62,14 +62,17 @@ Responses served from the shared feed cache count. A cache hit still costs a Wor
 
 ### Body caps
 
-`/article` is capped at 5 MiB and `/img` at 10 MiB, enough for large article pages and high-resolution photographs while keeping a single request's transfer bounded. After the existing status and content-type checks:
+`/feed` is capped at 2 MiB, `/article` at 5 MiB and `/img` at 10 MiB. The feed cap matches the cache limit and prevents `/feed` from acting as an uncapped response relay. Article and image caps allow large pages and high-resolution photographs while bounding each request.
 
-1. A declared `Content-Length` over the cap cancels the upstream body and returns `502` ("Upstream response is too large") with `Cache-Control: no-store`, through the existing `badGateway`. `413` is not used because it describes a request body.
-2. Otherwise the body is piped through a `TransformStream` that counts bytes and errors the stream when the count passes the cap, which cancels the upstream read. Nothing is buffered beyond one chunk. At that point the response status is already sent, so the client sees a failed or truncated transfer, not a status. `fetchArticleHtml` already treats a failed read as no article, and an `img` element shows a broken image. A body exactly at the cap is delivered.
+A declared `Content-Length` over the cap cancels the upstream body without reading it and returns `502` with `Cache-Control: no-store`. For an undeclared or misleading length, `/feed` reads only while the accumulated body remains within 2 MiB; the cache never receives an oversized body. Article and image bodies are piped through a `TransformStream` that counts bytes and errors the stream when the cap is crossed, which cancels the upstream read. A body exactly at its cap is delivered.
 
 The count is of bytes after any content decoding, so a compressed response that expands is bounded too, while the declared length applies to whatever the upstream sent.
 
-`/feed` keeps `FEED_CACHE_MAX_BODY_BYTES` (2 MiB), which decides what is cached and does not conflict. Larger feeds are still passed through. The proposal does not cap `/feed` bodies, and this change does not either; see Risks.
+Error responses from all proxy routes are also streamed through their route's cap so an upstream error cannot be used to relay an unbounded body.
+
+### Sync client address
+
+Sync's IP-based limits run on Workers. Cloudflare sets `CF-Connecting-IP` from the connection and overwrites a caller-supplied value. `X-Forwarded-For` is not authoritative because callers can send it themselves. Sync limits therefore use `CF-Connecting-IP` only and fall back to a shared key if Cloudflare's address is absent. Node and Bun do not mount sync routes.
 
 ### Diagnostics
 
@@ -80,10 +83,10 @@ Rejections emit a structured `console.info` line, `upstream_policy.client_reject
 - **A per-IP limit does not stop a distributed caller.** It bounds a single source. Operators should set a Cloudflare billing alert (documented in the README).
 - **Permissive binding.** Counters are per location and eventually consistent, so the effective limit varies. Margins in the limits absorb this.
 - **Shared addresses.** Carrier-grade NAT and offices can put many users behind one address. The budgets allow several concurrent heavy users, but a large shared address can hit them.
-- **Uncapped `/feed` pass-through.** A feed over 2 MiB is streamed without a cap, and a feed without `Content-Length` is read into memory before the cache-size check. A caller can use `/feed` to fetch large non-feed content. This is outside the proposal. A separate change should set a hard `/feed` cap and avoid buffering above it.
+- **Large feeds.** Feeds over 2 MiB now fail instead of being passed through uncached. This can exclude unusually large feeds, while keeping proxy memory bounded.
 - **Response cloning.** Request coalescing clones upstream responses, and the unread branches of a cloned stream can retain chunks. The cap bounds this to a small multiple of the cap, but it does not remove it.
 - **Namespace ID collisions.** Reusing a rate limiting namespace ID within an account shares counters. The IDs here are arbitrary and may need to change.
-- **Not verified against Cloudflare.** The binding is exercised only through a stub in tests. Deploying is the first real test of the configuration.
+- **Not verified against Cloudflare.** The binding is exercised only through a stub in tests. The deployed Worker must be checked after merge.
 
 ## Migration
 
