@@ -32,6 +32,13 @@ npm start           # node + tsx serving dist/, proxy, and API routes
 bun server/bun.ts   # bun runtime
 ```
 
+Node and Bun can store sync data in local SQLite files when `SIFT_DATA_DIR` is
+set. Node requires 22.13 or later for `node:sqlite`. The sync and polling
+databases are separate files; both runtimes apply the shared SQL migrations at
+startup. Set `FEED_POLLING=true` to enable polling and daily maintenance.
+Self-hosted SQLite supports one running Sift server process per data directory;
+it is not a shared database for horizontal scaling.
+
 ## Deploy
 
 ### Cloudflare Workers
@@ -81,12 +88,42 @@ docker build -t sift .
 docker run -p 8787:8787 sift
 ```
 
+For a persistent instance, mount `/data`. The GHCR image uses Bun and enables
+sync by default; polling remains opt-in:
+
+```sh
+docker run -d --name sift -p 8787:8787 -v sift-data:/data \
+  -e FEED_POLLING=true ghcr.io/davegarvey/sift:latest
+```
+
+Compose:
+
+```yaml
+services:
+  sift:
+    image: ghcr.io/davegarvey/sift:latest
+    ports:
+      - "8787:8787"
+    volumes:
+      - sift-data:/data
+    environment:
+      FEED_POLLING: "true"
+volumes:
+  sift-data:
+```
+
 ## Configuration
 
 Copy `.env.example` to `.env` and set:
 
 - `MCP_ENABLED=true` — enable the MCP server and SSE relay at `/mcp` and `/api/events`
 - `TRUST_PROXY_HOPS` — number of reverse proxies in front of Node or Bun whose `X-Forwarded-For` entry may identify the client for proxy limits (default 0, which ignores the header and uses the socket address)
+
+For Node and Bun:
+
+- `SIFT_DATA_DIR` — enable sync and store the `sift-sync.sqlite` and `sift-poll.sqlite` files in this directory
+- `FEED_POLLING=true` — enable server-side polling when `SIFT_DATA_DIR` is set; the process checks every 10 minutes
+- `FEED_POLL_BATCH` and `POLL_DB_MAX_BYTES` — polling batch size and poll-database limit, with the same defaults as Workers
 
 Cloudflare Workers variables (`wrangler.toml` `[vars]`):
 
@@ -365,7 +402,7 @@ them:
 
 ## Known v0 limitations
 
-- **Sync is Workers-only.** The `/sync/*` routes require Cloudflare D1; the Node/Bun adapters don't include them.
+- **Self-hosted sync is single-process.** Node, Bun and Docker can use local SQLite, but multiple Sift processes cannot share the same data directory.
 - **No push notifications.** Browser refresh runs only while the app is open; on Workers with polling enabled, synced devices receive items polled in the meantime on their next sync.
 - **No bulk "mark all read" or multi-select.** Reading is the marking mechanism.
 - **No per-feed customization** (colors, sort overrides, custom refresh intervals).

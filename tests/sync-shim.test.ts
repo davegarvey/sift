@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createSyncRoutes } from '../server/sync/routes';
-import { LocalD1Database } from '../server/sync/local-d1';
+import { LocalD1Database } from './helpers/local-d1';
 
 function makeSyncKey(label: string): string {
   const raw = label + 'xxxxxxxxxxxxxxxxxxxx';

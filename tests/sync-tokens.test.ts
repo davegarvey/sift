@@ -7,7 +7,7 @@ import { isValidSyncKey, KEY_FORMAT_RE } from '../server/sync/auth';
 import { isValidTokenFormat, tokenFingerprint, sha256Hex, syncKeyFingerprint } from '../server/sync/tokens';
 import { fingerprintSyncKey } from '../src/sync/key';
 import { createSyncRoutes } from '../server/sync/routes';
-import { LocalD1Database } from '../server/sync/local-d1';
+import { LocalD1Database } from './helpers/local-d1';
 
 let workerCode: string;
 
