@@ -107,4 +107,9 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   } catch {
     // ever_read column missing on an unsupported legacy schema.
   }
+  try {
+    await db.prepare('CREATE INDEX IF NOT EXISTS idx_feeds_live_feed_url ON feeds(feed_url) WHERE deleted = 0 AND feed_url IS NOT NULL').run();
+  } catch {
+    // Account deletion still works without the index; it only scans feeds.
+  }
 }

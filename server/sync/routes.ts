@@ -26,7 +26,8 @@ import { ensureSchema } from './schema';
 import { assertNoKeyLog, assertNoUserDataLog, assertNoUrlLog } from '../log';
 import { decodeItemId } from '../../src/sync/itemId';
 import { generateToken, generateTokenId, sha256Hex, tokenFingerprint, syncKeyFingerprint } from './tokens';
-import { MAX_POLLED_FEEDS_PER_ACCOUNT, registerPolledFeeds } from '../poll-registry';
+import { MAX_POLLED_FEEDS_PER_ACCOUNT, registerPolledFeeds, removeUnsubscribedPolledFeeds } from '../poll-registry';
+import { accountFeedUrls, deleteAccount } from './account';
 
 const PAIRING_TTL_SECONDS = 5 * 60;
 const MAX_USERS = 100_000;
@@ -329,6 +330,7 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
   app.use('/sync/status', auth);
   app.use('/sync/tokens', masterAuth);
   app.use('/sync/rotate', masterAuth);
+  app.use('/sync/account', masterAuth);
 
   // POST /sync/rotate — regenerate the sync key (master key only).
   // Body: { sync_key: <new key> }. The header carries the OLD key. The old
@@ -371,6 +373,38 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       db.prepare('UPDATE users SET rotated_at = ? WHERE sync_key = ?').bind(now(), oldKey),
     ]);
     assertNoKeyLog(oldKey);
+    return c.body(null, 204);
+  });
+
+  // DELETE /sync/account — delete the account and every row keyed by its
+  // sync key (master key only). The batch is atomic. Polling state that no
+  // other account subscribes to is removed afterwards; if that fails, the
+  // daily poll maintenance removes it.
+  app.delete('/sync/account', async (c) => {
+    const { syncKey } = getSyncKeyContext(c);
+
+    const rl = await checkRateLimit(
+      db,
+      `account-delete:${syncKey}`,
+      RATE_LIMITS.accountDelete.windowSeconds,
+      RATE_LIMITS.accountDelete.limit,
+      now(),
+    );
+    if (!rl.ok) {
+      return rateLimitResponse(`account-delete:${syncKey}`, syncKey, rl.retryAfter, 429);
+    }
+
+    const feedUrls = pollDb ? await accountFeedUrls(db, syncKey) : [];
+    await deleteAccount(db, syncKey, { rateLimits: true });
+    assertNoKeyLog(syncKey);
+
+    if (pollDb && feedUrls.length > 0) {
+      try {
+        await removeUnsubscribedPolledFeeds(db, pollDb, feedUrls);
+      } catch {
+        // The daily poll maintenance removes the URLs instead.
+      }
+    }
     return c.body(null, 204);
   });
 
@@ -922,13 +956,11 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
       since = Math.floor(n);
     }
 
-    if (pollDb) {
-      const nowSeconds = now();
-      await db
-        .prepare('UPDATE users SET last_active_at = ? WHERE sync_key = ? AND (last_active_at IS NULL OR last_active_at <= ?)')
-        .bind(nowSeconds, syncKey, nowSeconds - ACTIVITY_WRITE_INTERVAL_SECONDS)
-        .run();
-    }
+    const nowSeconds = now();
+    await db
+      .prepare('UPDATE users SET last_active_at = ? WHERE sync_key = ? AND (last_active_at IS NULL OR last_active_at <= ?)')
+      .bind(nowSeconds, syncKey, nowSeconds - ACTIVITY_WRITE_INTERVAL_SECONDS)
+      .run();
 
     const [feedsRes, flagsRes, serverTime] = await Promise.all([
       db

@@ -6,14 +6,41 @@
  * - Deletes rate-limit rows outside the largest window.
  * - Deletes expired shared feed failure rows.
  * - Deletes idle origin reservation rows after their cooldown and retention expire.
+ * - Deletes accounts, with all their rows, that were rotated away more than
+ *   30 days ago or have had no sync activity for 365 days, at most
+ *   RETENTION_MAX_ACCOUNTS_PER_RUN per run (rotated accounts first); a backlog
+ *   is cleared over later runs.
  */
 
+import { deleteAccount } from './account';
 import { currentMonotonicTime } from './monotonic';
 import { STATE_RETENTION_MS } from '../origin-governor';
 
 const TOMBSTONE_RETENTION_DAYS = 30;
 const PAIRING_GRACE_DAYS = 1;
 const RATE_LIMIT_MAX_WINDOW_SECONDS = 24 * 60 * 60; // the daily register:global window
+export const ROTATED_ACCOUNT_RETENTION_DAYS = 30;
+export const INACTIVE_ACCOUNT_RETENTION_DAYS = 365;
+export const RETENTION_MAX_ACCOUNTS_PER_RUN = 50;
+
+async function expiredAccountKeys(db: D1Database, nowSeconds: number): Promise<string[]> {
+  const day = 24 * 60 * 60;
+  const rotatedCutoff = nowSeconds - ROTATED_ACCOUNT_RETENTION_DAYS * day;
+  const inactiveCutoff = nowSeconds - INACTIVE_ACCOUNT_RETENTION_DAYS * day;
+  const keys: string[] = [];
+  const queries: Array<[string, number]> = [
+    ['SELECT sync_key FROM users WHERE rotated_at < ? LIMIT ?', rotatedCutoff],
+    ['SELECT sync_key FROM users WHERE rotated_at IS NULL AND last_active_at < ? LIMIT ?', inactiveCutoff],
+    ['SELECT sync_key FROM users WHERE rotated_at IS NULL AND last_active_at IS NULL AND created_at < ? LIMIT ?', inactiveCutoff],
+  ];
+  for (const [sql, cutoff] of queries) {
+    const remaining = RETENTION_MAX_ACCOUNTS_PER_RUN - keys.length;
+    if (remaining <= 0) break;
+    const res = await db.prepare(sql).bind(cutoff, remaining).all<{ sync_key: string }>();
+    for (const row of res.results) keys.push(row.sync_key);
+  }
+  return keys;
+}
 
 export async function runSyncCron(db: D1Database, scheduledTime: number = Date.now()): Promise<void> {
   await db.prepare(
@@ -47,6 +74,16 @@ export async function runSyncCron(db: D1Database, scheduledTime: number = Date.n
     ).bind(now, now, now - STATE_RETENTION_MS),
   ]);
 
+  let retentionError: unknown;
+  for (const syncKey of await expiredAccountKeys(db, Math.floor(now / 1000))) {
+    try {
+      await deleteAccount(db, syncKey, { rateLimits: false });
+    } catch (err) {
+      retentionError ??= err;
+    }
+  }
+
   // Touch the monotonic counter so a long-idle DB doesn't serve a stale "0".
   await currentMonotonicTime(db);
+  if (retentionError !== undefined) throw retentionError;
 }

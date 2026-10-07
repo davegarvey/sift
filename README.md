@@ -7,7 +7,7 @@ duplicate upstream requests, serves the static app shell, and optionally
 provides multi-device sync and AI agent integration.
 
 - **Local-only**: subscriptions, items, read/starred state, and lifetime reading statistics live in IndexedDB.
-- **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based), including exact group read-once deduplication and approximate observed volume.
+- **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based), including exact group read-once deduplication and approximate observed volume. You can delete your server-side sync data from Settings.
 - **Server-side polling**: on Workers, synced subscriptions are polled every 30 minutes, so items published while no device is open still arrive.
 - **AI agent integration**: built-in MCP server for AI tool access to feeds.
 - **Portable**: import/export your subscription list as OPML.
@@ -154,7 +154,8 @@ thumbnail URL and feed HTML when that is at most 64 KiB, together with the
 URL's validators and next poll time. Entries are deleted 7 days after they
 were first seen, and polling state is deleted once no group subscribes to
 the URL. `/sync/pull` records when a group was last active, at most once an
-hour. Devices fetch these entries with `/sync/items` and keep only entries
+hour, whether or not polling is enabled; polling and account retention both
+use it. Devices fetch these entries with `/sync/items` and keep only entries
 they do not already hold. The full feed URL is stored in `POLL_DB`, including
 any access token embedded in a private-feed URL. `/sync/items` returns entries
 only to accounts that currently subscribe to that exact URL. Enable polling
@@ -162,7 +163,23 @@ only if you are comfortable storing those URLs and feed entries on the server.
 If `FEED_POLLING` is not `true` or `POLL_DB` is not bound, the server stores
 no polled feed entries.
 
-The `/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
+Sync data is kept until you delete it or the account expires. Settings → Sync
+→ Delete sync data calls `DELETE /sync/account` (master key only), which in
+one transaction deletes the account and every row keyed by its sync key:
+subscriptions (including removed ones still awaiting cleanup), read and starred
+flags, reading statistics, agent tokens, pairing codes and the rate-limit
+counters for that key. Agent tokens and pairing codes stop working at once.
+Data on your devices is not touched, other paired devices stop syncing, and
+when polling is enabled any polled feed URLs and entries that no other group
+subscribes to are deleted immediately (otherwise by the next daily pass).
+Disabling sync does not delete anything: the key leaves the device but the
+data stays on the server, so delete it first. The daily cron also deletes, with
+all their rows, accounts with no sync pull for 365 days (or, if they never
+pulled, created more than 365 days ago) and accounts whose key was regenerated
+more than 30 days ago. At most 50 accounts are deleted per run. Deleted sync
+data can persist in Cloudflare D1's point-in-time recovery (Time Travel) for up
+to 30 days on the Workers Paid plan, after which it is gone. The
+`/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
 not persist data. Sync state is stored in Cloudflare D1 and is never logged
 or exposed to third parties. Synced lifetime reading statistics contain only
 per-feed aggregate counters and compact per-item `everRead` markers; article
@@ -292,7 +309,10 @@ them:
   devices. Regenerating the sync key (Settings → Sync → Regenerate) is the
   kill switch: the old key is marked dead server-side — every agent token
   stops working instantly, `register` refuses to resurrect the old key, and
-  other devices must re-pair with the new key.
+  other devices must re-pair with the new key. Rotation does not delete the
+  old key's data at once; it is deleted 30 days later (see Privacy).
+  Settings → Sync → Delete sync data deletes the account and every token
+  immediately.
 - **Warning**: a token grants read/write of your subscriptions to whoever
   holds it. Treat it like a password; if you paste it into a third-party
   service, you are trusting that service with it. Revoke it when done. A

@@ -3,6 +3,7 @@
  *
  * - `register()` — POST /sync/register, idempotent.
  * - `rotateSyncKey()` — POST /sync/rotate, regenerate the sync key.
+ * - `deleteSyncAccount()` — DELETE /sync/account, deletes the server-side data.
  * - `issueOtp()` — POST /sync/otp, returns the server-generated code.
  * - `redeemCode()` — POST /sync/redeem, returns the sync key.
  * - `pushDirty()` — POST /sync/push, returns ok or error.
@@ -10,7 +11,8 @@
  * - `pullItemsAfter()` — GET /sync/items?after=…, returns one page of server-polled items.
  *
  * Registration is explicit (pairing, enabling sync, rotation). A 401 is
- * never auto-recovered — a rotated or revoked key stays dead by design.
+ * never auto-recovered — a rotated, revoked or deleted key stays dead by
+ * design — and surfaces as KEY_REJECTED_MESSAGE.
  * 413 (push) → split payload and retry.
  * 429 → respect Retry-After; fall back to exponential backoff.
  * 5xx / network → exponential backoff (1s, 2s, 5s, 10s, max 60s).
@@ -42,6 +44,9 @@ export interface ItemsPage {
   more: boolean;
 }
 
+export const KEY_REJECTED_MESSAGE =
+  'The server no longer recognises this sync key. Pair this device again, or turn sync off.';
+
 export class SyncClientError extends Error {
   constructor(
     message: string,
@@ -50,6 +55,11 @@ export class SyncClientError extends Error {
   ) {
     super(message);
   }
+}
+
+function requestFailed(label: string, res: Response): SyncClientError {
+  if (res.status === 401) return new SyncClientError(KEY_REJECTED_MESSAGE, 401);
+  return new SyncClientError(`${label} failed: ${res.status}`, res.status);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -126,6 +136,27 @@ export async function rotateSyncKey(oldKey: string, newKey: string): Promise<voi
     PUSH_TIMEOUT_MS,
   );
   if (!res.ok) throw new SyncClientError(`Rotate failed: ${res.status}`, res.status);
+}
+
+/**
+ * Delete the account and all server-side data for the stored sync key. A 401
+ * means the server no longer knows the key (already deleted or rotated away),
+ * so there is nothing left to delete and it counts as success.
+ */
+export async function deleteSyncAccount(): Promise<void> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  const res = await fetchWithTimeout(
+    '/sync/account',
+    { method: 'DELETE', headers: { 'X-Sync-Key': key } },
+    PUSH_TIMEOUT_MS,
+  );
+  if (res.status === 204 || res.status === 401) return;
+  if (res.status === 429) {
+    const ra = Number(res.headers.get('Retry-After') ?? '60');
+    throw new SyncClientError('Delete rate-limited', 429, ra);
+  }
+  throw new SyncClientError(`Delete failed: ${res.status}`, res.status);
 }
 
 export async function issueOtp(): Promise<{ code: string; expiresAt: number }> {
@@ -282,9 +313,7 @@ export async function pushChunk(chunk: PushChunk): Promise<{ retried: boolean }>
     const ra = Number(res.headers.get('Retry-After') ?? '60');
     throw new SyncClientError('Push rate-limited', 429, ra);
   }
-  if (res.status >= 500 || !res.ok) {
-    throw new SyncClientError(`Push failed: ${res.status}`, res.status);
-  }
+  if (!res.ok) throw requestFailed('Push', res);
   return { retried: false };
 }
 
@@ -303,7 +332,7 @@ export async function pullSince(since: number): Promise<PullPayload> {
       await sleep(ra * 1000);
       throw new SyncClientError('Pull rate-limited', 429, ra);
     }
-    if (!res.ok) throw new SyncClientError(`Pull failed: ${res.status}`, res.status);
+    if (!res.ok) throw requestFailed('Pull', res);
     return (await res.json()) as PullPayload;
   }, (err) => err instanceof SyncClientError && err.status === 429);
 }
@@ -325,7 +354,7 @@ export async function pushStatsChunk(chunk: StatsPushChunk): Promise<StatsPushRe
     const ra = Number(res.headers.get('Retry-After') ?? '60');
     throw new SyncClientError('Statistics push rate-limited', 429, ra);
   }
-  if (!res.ok) throw new SyncClientError(`Statistics push failed: ${res.status}`, res.status);
+  if (!res.ok) throw requestFailed('Statistics push', res);
   return (await res.json()) as StatsPushResponse;
 }
 
@@ -343,7 +372,7 @@ export async function pullStatsSince(since: number): Promise<StatsPullPayload> {
       await sleep(ra * 1000);
       throw new SyncClientError('Statistics pull rate-limited', 429, ra);
     }
-    if (!res.ok) throw new SyncClientError(`Statistics pull failed: ${res.status}`, res.status);
+    if (!res.ok) throw requestFailed('Statistics pull', res);
     return (await res.json()) as StatsPullPayload;
   }, (err) => err instanceof SyncClientError && err.status === 429);
 }
@@ -362,7 +391,7 @@ export async function pullItemsAfter(after: number): Promise<ItemsPage> {
       await sleep(ra * 1000);
       throw new SyncClientError('Items pull rate-limited', 429, ra);
     }
-    if (!res.ok) throw new SyncClientError(`Items pull failed: ${res.status}`, res.status);
+    if (!res.ok) throw requestFailed('Items pull', res);
     return (await res.json()) as ItemsPage;
   }, (err) => err instanceof SyncClientError && err.status === 429);
 }
