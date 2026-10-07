@@ -53,7 +53,7 @@ describe('an article migrated from version 9', () => {
     const { getItem, getItemBody } = await import('../src/db/items');
     const { openItemForReading } = await import('../src/articles/service');
 
-    expect((await getDb()).version).toBe(10);
+    expect((await getDb()).version).toBe(11);
     expect(await getItemBody('f1::old')).toBeUndefined();
     expect(await getItem('f1::old')).toMatchObject({ title: 'Old article', read: true });
 
