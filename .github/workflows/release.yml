@@ -33,6 +33,8 @@ jobs:
       - name: Bump version
         id: bump
         run: |
+          git fetch origin main
+          git checkout --detach origin/main
           BUMP_TYPE=$(./grubble --bump-type)
           echo "BUMP_TYPE=$BUMP_TYPE"
           ./grubble --tag --preset node --package-files "package.json,packages/siftctl/package.json"
@@ -40,6 +42,7 @@ jobs:
           echo "NEW=$NEW"
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
           echo "bump_type=$BUMP_TYPE" >> "$GITHUB_OUTPUT"
+          git restore --worktree --staged package.json packages/siftctl/package.json
 
       - name: Push release branch and create PR
         if: steps.bump.outputs.bump_type != 'none'
@@ -48,13 +51,34 @@ jobs:
         run: |
           VERSION="${{ steps.bump.outputs.version }}"
           BRANCH="release/v${VERSION}"
-          git checkout -b "${BRANCH}"
+          if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null; then
+            git fetch origin "${BRANCH}"
+            git checkout -B "${BRANCH}" "origin/${BRANCH}"
+            git merge --strategy-option=ours --no-edit origin/main
+          else
+            git checkout -b "${BRANCH}" origin/main
+          fi
+          VERSION="${VERSION}" node --input-type=module -e '
+            import fs from "node:fs";
+            for (const file of ["package.json", "packages/siftctl/package.json"]) {
+              const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+              pkg.version = process.env.VERSION;
+              fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+            }
+          '
+          git add package.json packages/siftctl/package.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: bump version to ${VERSION}"
+          fi
           git push --set-upstream origin "${BRANCH}"
-          PR_URL=$(gh pr create \
-            --base main \
-            --head "${BRANCH}" \
-            --title "Release v${VERSION}" \
-            --body "Automated release PR created by grubble.")
+          PR_URL=$(gh pr list --base main --head "${BRANCH}" --json url --jq '.[0].url')
+          if [ -z "${PR_URL}" ]; then
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "${BRANCH}" \
+              --title "Release v${VERSION}" \
+              --body "Automated release PR created by grubble.")
+          fi
           gh pr merge "$PR_URL" --auto --squash
 
   push-tag:
