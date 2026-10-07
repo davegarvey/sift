@@ -5,7 +5,7 @@ import {
   recordSharedFeedFailure,
 } from '../server/feed-state';
 import { runSyncCron } from '../server/sync/cron';
-import { LocalD1Database } from '../server/sync/local-d1';
+import { LocalD1Database } from './helpers/local-d1';
 import { sha256Hex } from '../server/sync/tokens';
 
 interface RowsResult {

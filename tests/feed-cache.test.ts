@@ -7,7 +7,7 @@ import {
   fetchFeedCached,
 } from '../server/fetch';
 import { clearOriginGovernorForTests } from '../server/origin-governor';
-import { LocalD1Database } from '../server/sync/local-d1';
+import { LocalD1Database } from './helpers/local-d1';
 
 let urlCounter = 0;
 

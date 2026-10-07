@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchOriginRequest, clearOriginGovernorForTests } from '../server/origin-governor';
 import { fetchUpstreamWithPolicy } from '../server/fetch';
-import { LocalD1Database } from '../server/sync/local-d1';
+import { LocalD1Database } from './helpers/local-d1';
 import { sha256Hex } from '../server/sync/tokens';
 import { runSyncCron } from '../server/sync/cron';
 

@@ -6,13 +6,28 @@ import { Relay } from './relay';
 import { loadEnv } from './env';
 import { parseTrustedProxyHops, trustedProxyClientIp } from './proxy-guard';
 import { getConnInfo } from 'hono/bun';
+import { createSelfHostedDatabases } from './sqlite-d1';
+import { openBunSqlite } from './bun-sqlite';
+import { startSelfHostedJobs } from './self-hosted-jobs';
 
 loadEnv();
+
+const dataDirectory = process.env.SIFT_DATA_DIR?.trim();
+const databases = dataDirectory ? await createSelfHostedDatabases(dataDirectory, openBunSqlite) : undefined;
+if (databases) {
+  startSelfHostedJobs(databases, {
+    feedPolling: process.env.FEED_POLLING === 'true',
+    feedPollBatch: process.env.FEED_POLL_BATCH,
+    pollDbMaxBytes: process.env.POLL_DB_MAX_BYTES,
+  });
+}
 
 const mcpEnabled = process.env.MCP_ENABLED === 'true';
 const relay = mcpEnabled ? new Relay() : undefined;
 const app = createApp({
   relay,
+  db: databases?.sync as unknown as D1Database | undefined,
+  pollDb: process.env.FEED_POLLING === 'true' ? databases?.poll as unknown as D1Database | undefined : undefined,
   proxy: {
     clientIp: trustedProxyClientIp((c) => {
       try {

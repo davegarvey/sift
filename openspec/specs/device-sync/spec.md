@@ -1057,22 +1057,6 @@ Tombstoned feed rows (`deleted=1`) SHALL be removed by a scheduled server-side t
 - **THEN** the server SHALL leave the tombstone in place
 - **AND** SHALL NOT treat the push as an error
 
-### Requirement: Server is Workers-only
-
-The sync feature SHALL be available only when the server is deployed on Cloudflare Workers with a D1 binding. Self-hosted deployments (Node, Bun) SHALL NOT implement sync.
-
-#### Scenario: Node/Bun adapter has no D1 binding
-- **WHEN** the server is started without a D1 binding
-- **THEN** the sync routes SHALL NOT be registered
-- **AND** `GET /sync/capabilities` SHALL return 404
-- **AND** the browser SHALL hide the Sync section in Settings
-
-#### Scenario: Workers adapter has D1 binding
-- **WHEN** the server is started with a D1 binding
-- **THEN** the sync routes SHALL be registered
-- **AND** `GET /sync/capabilities` SHALL return 200 with `{ sync: true }`
-- **AND** the browser SHALL render the Sync section in Settings
-
 ### Requirement: Feed user-mutation timestamp
 
 The local `Feed` record SHALL track a `modifiedAt` field (epoch ms) representing the last user-initiated mutation of that feed on this device. Background feed fetching SHALL NOT update it. This field is local-only and SHALL NOT be transmitted in sync payloads.
@@ -1350,3 +1334,21 @@ The system SHALL provide no key revocation other than rotation. The only remedia
 #### Scenario: Old account is erased after the grace period
 - **WHEN** 30 days have passed since the rotation
 - **THEN** the daily cron SHALL delete the old account and its rows, as defined by the requirement "Retention of rotated and inactive accounts"
+
+### Requirement: Sync runs on Workers or configured self-hosted storage
+Cloudflare Workers SHALL enable sync when a D1 binding is present. Node and Bun SHALL enable sync only when `SIFT_DATA_DIR` is configured and local SQLite migrations have completed. Without either backend, sync routes SHALL NOT be registered and `/sync/capabilities` SHALL return 404.
+
+#### Scenario: Self-hosted server has a data directory
+- **WHEN** Node or Bun starts with a configured `SIFT_DATA_DIR`
+- **THEN** it SHALL apply the local sync migrations
+- **AND** `GET /sync/capabilities` SHALL return 200 with `{ sync: true }`
+
+#### Scenario: Self-hosted server has no data directory
+- **WHEN** Node or Bun starts without `SIFT_DATA_DIR`
+- **THEN** sync routes SHALL NOT be registered
+- **AND** `GET /sync/capabilities` SHALL return 404
+
+#### Scenario: Workers adapter has D1 binding
+- **WHEN** the server is started with a D1 binding
+- **THEN** the sync routes SHALL be registered
+- **AND** `GET /sync/capabilities` SHALL return 200 with `{ sync: true }`
