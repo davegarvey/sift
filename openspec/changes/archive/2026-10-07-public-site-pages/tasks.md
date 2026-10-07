@@ -17,4 +17,4 @@
 - [x] Run relevant typecheck, lint, build and tests.
 - [x] Check public routes in Node, Workers, Bun and Vite dev adapters.
 - [x] Verify public routes are excluded from the generated service-worker app-shell fallback.
-- [ ] Archive this change after merge.
+- [x] Archive this change after merge.
