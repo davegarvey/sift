@@ -3110,22 +3110,12 @@ a:hover { text-decoration: underline; }
   border-top: none;
   padding-top: 0;
 }
-.agents-section h3 {
-  margin: 0;
-  font-size: 14px;
-}
 .agents-note {
   margin: 0;
   font-size: 13px;
   color: var(--subtext);
 }
-.agents-small {
-  font-size: 12px;
-}
 .agents-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   align-self: flex-start;
 }
 .agents-url {
@@ -3133,30 +3123,20 @@ a:hover { text-decoration: underline; }
   overflow-wrap: anywhere;
   user-select: all;
 }
-.agents-timer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.agents-link {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
   font-size: 13px;
   color: var(--subtext);
-}
-.agents-details summary {
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  list-style: none;
 }
-.agents-details summary::-webkit-details-marker {
-  display: none;
-}
-.agents-details[open] summary svg {
-  transform: rotate(90deg);
-}
-.agents-details > div {
-  margin-top: 8px;
+.agents-link:hover,
+.agents-link:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
 }
 .agents-form {
   display: flex;
@@ -3222,10 +3202,6 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
   color: var(--subtext);
   overflow-wrap: anywhere;
-}
-.agents-row__secondary {
-  font-size: 12px;
-  color: var(--subtext);
 }
 .agents-row__actions {
   display: flex;

@@ -29,7 +29,7 @@
 ## 4. Client
 
 - [x] 4.1 Build the consent route: client details, full-access wording, single Allow for connection-ID and same-browser approval, fallback approval code with copy and QR, status polling, sync-not-enabled state, and `frame-ancestors 'none'`
-- [x] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: mint-and-copy connection URL with countdown, plain `/mcp` URL, HTTP/OpenAPI section (no pairing or terminal section), Approve a connection (code entry and QR scan), and the connected-agents list with rename and revoke
+- [x] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: mint-and-copy connection URL with countdown, approval-code entry behind a "Have an approval code?" link (no plain `/mcp` URL, HTTP, pairing or terminal section), and the connected-agents list with rename and revoke
 - [x] 4.2a Show connected-agent identity (label, client name, website host, unverified mark, access, connected, last used) with Rename
 - [x] 4.3 Component tests for consent and approval flows
 

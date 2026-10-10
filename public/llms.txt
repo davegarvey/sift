@@ -8,7 +8,7 @@ Paths in this file are relative to the origin that serves it, written `<origin>`
 
 - MCP endpoint: `<origin>/mcp` (Streamable HTTP, stateless, `POST` only). An unauthenticated request returns `401` with a `WWW-Authenticate` header that points to the OAuth metadata.
 - Connection URL: the user opens Settings → Sync → Agent access → Connect an agent in Sift, which produces a single-use URL of the form `<origin>/mcp/c/<id>` that is valid for ten minutes. They paste it into the agent as a custom connector or remote MCP server, then press Allow on the consent page. The URL keeps working as an alias of `/mcp` afterwards, because clients store it.
-- Hand-configured clients: a client given only `<origin>/mcp` can still connect. The consent page shows an 8-character approval code, which the user enters in Sift under Settings → Sync → Agent access → Approve a connection.
+- Hand-configured clients: a client given only `<origin>/mcp` can still connect. The consent page shows an 8-character approval code, which the user enters in Sift under Settings → Sync → Agent access → Have an approval code?
 - Sync must be turned on in Sift first. Without a sync account there is nothing to connect to.
 
 ## Authorisation

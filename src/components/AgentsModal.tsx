@@ -1,5 +1,5 @@
 import { createSignal, onCleanup, createResource, Show, For } from 'solid-js';
-import { Check, ChevronRight, Copy, Pencil, Plug, ScanLine, Trash2, X } from 'lucide-solid';
+import { Check, Copy, Pencil, ScanLine, Trash2, X } from 'lucide-solid';
 import { useApp } from '../state';
 import {
   mintAgentConnection,
@@ -21,7 +21,6 @@ import { ClientSummary } from '../agents/ClientSummary';
 import { QrScannerOverlay } from './QrScannerOverlay';
 import { expiryLabel, humanRelativeTime } from '../util/time';
 
-const CONNECTION_TTL_MS = 10 * 60 * 1000;
 const LABEL_MAX = 64;
 
 function approvalErrorMessage(e: unknown): string {
@@ -39,6 +38,15 @@ function titleOf(token: AgentTokenInfo): string {
   return token.label || token.client_name || 'Paired token';
 }
 
+function detailOf(token: AgentTokenInfo): string {
+  const parts: string[] = [];
+  if (token.label && token.client_name) parts.push(token.client_name);
+  if (token.unverified && token.client_host) parts.push(token.client_host);
+  if (accessLabel(token.scopes) === 'Read only') parts.push('Read only');
+  parts.push(token.last_seen_at === null ? 'Not used yet' : `Last used ${humanRelativeTime(new Date(token.last_seen_at))}`);
+  return parts.join(' · ');
+}
+
 export function AgentsModal() {
   const ctx = useApp();
   const [connectUrl, setConnectUrl] = createSignal<string | null>(null);
@@ -46,7 +54,6 @@ export function AgentsModal() {
   const [now, setNow] = createSignal(Date.now());
   const [connectBusy, setConnectBusy] = createSignal(false);
   const [copiedUrl, setCopiedUrl] = createSignal(false);
-  const [copiedMcp, setCopiedMcp] = createSignal(false);
   const [autoCopied, setAutoCopied] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -56,6 +63,7 @@ export function AgentsModal() {
   const [approvalMessage, setApprovalMessage] = createSignal<string | null>(null);
   const [approvalError, setApprovalError] = createSignal<string | null>(null);
   const [scanning, setScanning] = createSignal(false);
+  const [showApprove, setShowApprove] = createSignal(false);
 
   const [renaming, setRenaming] = createSignal<string | null>(null);
   const [renameValue, setRenameValue] = createSignal('');
@@ -69,8 +77,6 @@ export function AgentsModal() {
   onCleanup(() => clearInterval(timer));
 
   const expired = () => expiresAt() !== null && now() >= expiresAt()!;
-  const fraction = () => (expiresAt() === null ? 0 : Math.max(0, Math.min(1, (expiresAt()! - now()) / CONNECTION_TTL_MS)));
-  const mcpUrl = () => `${connectUrl() ? new URL(connectUrl()!).origin : window.location.origin}/mcp`;
 
   const connect = async () => {
     if (connectBusy()) return;
@@ -200,111 +206,36 @@ export function AgentsModal() {
 
   return (
     <div class="modal modal-center">
-      <div class="modal-header">Agents</div>
+      <div class="modal-header">Agent access</div>
       <div class="modal-body">
         <Show when={!scanning()} fallback={<QrScannerOverlay onClose={() => setScanning(false)} onText={onScanned} />}>
           <section class="agents-section">
-            <h3>Connect an agent</h3>
-            <button class="btn primary agents-button" disabled={connectBusy()} onClick={() => void connect()}>
-              <Plug size={14} />
-              {connectUrl() && expired() ? 'Create a new link' : 'Connect an agent'}
-            </button>
-            <Show when={connectUrl() && !expired()}>
+            <p class="agents-note">Let an AI agent read and manage your feeds.</p>
+            <Show
+              when={connectUrl() && !expired()}
+              fallback={
+                <button class="btn primary agents-button" disabled={connectBusy()} onClick={() => void connect()}>
+                  {connectUrl() ? 'Create a new link' : 'Connect an agent'}
+                </button>
+              }
+            >
               <div class="codeblock">
                 <code class="agents-url">{connectUrl()}</code>
                 <button class="codeblock__copy" onClick={() => void copy(connectUrl()!, setCopiedUrl)} aria-label="Copy connection link">
                   {copiedUrl() ? <Check size={14} /> : <Copy size={14} />}
                 </button>
               </div>
-              <div class="agents-timer">
-                <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle class="code-timer__bg" cx="12" cy="12" r="10" />
-                  <circle
-                    class="code-timer__progress"
-                    cx="12" cy="12" r="10"
-                    stroke-dasharray={`${2 * Math.PI * 10}`}
-                    stroke-dashoffset={`${2 * Math.PI * 10 * (1 - fraction())}`}
-                    style={{ stroke: fraction() > 0.1 ? undefined : 'var(--red)' }}
-                  />
-                </svg>
-                {`${autoCopied() ? 'Copied. ' : ''}Expires in ${expiryLabel(expiresAt()!)}`}
-              </div>
-              <p class="agents-note">Paste this into your agent as a custom connector or remote MCP server, then tap Allow.</p>
+              <p class="agents-note">
+                {`${autoCopied() ? 'Copied. ' : ''}Paste it into your agent, then tap Allow. Expires in ${expiryLabel(expiresAt()!)}.`}
+              </p>
             </Show>
-            <Show when={connectUrl() && expired()}>
-              <p class="agents-note">That link has expired. Create a new one.</p>
-            </Show>
-            <div class="agents-note agents-small">
-              For clients you configure by hand, the plain server address is:
-              <div class="codeblock" style="margin-top: 4px">
-                <code class="agents-url">{mcpUrl()}</code>
-                <button class="codeblock__copy" onClick={() => void copy(mcpUrl(), setCopiedMcp)} aria-label="Copy MCP address">
-                  {copiedMcp() ? <Check size={14} /> : <Copy size={14} />}
-                </button>
-              </div>
-            </div>
             <Show when={error()}>
               <p class="error" role="alert">{error()}</p>
             </Show>
           </section>
 
-          <section class="agents-section">
-            <details class="agents-details">
-              <summary><ChevronRight size={14} />Using HTTP?</summary>
-              <div class="agents-note">
-                Agents that call Sift over HTTP can read the <a href="/openapi.json" target="_blank" rel="noopener">OpenAPI description</a> and the <a href="/llms.txt" target="_blank" rel="noopener">llms.txt guide</a>.
-              </div>
-            </details>
-          </section>
-
-          <section class="agents-section">
-            <h3>Approve a connection</h3>
-            <p class="agents-note">If an agent shows an approval code, enter it here, or scan its QR code.</p>
-            <form
-              class="agents-form"
-              onSubmit={(e) => { e.preventDefault(); void findRequest(codeInput()); }}
-            >
-              <input
-                class="agents-input agents-input--code"
-                type="text"
-                value={codeInput()}
-                onInput={(e) => setCodeInput(e.currentTarget.value)}
-                placeholder="abcd-efgh"
-                aria-label="Approval code"
-                autocomplete="off"
-                autocorrect="off"
-                autocapitalize="off"
-                spellcheck={false}
-                disabled={approvalBusy()}
-              />
-              <button class="btn" type="submit" disabled={approvalBusy() || !codeInput().trim()}>Look up</button>
-              <button class="btn" type="button" onClick={() => setScanning(true)} aria-label="Scan a QR code">
-                <ScanLine size={14} />
-              </button>
-            </form>
-            <Show when={approvalError()}>
-              <p class="error" role="alert">{approvalError()}</p>
-            </Show>
-            <Show when={approvalMessage()}>
-              <p class="success" role="status">{approvalMessage()}</p>
-            </Show>
-            <Show when={lookup()}>
-              {(found) => (
-                <>
-                  <p class="agents-note">Connect this agent to your Sift?</p>
-                  <ClientSummary view={found().view} />
-                  <div class="agents-button-row">
-                    <button class="btn primary" disabled={approvalBusy()} onClick={() => void decide('approve')}>Approve</button>
-                    <button class="btn subtle" disabled={approvalBusy()} onClick={() => void decide('deny')}>Deny</button>
-                  </div>
-                </>
-              )}
-            </Show>
-          </section>
-
           <Show when={!tokens.loading && (tokens()?.length ?? 0) > 0}>
             <section class="agents-section">
-              <h3>Connected agents</h3>
               <div class="agents-list">
                 <For each={tokens()}>
                   {(token) => (
@@ -338,16 +269,7 @@ export function AgentsModal() {
                             <button class="btn subtle" type="button" aria-label="Cancel rename" onClick={() => setRenaming(null)}><X size={14} /></button>
                           </form>
                         </Show>
-                        <Show when={token.label && token.client_name}>
-                          <div class="agents-row__detail">{token.client_name}</div>
-                        </Show>
-                        <Show when={token.client_host}>
-                          <div class="agents-row__detail">{token.client_host}</div>
-                        </Show>
-                        <div class="agents-row__detail">
-                          {accessLabel(token.scopes)} · connected {humanRelativeTime(new Date(token.created_at))} · last used {token.last_seen_at === null ? 'never' : humanRelativeTime(new Date(token.last_seen_at))}
-                        </div>
-                        <div class="agents-row__secondary">ID {token.fingerprint}</div>
+                        <div class="agents-row__detail">{detailOf(token)}</div>
                       </div>
                       <div class="agents-row__actions">
                         <button class="btn subtle" aria-label={`Rename ${titleOf(token)}`} onClick={() => startRename(token)}>
@@ -363,10 +285,60 @@ export function AgentsModal() {
               </div>
             </section>
           </Show>
+
+          <section class="agents-section">
+            <Show
+              when={showApprove()}
+              fallback={
+                <button class="agents-link" onClick={() => setShowApprove(true)}>Have an approval code?</button>
+              }
+            >
+              <form
+                class="agents-form"
+                onSubmit={(e) => { e.preventDefault(); void findRequest(codeInput()); }}
+              >
+                <input
+                  class="agents-input agents-input--code"
+                  type="text"
+                  value={codeInput()}
+                  onInput={(e) => setCodeInput(e.currentTarget.value)}
+                  placeholder="Approval code"
+                  aria-label="Approval code"
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck={false}
+                  disabled={approvalBusy()}
+                  ref={(el) => queueMicrotask(() => el.focus())}
+                />
+                <button class="btn" type="submit" disabled={approvalBusy() || !codeInput().trim()}>Look up</button>
+                <button class="btn" type="button" onClick={() => setScanning(true)} aria-label="Scan a QR code">
+                  <ScanLine size={14} />
+                </button>
+              </form>
+              <Show when={approvalError()}>
+                <p class="error" role="alert">{approvalError()}</p>
+              </Show>
+              <Show when={approvalMessage()}>
+                <p class="success" role="status">{approvalMessage()}</p>
+              </Show>
+              <Show when={lookup()}>
+                {(found) => (
+                  <>
+                    <ClientSummary view={found().view} />
+                    <div class="agents-button-row">
+                      <button class="btn primary" disabled={approvalBusy()} onClick={() => void decide('approve')}>Approve</button>
+                      <button class="btn subtle" disabled={approvalBusy()} onClick={() => void decide('deny')}>Deny</button>
+                    </div>
+                  </>
+                )}
+              </Show>
+            </Show>
+          </section>
         </Show>
       </div>
       <div class="modal-footer">
-        <button class="btn primary" onClick={() => ctx.closeModal()}>Close</button>
+        <button class="btn" onClick={() => ctx.closeModal()}>Done</button>
       </div>
     </div>
   );

@@ -95,7 +95,7 @@ Authorisation codes are stored hashed with a 60-second life. For a decision made
 These apply when the connection ID is absent, expired or spent (for example, a client reconnecting after losing its token):
 
 - **Same browser.** If the consent page's IndexedDB holds a sync key, Allow posts the decision with `X-Sync-Key`.
-- **Approval code.** The consent page shows an 8-character code with a copy button, and a QR code for approval from another device. In the PWA, Settings → Sync → Agent access → *Approve a connection* accepts a pasted or typed code, or a QR scan. It shows the client name and redirect host before approval. The consent page polls the request status every two seconds and redirects once a decision is made.
+- **Approval code.** The consent page shows an 8-character code with a copy button, and a QR code for approval from another device. In the PWA, Settings → Sync → Agent access → *Have an approval code?* accepts a pasted or typed code, or a QR scan. It shows the client name and redirect host before approval. The consent page polls the request status every two seconds and redirects once a decision is made.
 
 #### Common rules
 
@@ -192,10 +192,13 @@ Agent requests draw from per-token buckets that are separate from the per-sync-k
 
 Settings → Sync → Agents becomes **Connect an agent**:
 
-- **Connect an agent.** A primary button that mints a single-use connection URL (`<origin>/mcp/c/<id>`), copies it, and shows it with a ten-minute countdown. One line of client-neutral guidance: "Paste this into your agent as a custom connector or remote MCP server, then tap Allow." The plain `<origin>/mcp` URL is shown underneath for clients configured by hand, which then approve through a fallback.
-- **Using HTTP?** An expandable section linking the OpenAPI document and `llms.txt`. There is no pairing-code or terminal section: `siftctl` is being retired and its pairing is no longer offered in the UI.
-- **Approve a connection.** A code field (paste or type) plus a scan button, for the fallback path.
-- **Connected agents.** One row per grant. The title is the user's label, else the client name ("Paired token" for legacy `siftctl` tokens until they are retired). Beneath it: the client name when relabelled, the client website host (or redirect host), an "unverified" mark for self-registered names, "Read only" or "Read and change", connected date and last used, with the fingerprint as secondary detail. Each row has Rename and Revoke. Labels are stored server-side, so they appear on every device. Client logos are not shown: they would mean loading images from arbitrary third-party URLs for little gain over a clear name.
+The screen shows only what the task needs, with no section headings:
+
+- **Connect an agent.** One sentence ("Let an AI agent read and manage your feeds.") and a primary button that mints a single-use connection URL (`<origin>/mcp/c/<id>`) and copies it. The URL then replaces the button, followed by one line: "Copied. Paste it into your agent, then tap Allow. Expires in …". The plain `<origin>/mcp` address is not shown: the connection URL works for every client, including hand-configured ones, so a second address would only invite the less convenient choice.
+- **Connected agents.** One row per grant. The title is the user's label, else the client name ("Paired token" for legacy `siftctl` tokens until they are retired), with an "unverified" mark for self-registered names. One detail line: the client name when relabelled, the website host for unverified clients, "Read only" when applicable, and last use. Connected date and fingerprint are omitted. Each row has Rename and Revoke.
+- **Have an approval code?** A quiet link that reveals the code field and scan button for the fallback path.
+
+There is no HTTP, pairing or terminal section. Agents that need the OpenAPI document or `llms.txt` find them at their standard paths. Labels are stored server-side, so they appear on every device. Client logos are not shown: they would mean loading images from arbitrary third-party URLs for little gain over a clear name.
 
 The consent page is a separate HTML entry (`connect.html`) so that opening it in a browser that has never run Sift registers no service worker and creates no IndexedDB database. It reads an existing sync key with a raw IndexedDB open that aborts rather than creating the database. In browsers where Sift's service worker is installed, `/connect` is answered by the SPA fallback and `main.tsx` renders the same page without the app provider. The service worker's navigation fallback excludes `/oauth/`, `/.well-known/`, `/mcp`, `/sync/`, `/llms.txt` and `/openapi.json`, so those navigations reach the server.
 
