@@ -7,6 +7,8 @@ import {
   CONNECTION_TTL_SECONDS,
   generateConnectionId,
   hostOf,
+  isPrivateUseScheme,
+  redirectDisplayHost,
   isConnectionId,
   noStore,
   nowSeconds,
@@ -40,6 +42,14 @@ type Status = 'pending' | 'approved' | 'denied' | 'expired';
 const REQUEST_COLUMNS =
   'request_id, approval_code, client_id, redirect_uri, code_challenge, scopes, state, resource, connection_id, decision, sync_key, created_at, expires_at, redirect_url';
 
+function redirectScheme(uri: string): string {
+  try {
+    return new URL(uri).protocol;
+  } catch {
+    return 'https:';
+  }
+}
+
 function statusOf(row: RequestRow, now: number): Status {
   if (row.decision === 'approved') return 'approved';
   if (row.decision === 'denied') return 'denied';
@@ -54,9 +64,9 @@ async function describeRequest(ctx: OAuthContext, row: RequestRow, now: number) 
   return {
     status: statusOf(row, now),
     clientName: client?.client_name ?? hostOf(row.client_id) ?? 'Unknown client',
-    unverified: client?.kind !== 'metadata',
+    unverified: client?.kind !== 'metadata' || isPrivateUseScheme(redirectScheme(row.redirect_uri)),
     clientHost: hostOf(client?.client_uri),
-    redirectHost: hostOf(row.redirect_uri) ?? '',
+    redirectHost: redirectDisplayHost(row.redirect_uri),
     scopes: row.scopes.split(' ').filter(Boolean),
     createdAt: row.created_at * 1000,
     expiresAt: row.expires_at * 1000,

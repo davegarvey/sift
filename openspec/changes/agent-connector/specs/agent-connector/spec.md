@@ -56,15 +56,19 @@ The system SHALL accept a `client_id` that is an HTTPS URL by fetching it, throu
 
 ### Requirement: Dynamic client registration
 
-The system SHALL provide RFC 7591 registration at `POST /oauth/register`. It SHALL accept only public clients (`token_endpoint_auth_method` of `none`), SHALL require at least one redirect URI, and SHALL accept only HTTPS or loopback HTTP (`127.0.0.1`, `[::1]`, `localhost`) redirect URIs. Registration SHALL be rate-limited per client IP.
+The system SHALL provide RFC 7591 registration at `POST /oauth/register`. It SHALL accept only public clients (`token_endpoint_auth_method` of `none`), SHALL require at least one redirect URI, and SHALL accept only HTTPS, loopback HTTP (`127.0.0.1`, `[::1]`, `localhost`) or private-use scheme (RFC 8252) redirect URIs. Private-use schemes exclude `http`, `https`, `javascript`, `data`, `file`, `blob`, `about`, `vbscript`, `ws` and `wss`. Redirect URIs SHALL NOT contain a fragment. Registration SHALL be rate-limited per client IP.
 
 #### Scenario: Dynamic registration
 - **WHEN** a client registers with a name and redirect URIs
 - **THEN** the server SHALL return a `client_id` and store the client as public
 
 #### Scenario: Non-HTTPS redirect refused
-- **WHEN** a client registers a plain HTTP redirect URI that is not loopback
+- **WHEN** a client registers a plain HTTP redirect URI that is not loopback, or a `javascript:`, `data:` or `file:` URI
 - **THEN** the server SHALL respond with `invalid_redirect_uri`
+
+#### Scenario: Private-use scheme accepted
+- **WHEN** a client registers `cursor://anysphere.cursor-retrieval/oauth/callback`
+- **THEN** the server SHALL accept it, and the consent view SHALL mark the client unverified and show `cursor://` as the redirect host
 
 ### Requirement: Authorisation request validation
 

@@ -109,8 +109,23 @@ export function parseRedirectUri(raw: string): URL | null {
   }
   if (url.hash || url.username || url.password) return null;
   if (url.protocol === 'https:') return url;
-  if (url.protocol === 'http:' && isLoopbackHost(url.hostname)) return url;
-  return null;
+  if (url.protocol === 'http:') return isLoopbackHost(url.hostname) ? url : null;
+  return isPrivateUseScheme(url.protocol) ? url : null;
+}
+
+const FORBIDDEN_SCHEMES = new Set(['http:', 'https:', 'javascript:', 'data:', 'file:', 'blob:', 'about:', 'vbscript:', 'ws:', 'wss:']);
+
+export function isPrivateUseScheme(protocol: string): boolean {
+  return !FORBIDDEN_SCHEMES.has(protocol);
+}
+
+export function redirectDisplayHost(redirectUri: string): string {
+  try {
+    const url = new URL(redirectUri);
+    return isPrivateUseScheme(url.protocol) ? `${url.protocol}//` : url.host;
+  } catch {
+    return '';
+  }
 }
 
 export function redirectUriMatches(requested: string, registered: readonly string[]): boolean {

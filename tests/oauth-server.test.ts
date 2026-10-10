@@ -323,12 +323,24 @@ describe('registration', () => {
     const confidential = await post({ redirect_uris: [REDIRECT], token_endpoint_auth_method: 'client_secret_basic' });
     expect(confidential.status).toBe(400);
     expect(((await confidential.json()) as { error: string }).error).toBe('invalid_client_metadata');
-    for (const redirect_uris of [undefined, [], ['http://client.example/cb'], ['myapp://cb'], [`${REDIRECT}#frag`], ['not a url']]) {
+    for (const redirect_uris of [undefined, [], ['http://client.example/cb'], ['javascript:alert(1)'], ['data:text/html,x'], ['file:///etc/passwd'], ['cursor://app/cb#frag'], [`${REDIRECT}#frag`], ['not a url']]) {
       const res = await post({ client_name: 'x', redirect_uris });
       expect(res.status).toBe(400);
       expect(((await res.json()) as { error: string }).error).toBe('invalid_redirect_uri');
     }
     expect((await post({ client_name: 'x', redirect_uris: ['http://127.0.0.1:8123/cb', 'http://localhost/cb', 'http://[::1]:9/cb'] })).status).toBe(201);
+  });
+
+  it('accepts private-use scheme redirects and marks such clients unverified', async () => {
+    const uris = ['cursor://anysphere.cursor-retrieval/oauth/callback', 'com.example.app:/cb'];
+    const clientId = await registerClient({ redirect_uris: uris });
+    const { challenge } = await pkce();
+    for (const redirectUri of uris) {
+      const view = await viewRequest(requestIdFrom(await authorize({ clientId, challenge, redirectUri })));
+      expect(view.unverified).toBe(true);
+      expect(view.redirectHost).toBe(redirectUri.startsWith('cursor') ? 'cursor://' : 'com.example.app://');
+    }
+    expect((await authorize({ clientId, challenge, redirectUri: 'cursor://anysphere.cursor-retrieval/other' })).status).toBe(400);
   });
 
   it('rate-limits registration per IP', async () => {
@@ -400,6 +412,15 @@ describe('client ID metadata documents', () => {
     vi.mocked(fetchUpstreamWithPolicy).mockRejectedValue(new Error('blocked'));
     expect((await authorize({ clientId: CLIENT_URL, challenge })).status).toBe(400);
     expect(await db.prepare('SELECT COUNT(*) AS n FROM oauth_clients').first<number>('n')).toBe(1);
+  });
+
+  it('marks a metadata client unverified when it redirects to a private-use scheme', async () => {
+    serveDocument({ client_id: CLIENT_URL, client_name: 'Editor', redirect_uris: ['cursor://app/cb', REDIRECT] });
+    const { challenge } = await pkce();
+    const custom = await viewRequest(requestIdFrom(await authorize({ clientId: CLIENT_URL, challenge, redirectUri: 'cursor://app/cb' })));
+    expect(custom).toMatchObject({ unverified: true, redirectHost: 'cursor://' });
+    const web = await viewRequest(requestIdFrom(await authorize({ clientId: CLIENT_URL, challenge })));
+    expect(web.unverified).toBe(false);
   });
 
   it('does not fetch URLs that are not valid metadata client IDs', async () => {
@@ -576,6 +597,19 @@ describe('connection ID recovery and consent', () => {
     expect((await decide(second, 'approve')).status).toBe(401);
     const stillPending = await viewRequest(second);
     expect(stillPending.status).toBe('pending');
+  });
+
+  it('lets only one of two concurrent approvals consume a connection ID', async () => {
+    const { connectionId } = await mintConnection();
+    const clientId = await registerClient();
+    const { challenge } = await pkce();
+    const ids = [
+      requestIdFrom(await authorize({ clientId, challenge, path: `/oauth/c/${connectionId}/authorize` })),
+      requestIdFrom(await authorize({ clientId, challenge, path: `/oauth/c/${connectionId}/authorize` })),
+    ];
+    const results = await Promise.all(ids.map((id) => decide(id, 'approve')));
+    expect(results.map((r) => r.status).sort()).toEqual([200, 401]);
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM oauth_codes').first<number>('n')).toBe(1);
   });
 
   it('leaves the connection ID unused when the user denies', async () => {
