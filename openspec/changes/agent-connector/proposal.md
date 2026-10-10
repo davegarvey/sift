@@ -15,7 +15,8 @@ The common fault is that each path makes the agent reach Sift through a channel 
 
 - Add a **remote MCP server** at `/mcp` on every server adapter, using the MCP Streamable HTTP transport. It runs against the sync database, so it needs no open browser tab. Tool calls are made by the agent's host rather than its sandbox.
 - Protect it with **OAuth 2.1, as specified by the MCP authorisation specification**: protected-resource metadata (RFC 9728), authorisation-server metadata (RFC 8414), authorisation code with PKCE (S256), resource indicators (RFC 8707), and both Client ID Metadata Documents and Dynamic Client Registration (RFC 7591) for client identification. No client-specific integration is built.
-- Add a **consent page** where adding the agent is the authorisation. The user grants `read` and, optionally, `write`. Approval is one click in a browser that already holds the sync key. Otherwise, the user approves from the installed Sift app using a short code or QR code shown on the consent page, which covers the iOS PWA case.
+- Make **connecting start in the installed app**. Connect an agent mints a single-use connection URL (`/mcp/c/<id>`, ten minutes). The user pastes it into any agent, and the consent page, in whatever browser the agent opens, already knows the account and needs one tap. This works when the PWA runs in a browser other than the system default, and on iOS, where links cannot open a PWA. Same-browser approval and a copy-a-code approval from the app remain as fallbacks.
+- Make **adding the agent the authorisation**. A single Allow grants full access: reading subscriptions, statistics and article text, and making changes. There are no per-scope or per-data choices. `read` and `write` exist only so a client that asks for less receives less.
 - Expose **tools for the stated workflows**, each annotated with read-only, destructive and idempotent hints so clients can apply their own confirmation policy:
   - `list_subscriptions`
   - `get_reading_stats`
@@ -29,7 +30,7 @@ The common fault is that each path makes the agent reach Sift through a channel 
 
   Writes go through the same merge path as device sync, so every device picks them up.
 - Accept OAuth-issued tokens as `Authorization: Bearer` on the REST sync API, and publish `/llms.txt` describing how to connect. This covers agents that use OpenAPI or HTTP rather than MCP, with the same consent and scopes.
-- Replace the Agents modal with a client-neutral **Connect an agent** screen: the MCP URL with a copy button, an "Approve a connection" code entry, and a list of connected agents showing the client name, scopes and last use, each with a revoke action.
+- Replace the Agents modal with a client-neutral **Connect an agent** screen: a button that mints and copies a connection URL, an "Approve a connection" code entry for the fallback, a terminal and HTTP section, and a list of connected agents showing the client name, scopes and last use, each with a revoke action.
 - **BREAKING** (pre-production, forward-only): remove the copied chat prompt, code authentication on `GET /sync/pull`, `?intent=add` handling, the local MCP server, the `/api/events` SSE relay, `/api/capabilities` and `MCP_ENABLED`. `siftctl pair <code>` remains for terminal use.
 
 ## Capabilities
@@ -46,7 +47,7 @@ The common fault is that each path makes the agent reach Sift through a channel 
 ## Impact
 
 - Server: new `server/agent/` module (OAuth endpoints, MCP handler, tools); `server/handle.ts` wiring; `server/sync/auth.ts` principal and scope changes; `server/mcp.ts` and `server/relay.ts` deleted.
-- Database: one sync-database migration for OAuth clients, authorisation requests and codes, and token scope/refresh columns.
+- Database: one sync-database migration for OAuth clients, connection IDs, authorisation requests and codes, and token scope/refresh columns.
 - Client: `AgentsModal.tsx` rewritten; a new consent route; approval entry in the installed app; MCP relay listeners and intent handling removed from `src/state.tsx`.
 - Documentation: README agent sections rewritten; `public/openapi.json` gains the bearer scheme; `public/llms.txt` added.
 - Dependencies: the existing `@modelcontextprotocol/server` package; no OAuth library is required, but see the design's open questions.

@@ -1,17 +1,18 @@
 ## 1. Storage and authentication
 
-- [ ] 1.1 Add a sync-database migration for `oauth_clients`, `oauth_requests` (pending authorisation plus approval code) and `oauth_codes`, and the `tokens` columns `origin`, `client_id`, `client_name`, `scopes`, `refresh_hash`, `refresh_expires_at`, `expires_at` and `family_id`; backfill existing tokens as `paired` with `read write`
+- [ ] 1.1 Add a sync-database migration for `oauth_clients`, `oauth_connections` (single-use connection IDs), `oauth_requests` (pending authorisation plus approval code) and `oauth_codes`, and the `tokens` columns `origin`, `client_id`, `client_name`, `scopes`, `refresh_hash`, `refresh_expires_at`, `expires_at` and `family_id`; backfill existing tokens as `paired` with `read write`
 - [ ] 1.2 Extend `server/sync/auth.ts`: accept `Authorization: Bearer`, carry scopes on the principal, reject expired OAuth tokens, enforce `read`/`write` per route, and remove code authentication on pull
 - [ ] 1.3 Add per-token rate-limit buckets for OAuth principals and a per-account `discover` bucket
 - [ ] 1.4 Extend the scheduled cleanup to sweep expired OAuth requests, codes and refresh-expired grants
 
 ## 2. OAuth authorisation server
 
-- [ ] 2.1 Serve `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, honouring `PUBLIC_URL`
+- [ ] 2.1 Serve `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, honouring `PUBLIC_URL`, including the per-connection variants under `/mcp/c/<id>` and `/oauth/c/<id>`
+- [ ] 2.1a Add the master-key endpoint that mints connection IDs, and route `/mcp/c/<id>` as an alias of `/mcp`
 - [ ] 2.2 Implement `POST /oauth/register` (public clients, redirect URI rules, IP rate limit)
 - [ ] 2.3 Implement Client ID Metadata Document resolution through the upstream fetch policy, with caching
 - [ ] 2.4 Implement `GET /oauth/authorize` validation and pending-request creation; serve the consent route
-- [ ] 2.5 Implement decision endpoints: same-browser approve/deny (master key), app approve/deny by approval code (master key), request lookup by code, and status polling for the consent page
+- [ ] 2.5 Implement decision endpoints: connection-ID approve/deny (consumes the ID), same-browser approve/deny (master key), app approve/deny by approval code (master key), request lookup by code, and status polling for the consent page
 - [ ] 2.6 Implement `POST /oauth/token` for both grants, with PKCE verification, rotation and reuse detection; implement `POST /oauth/revoke`
 - [ ] 2.7 Conformance tests for every validation branch, including redirect-URI mismatch, PKCE failure, code replay, refresh reuse, scope down-selection and expiry
 
@@ -27,10 +28,9 @@
 
 ## 4. Client
 
-- [ ] 4.1 Build the consent route: client details, scope wording, write checkbox, same-browser Allow, approval code and QR, status polling, sync-not-enabled state, and `frame-ancestors 'none'`
-- [ ] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: connection URL, HTTP/OpenAPI and `siftctl` section, Approve a connection (code entry and QR scan), and the connected-agents list with revoke
-- [ ] 4.3 Handle `/?approve=<code>` by opening the approval confirmation
-- [ ] 4.4 Component tests for consent and approval flows
+- [ ] 4.1 Build the consent route: client details, full-access wording, single Allow for connection-ID and same-browser approval, fallback approval code with copy and QR, status polling, sync-not-enabled state, and `frame-ancestors 'none'`
+- [ ] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: mint-and-copy connection URL with countdown, plain `/mcp` URL, HTTP/OpenAPI and `siftctl` section, Approve a connection (code entry and QR scan), and the connected-agents list with revoke
+- [ ] 4.3 Component tests for consent and approval flows
 
 ## 5. Removals
 
@@ -48,4 +48,4 @@
 
 - [ ] 7.1 Run `openspec validate agent-connector`, `npm run typecheck`, `npm run lint` and `npm test`
 - [ ] 7.2 Run a security review of the OAuth and consent code before merge
-- [ ] 7.3 Connect at least two independent MCP clients against a preview deployment, including approval from an installed PWA on a phone, and record the results in the PR
+- [ ] 7.3 Connect at least two independent MCP clients against a preview deployment, including connecting from a Chrome PWA whose system default browser is Firefox, and from an installed PWA on a phone, and record the results in the PR

@@ -59,31 +59,45 @@ Sift acts as both the protected resource and the authorisation server, on the sa
   - `client_id_metadata_document_supported: true`
 - **Client identification.** If `client_id` is an HTTPS URL, Sift fetches it through the upstream fetch policy as a Client ID Metadata Document, validates that its `client_id` equals the URL, and caches it. Otherwise the client must have registered at `/oauth/register` (Dynamic Client Registration), which stores the name and redirect URIs. Supporting both covers current clients without favouring one.
 - **Redirect URIs.** These must match exactly. Loopback redirects (`http://127.0.0.1`, `http://localhost`) may use any port, as RFC 8252 allows for native clients.
-- **Clients are public.** PKCE S256 is mandatory. The `resource` parameter, when present, must equal `<origin>/mcp`.
+- **Clients are public.** PKCE S256 is mandatory. The `resource` parameter, when present, must equal `<origin>/mcp` or a connection URL `<origin>/mcp/c/<id>`.
 
 An OAuth library was considered. The Workers-specific providers do not run on the Node and Bun adapters. The protocol subset above is small, and the token storage already exists. A focused implementation with a thorough test suite is preferred. See open questions.
 
 ### 3. Consent: adding the agent is the authorisation
 
-`GET /oauth/authorize` validates the request server-side, stores it as a pending authorisation request with a ten-minute expiry, and serves the SPA's consent route with the request ID. The consent screen shows:
+The primary user is someone whose signed-in Sift is an installed PWA, often in a browser that is not their default (for example, a Chrome PWA with Firefox as the system browser). OAuth consent pages open in whatever browser the agent's client chooses: the system default for desktop apps and CLIs, or an in-app browser tab for mobile apps. Neither shares IndexedDB with the PWA, so the consent page usually cannot see a sync key. On iOS, links never open a PWA, and Firefox on Android does not hand links off to apps by default. The design therefore has to carry the user's identity from the PWA to the consent page, rather than relying on links back into the app.
 
-- the client's name and redirect host, with an "unverified" note when the name is self-asserted through registration
-- the scopes: "Read your subscriptions, reading statistics and recent articles" (always), and "Change your subscriptions and mark articles read or starred" (a checkbox, ticked by default if the client requested `write`)
+#### Primary: single-use connection URL
 
-The user's identity is established in one of two ways:
+1. In the PWA, Settings → Agents → **Connect an agent** mints a connection ID bound to the sync key, single-use, with a ten-minute expiry. The PWA shows and copies `<origin>/mcp/c/<id>`.
+2. The user pastes that URL into any MCP client as a custom connector or remote server. The client's unauthenticated request receives `401` with `resource_metadata` pointing at `/.well-known/oauth-protected-resource/mcp/c/<id>`. That document names `<origin>/mcp/c/<id>` as the resource and `<origin>/oauth/c/<id>` as the authorisation server. The authorisation-server metadata at `/.well-known/oauth-authorization-server/oauth/c/<id>` advertises endpoints that carry the connection ID. Sift therefore recovers the ID during authorisation whether or not the client sends the `resource` parameter.
+3. The consent page, in any browser, resolves the connection ID to the account and shows "Connect *client name* to your Sift?", the time the link was created, and one **Allow** button. Allow consumes the connection ID and completes the authorisation.
+4. After use, `/mcp/c/<id>` remains a working alias of `/mcp`, because clients store the URL in their configuration. Access is governed by the token, and the spent ID has no further effect.
 
-- **Same browser.** If the consent page's IndexedDB holds a sync key, the user taps Allow. The page posts the decision with `X-Sync-Key`. The custom header prevents cross-site form submission, and the page sends `Content-Security-Policy: frame-ancestors 'none'` to prevent clickjacking.
-- **Another device or app.** The consent page shows an 8-character approval code and a QR code encoding `<origin>/?approve=<code>`. In the installed Sift app, Settings → Agents → *Approve a connection* accepts the typed code or scans the QR code with the existing scanner. The app shows the client name, redirect host and scopes again before approval, so the decision is made where the user is signed in. The consent page polls the request status every two seconds and redirects to the client once the request is approved or denied.
+The connection URL is a bearer secret for its ten-minute life. That is the same exposure as the existing pairing code. It is limited by single use, the required tap on the consent page, and the new agent appearing in the PWA's connected-agents list with Revoke.
 
-On approval, Sift issues a one-time authorisation code (60-second expiry), bound to the client, redirect URI, PKCE challenge, scopes and sync key. It then redirects with `code` and `state`. A denial redirects with `error=access_denied`.
+#### Fallbacks
 
-If no sync key is available anywhere, the consent screen explains that sync must be turned on in Sift first.
+These apply when the connection ID is absent, expired or spent (for example, a client reconnecting after losing its token):
 
-The approval-code path resembles device-code phishing: an attacker could start a flow and persuade a victim to enter the code. The app-side confirmation, which shows the client name and redirect host, plus the ten-minute expiry, limits this. It is the same trust decision as any OAuth consent.
+- **Same browser.** If the consent page's IndexedDB holds a sync key, Allow posts the decision with `X-Sync-Key`.
+- **Approval code.** The consent page shows an 8-character code with a copy button, and a QR code for approval from another device. In the PWA, Settings → Agents → *Approve a connection* accepts a pasted or typed code, or a QR scan. It shows the client name and redirect host before approval. The consent page polls the request status every two seconds and redirects once a decision is made.
+
+#### Common rules
+
+- **Full access by default.** The consent screen offers a single Allow that grants every scope the client requested. If the client requests no scope, the grant is `read write`. There are no per-scope checkboxes. The screen states plainly that the agent can read subscriptions, statistics and articles, and can change subscriptions and reading state. Clients that request only `read` receive only `read`.
+- **Identity on the screen.** The screen shows the client's name, marked "unverified" when the name is self-asserted through registration, and the redirect host.
+- **Hardening.** The consent page sends `Content-Security-Policy: frame-ancestors 'none'`. Decisions authenticated by sync key use the custom header, which cannot be sent by a cross-site form.
+- **Codes and denial.** On approval, Sift issues a one-time authorisation code with a 60-second expiry, bound to the client, redirect URI, PKCE challenge, scopes and sync key. A denial redirects with `error=access_denied`.
+- **No sync key anywhere.** The screen explains that sync must be turned on in Sift first.
+
+The approval-code fallback resembles device-code phishing. App-side display of the client name and redirect host, plus the ten-minute expiry, limits it.
 
 Alternatives considered:
 
 - **A suggestion inbox requiring per-change approval.** Rejected at the user's direction. The grant is the authorisation, and destructive tool hints let clients ask per call.
+- **Per-scope or per-data-type consent choices,** for example article content as a separate scope. Rejected: the intended use is broad delegation, and each extra choice adds friction to every connection without protecting anything the user values.
+- **Links back into the PWA** (`?approve=`, app links). These are unreliable across browsers, and impossible on iOS.
 - **Magic links or email.** These need accounts.
 
 ### 4. Tokens: opaque, hashed, scoped, with rotating refresh
@@ -135,9 +149,9 @@ Write tools call the same server-side merge used by `POST /sync/push`, factored 
 
 ### 6. Data exposure
 
-Agents can now read article text. This is new exposure, and the consent wording states it.
+Agents can read everything Sift synchronises, including article text. This is intended: the grant is broad delegation, and the consent screen says so.
 
-Feed URLs can contain credentials for private feeds, and returning them would send those credentials to a third-party model. Every URL in tool output is therefore redacted:
+Feed URLs can contain credentials for private feeds. Returning them would send those secrets to a third-party model, which is a security problem rather than a privacy preference. Every URL in tool output is therefore redacted:
 
 - userinfo is removed
 - query parameter values whose names match `/(token|key|secret|auth|pass|sig|session|code)/i` are replaced with `REDACTED`
@@ -154,8 +168,9 @@ Agent requests draw from per-token buckets that are separate from the per-sync-k
 
 Settings → Sync → Agents becomes **Connect an agent**:
 
-- **Connection URL.** `<origin>/mcp` with a copy button and one line of client-neutral guidance: "Add this as a custom connector or remote MCP server in your agent, then approve it here." An expandable section gives the same URL for HTTP and OpenAPI agents and a `siftctl` line for terminals.
-- **Approve a connection.** A code field plus a scan button.
+- **Connect an agent.** A primary button that mints a single-use connection URL (`<origin>/mcp/c/<id>`), copies it, and shows it with a ten-minute countdown. One line of client-neutral guidance: "Paste this into your agent as a custom connector or remote MCP server, then tap Allow." The plain `<origin>/mcp` URL is shown underneath for clients configured by hand, which then approve through a fallback.
+- **Using a terminal or HTTP?** An expandable section with a `siftctl pair` code, the OpenAPI document and `llms.txt`.
+- **Approve a connection.** A code field (paste or type) plus a scan button, for the fallback path.
 - **Connected agents.** One row per grant: client name (or token fingerprint for paired tokens), scopes, created, last used, and Revoke.
 
 `/llms.txt` is published as a static asset describing Sift, the MCP URL, the OAuth discovery URLs, the OpenAPI document and the scopes, so an agent pointed at the Sift origin can work out how to connect.
@@ -176,19 +191,20 @@ Existing paired tokens are migrated in place and continue to work. The openspec 
 ## Risks / Trade-offs
 
 - **Hand-written OAuth carries implementation risk.** Mitigation: a narrow surface (public clients, PKCE only, two grants), conformance tests for every validation branch, and a security review before merge.
-- **Approval-code phishing.** Mitigation: app-side display of the client name and redirect host, short expiry, and per-grant revocation.
+- **Leaked connection URL.** Anyone who obtains it within ten minutes could connect an agent. Mitigation: single use, a required tap on the consent page, and the connected-agents list with Revoke.
+- **Approval-code phishing** on the fallback path. Mitigation: app-side display of the client name and redirect host, short expiry, and per-grant revocation.
+- **Per-connection metadata paths.** Some clients may cache authorisation metadata per origin rather than per resource URL. Mitigation: the approval-code fallback still completes the flow, and testing with independent clients will show whether this occurs.
 - **Client behaviour varies.** Some clients may support only Dynamic Client Registration, and others only metadata documents. Supporting both reduces this, but the release must still be tried with at least two independent clients.
 - **Self-hosted issuers.** Behind a reverse proxy, the request origin may not equal the public origin. Mitigation: an optional `PUBLIC_URL` setting that, when set, defines the issuer and resource URLs.
-- **Content exposure.** An agent with `read` sees seven days of article content. This is stated at consent and revocable at any time.
 - **Agents needing more history** than the seven-day poll window cannot see older content. This is a documented limitation.
 
 ## Migration Plan
 
-1. Sync-database migration: add the OAuth tables (`oauth_clients`, `oauth_requests`, `oauth_codes`) and the new `tokens` columns. Backfill existing tokens as `origin = 'paired'`, `scopes = 'read write'`.
+1. Sync-database migration: add the OAuth tables (`oauth_clients`, `oauth_connections`, `oauth_requests`, `oauth_codes`) and the new `tokens` columns. Backfill existing tokens as `origin = 'paired'`, `scopes = 'read write'`.
 2. Ship the server endpoints, consent route and new Agents screen together with the removals in one release. There is no dual-path period.
 3. Rollback: revert the release. The added columns and tables are inert to the previous code.
 
 ## Open Questions
 
 - Should a vetted OAuth provider library that runs on all three adapters be adopted instead of hand-writing the endpoints, if one exists with a compatible licence? Default: hand-write, unless the security review recommends otherwise.
-- Should `write` be ticked by default on the consent screen when it is requested? Default: yes, matching the decision that adding the agent is the authorisation.
+- Should Android get an additional handoff into the installed PWA (for example a share target) for the fallback path? Deferred until the connection-URL flow has been tried on real devices.

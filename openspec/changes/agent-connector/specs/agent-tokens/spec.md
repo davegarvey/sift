@@ -102,7 +102,7 @@ Agent pairing and management in Settings SHALL be provided by the agent-connecto
 
 #### Scenario: Pair an agent
 - **WHEN** the user opens Settings → Agents
-- **THEN** the screen SHALL show the connection URL `<origin>/mcp` with a copy action
+- **THEN** the screen SHALL offer Connect an agent, which mints and copies a single-use connection URL
 - **AND** SHALL NOT show a chat prompt or a pairing code until the terminal section requests one
 
 #### Scenario: List and revoke agents
@@ -113,7 +113,7 @@ Agent pairing and management in Settings SHALL be provided by the agent-connecto
 
 #### Scenario: No agents paired
 - **WHEN** the user opens the Agents screen and no grants or tokens exist
-- **THEN** the screen SHALL show the connection URL and the approval entry, with no connected-agents list
+- **THEN** the screen SHALL show Connect an agent and the approval entry, with no connected-agents list
 
 #### Scenario: Pair siftctl
 - **WHEN** the user opens the terminal section and requests a pairing code
