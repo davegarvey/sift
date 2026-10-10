@@ -251,7 +251,7 @@ Settings → Sync → Agents SHALL offer:
 - the plain `<origin>/mcp` URL
 - a terminal and HTTP section (`siftctl` pairing, OpenAPI, `llms.txt`)
 - Approve a connection, accepting a code or a QR scan
-- connected agents (name or fingerprint, scopes, created, last used), each with a confirmed Revoke
+- connected agents, each with Rename and a confirmed Revoke
 
 #### Scenario: Revoke a connected agent
 - **WHEN** the user confirms Revoke on an OAuth grant
@@ -260,6 +260,27 @@ Settings → Sync → Agents SHALL offer:
 #### Scenario: New connection appears
 - **WHEN** an agent completes authorisation and the user reopens the Agents screen
 - **THEN** the agent SHALL appear in the connected-agents list under its client name
+
+### Requirement: Connected agent identity
+
+Each connected-agent row SHALL show the user's label if set, otherwise the client name (OAuth) or "siftctl" (paired). It SHALL also show:
+
+- the client name, when a label hides it
+- the client website host, or the redirect host when the client has no website
+- an "unverified" mark for names from dynamic registration
+- access ("Read only" or "Read and change"), connected date and last used
+
+The fingerprint SHALL be secondary detail.
+
+#### Scenario: Two connections from the same client
+- **WHEN** the user connects the same client twice and renames one to "Claude on phone"
+- **THEN** the rows SHALL read "Claude on phone" (with "Claude" beneath) and "Claude"
+
+#### Scenario: Rename
+- **WHEN** the user renames a connected agent
+- **THEN** the new label SHALL be stored server-side, trimmed and at most 64 characters
+- **AND** it SHALL appear on every synced device's Agents screen
+- **AND** an empty label SHALL restore the default name
 
 ### Requirement: Agent connection discovery document
 

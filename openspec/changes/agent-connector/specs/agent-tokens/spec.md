@@ -61,7 +61,7 @@ The server SHALL record `last_seen` on authentication, throttled to once per min
 
 ### Requirement: Agent token revocation and listing
 
-The system SHALL provide `GET /sync/tokens` and `DELETE /sync/tokens`, both master-key-only. They list and revoke the sync key's agent grants. The list SHALL return metadata only: identifier, origin, client name (for OAuth grants), fingerprint (for paired tokens), scopes, creation time and last-seen time. Revoking an OAuth grant SHALL invalidate its access and refresh tokens together, immediately, and SHALL NOT affect other grants or devices.
+The system SHALL provide `GET /sync/tokens` and `DELETE /sync/tokens`, both master-key-only. They list and revoke the sync key's agent grants. The list SHALL return metadata only, one row per grant: identifier, origin, label, client name and client website (OAuth), fingerprint (paired), scopes, creation time and last-seen time. `PATCH /sync/tokens` (master-key only) SHALL set or clear a grant's label. Revoking an OAuth grant SHALL invalidate its access and refresh tokens together, immediately, and SHALL NOT affect other grants or devices.
 
 #### Scenario: Revoke a token
 - **WHEN** the master key calls `DELETE /sync/tokens` with a token's opaque identifier

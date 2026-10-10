@@ -107,6 +107,7 @@ OAuth grants extend the existing `tokens` table rather than creating a parallel 
 - `origin` (`paired` | `oauth`)
 - `client_id`
 - `client_name`
+- `label` (user-chosen display name)
 - `scopes` (space-separated)
 - `refresh_hash`
 - `refresh_expires_at`
@@ -171,7 +172,7 @@ Settings → Sync → Agents becomes **Connect an agent**:
 - **Connect an agent.** A primary button that mints a single-use connection URL (`<origin>/mcp/c/<id>`), copies it, and shows it with a ten-minute countdown. One line of client-neutral guidance: "Paste this into your agent as a custom connector or remote MCP server, then tap Allow." The plain `<origin>/mcp` URL is shown underneath for clients configured by hand, which then approve through a fallback.
 - **Using a terminal or HTTP?** An expandable section with a `siftctl pair` code, the OpenAPI document and `llms.txt`.
 - **Approve a connection.** A code field (paste or type) plus a scan button, for the fallback path.
-- **Connected agents.** One row per grant: client name (or token fingerprint for paired tokens), scopes, created, last used, and Revoke.
+- **Connected agents.** One row per grant. The title is the user's label, else the client name (OAuth) or "siftctl" (paired). Beneath it: the client name when relabelled, the client website host (or redirect host), an "unverified" mark for self-registered names, "Read only" or "Read and change", connected date and last used. Each row has Rename and Revoke. Labels are stored server-side, so they appear on every device. `siftctl pair` sends a default label of `siftctl on <hostname>`. Client logos are not shown: they would mean loading images from arbitrary third-party URLs for little gain over a clear name.
 
 `/llms.txt` is published as a static asset describing Sift, the MCP URL, the OAuth discovery URLs, the OpenAPI document and the scopes, so an agent pointed at the Sift origin can work out how to connect.
 
