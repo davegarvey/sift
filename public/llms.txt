@@ -2,7 +2,7 @@
 
 > Sift is a browser-first RSS reader. An AI agent can connect to a user's Sift account through a remote MCP server to read subscriptions, reading statistics and recent articles, and to manage subscriptions.
 
-Examples use the hosted deployment, https://sift.davegarvey.workers.dev. A self-hosted deployment serves the same paths on its own origin, written `<origin>` below.
+Paths in this file are relative to the origin that serves it, written `<origin>` where a full URL is meant.
 
 ## Connect
 
@@ -13,8 +13,8 @@ Examples use the hosted deployment, https://sift.davegarvey.workers.dev. A self-
 
 ## Authorisation
 
-- [Authorisation server metadata](https://sift.davegarvey.workers.dev/.well-known/oauth-authorization-server): RFC 8414. OAuth 2.1 with PKCE (`S256`), public clients, authorisation code and refresh token grants. Clients identify themselves with a Client ID Metadata Document URL or by Dynamic Client Registration.
-- [Protected resource metadata](https://sift.davegarvey.workers.dev/.well-known/oauth-protected-resource): RFC 9728. Names `<origin>/mcp` as the resource.
+- [Authorisation server metadata](/.well-known/oauth-authorization-server): RFC 8414. OAuth 2.1 with PKCE (`S256`), public clients, authorisation code and refresh token grants. Clients identify themselves with a Client ID Metadata Document URL or by Dynamic Client Registration.
+- [Protected resource metadata](/.well-known/oauth-protected-resource): RFC 9728. Names `<origin>/mcp` as the resource.
 - Scopes: `read` allows the read tools. `write` also allows the tools that change subscriptions and reading state. One Allow grants every scope the client requests, or both if it requests none.
 - Access tokens last one hour and are renewed with the refresh token. A grant expires after a year without use. The user can rename or revoke an agent in Settings → Agents.
 
@@ -39,6 +39,6 @@ Identify feeds by `feedId` and items by `<feedId>::<guid>`, exactly as returned.
 
 ## HTTP clients
 
-- [OpenAPI document](https://sift.davegarvey.workers.dev/openapi.json): the sync API (`/sync/pull`, `/sync/push`, `/sync/items`, `/sync/stats/pull`) with the scope each operation needs. Send an OAuth access token, or a `siftctl` token, as `Authorization: Bearer <token>`.
-- [About Sift](https://sift.davegarvey.workers.dev/about): what Sift is and how it handles data.
+- [OpenAPI document](/openapi.json): the sync API (`/sync/pull`, `/sync/push`, `/sync/items`, `/sync/stats/pull`) with the scope each operation needs. Send an OAuth access token, or a `siftctl` token, as `Authorization: Bearer <token>`.
+- [About Sift](/about): what Sift is and how it handles data.
 - [Source and README](https://github.com/davegarvey/sift): deployment, configuration and the `siftctl` command-line tool.
