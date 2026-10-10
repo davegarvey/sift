@@ -12,6 +12,7 @@ import { ARTICLE_MAX_BYTES, FEED_MAX_BYTES, IMAGE_MAX_BYTES, capBody, declaredLe
 import { proxyGuard, type ProxyGuardOptions } from './proxy-guard';
 import { createSyncRoutes } from './sync/routes';
 import { createOAuthRoutes } from './agent/oauth';
+import { createMcpRoutes } from './agent/mcp';
 
 export type AppEnv = Env;
 
@@ -220,6 +221,7 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
       c.res = new Response(c.res.body, c.res);
       c.res.headers.set('Content-Security-Policy', "frame-ancestors 'none'");
     });
+    app.route('/', createMcpRoutes({ db, pollDb, publicUrl }));
     const syncApp = createSyncRoutes(db, { pollDb });
     app.route('/', syncApp);
     if (scheduledHandler) {

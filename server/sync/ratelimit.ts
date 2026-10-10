@@ -70,6 +70,7 @@ export const RATE_LIMITS = {
   oauthToken: { windowSeconds: 60, limit: 120 },
   approvalLookupIp: { windowSeconds: 60, limit: 60 },
   approvalLookupKey: { windowSeconds: 60, limit: 20 },
+  mcp: { windowSeconds: 60, limit: 120 },
 } as const;
 
 export const KEYED_RATE_LIMIT_PREFIXES = [

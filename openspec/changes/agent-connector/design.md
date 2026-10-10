@@ -164,6 +164,8 @@ When the poll database is absent, `list_items` and `get_item` are not listed, an
 
 The `initialize` result carries `instructions`: a short description of Sift, the ID conventions, and guidance for the common workflows. For example: "To recommend feeds, call `list_subscriptions` sorted by engagement, then verify every suggestion with `discover_feeds` before proposing it." Clients surface this text to the model, so it is how the expected workflows become discoverable without client-specific integration.
 
+The JSON-RPC subset (`initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`) is implemented directly in `server/agent/mcp/` rather than through `@modelcontextprotocol/server`. The tool set is fixed, the principal and scopes vary per request, and tool lists depend on scope and on the poll database, so a per-request SDK server would add schema-library and validator dependencies without removing any protocol work. The handler negotiates protocol revisions 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05, allows cross-origin `POST` with `Authorization`, and answers `OPTIONS` preflight, because some MCP clients run in browsers. `unsubscribe` succeeds with `removed: false` when the feed is already gone. `subscribe` returns `created: false` for an existing URL.
+
 Write tools call the same server-side merge used by `POST /sync/push`, factored into a shared function, so the effect matches a device sync.
 
 ### 6. Data exposure
@@ -177,11 +179,13 @@ Feed URLs can contain credentials for private feeds. Returning them would send t
 
 `subscribe` accepts credentials the agent supplies. They are not echoed back.
 
+Item IDs (`<feedId>::<guid>`) are not redacted because they are handles the agent must pass back unchanged. A feed whose GUIDs embed secrets would expose them there. This is an accepted limitation.
+
 Tool calls are never logged with arguments or URLs, which is consistent with the existing logging rules.
 
 ### 7. Rate limits
 
-Agent requests draw from per-token buckets that are separate from the per-sync-key device buckets. A runaway agent therefore cannot starve the user's devices of sync. `discover_feeds` has its own tighter per-account bucket because it causes upstream fetches. The upstream origin governor applies as usual.
+Agent requests draw from per-token buckets that are separate from the per-sync-key device buckets. A runaway agent therefore cannot starve the user's devices of sync. Every `tools/call` draws from the token's `mcp` bucket (120 per minute). `discover_feeds`, and `subscribe` when it has to discover, also draw from the tighter per-account `discover` bucket (20 per minute) because they cause upstream fetches. The upstream origin governor applies as usual.
 
 ### 8. Onboarding UI
 
