@@ -57,7 +57,7 @@ Sift acts as both the protected resource and the authorisation server, on the sa
   - `grant_types_supported: ["authorization_code", "refresh_token"]`
   - `token_endpoint_auth_methods_supported: ["none"]`
   - `client_id_metadata_document_supported: true`
-- **Client identification.** If `client_id` is an HTTPS URL, Sift fetches it through the upstream fetch policy as a Client ID Metadata Document, validates that its `client_id` equals the URL, and caches it. Otherwise the client must have registered at `/oauth/register` (Dynamic Client Registration), which stores the name and redirect URIs. Supporting both covers current clients without favouring one.
+- **Client identification.** If `client_id` is an HTTPS URL, Sift fetches it through the upstream fetch policy as a Client ID Metadata Document, validates that its `client_id` equals the URL, and caches it. Otherwise the client must have registered at `/oauth/register` (Dynamic Client Registration), which stores the name, redirect URIs and optional `client_uri`. Metadata documents are cached for 24 hours, and the consent screen shows the client's website host from `client_uri` when given. The token, registration, revocation and metadata endpoints send `Access-Control-Allow-Origin: *` without credentials, because browser-based clients call them. `/sync/*` and the consent and decision endpoints stay same-origin. Supporting both covers current clients without favouring one.
 - **Redirect URIs.** These must match exactly. Loopback redirects (`http://127.0.0.1`, `http://localhost`) may use any port, as RFC 8252 allows for native clients.
 - **Clients are public.** PKCE S256 is mandatory. The `resource` parameter, when present, must equal `<origin>/mcp` or a connection URL `<origin>/mcp/c/<id>`.
 
@@ -75,6 +75,20 @@ The primary user is someone whose signed-in Sift is an installed PWA, often in a
 4. After use, `/mcp/c/<id>` remains a working alias of `/mcp`, because clients store the URL in their configuration. Access is governed by the token, and the spent ID has no further effect.
 
 The connection URL is a bearer secret for its ten-minute life. That is the same exposure as the existing pairing code. It is limited by single use, the required tap on the consent page, and the new agent appearing in the PWA's connected-agents list with Revoke.
+
+#### Endpoint scheme and decision API
+
+The per-connection authorisation server's issuer is `<origin>/oauth/c/<id>`. Its endpoints are the origin-level paths with the ID inserted: `<origin>/oauth/c/<id>/authorize`, `/token`, `/register` and `/revoke`. The origin-level endpoints (`/oauth/authorize` and so on) remain, serve the same handlers, and recover the ID from `resource=<origin>/mcp/c/<id>` instead. Connection IDs are 192-bit URL-safe strings (32 characters). A `resource` that names a different connection from the path is refused with `invalid_target`.
+
+After validation, `GET /oauth/authorize` stores the request and redirects to the SPA route `/connect?request=<request_id>`. The request ID is a 256-bit secret. The server adds `frame-ancestors 'none'` to `/connect` responses.
+
+The consent page and the app use JSON endpoints:
+
+- `GET /oauth/requests/:id` (unauthenticated; the request ID is the secret) returns the client name, whether it is unverified, the client website host, the redirect host, scopes, expiry, status, whether a usable connection ID is attached, and, while pending, the approval code. After a decision made in the app, the first poll also returns the finished redirect URL, once.
+- `POST /oauth/requests/:id/decision` takes `{ "decision": "approve" | "deny" }`. It is authenticated by `X-Sync-Key` (master key) when that header is present, and otherwise by the request's usable connection ID, which an approval consumes and a denial leaves unused. It returns `{ "redirect": "<redirect_uri>?code=...&state=..." }`.
+- `GET /oauth/approvals/:code` and `POST /oauth/approvals/:code/decision` (master key) serve the app's *Approve a connection* screen. The app never receives the authorisation code. Lookups are rate-limited per IP and per sync key.
+
+Authorisation codes are stored hashed with a 60-second life. For a decision made in the app, the finished redirect (which contains the code) is held on the request row until the consent page collects it once, and is then cleared.
 
 #### Fallbacks
 

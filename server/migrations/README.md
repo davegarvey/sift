@@ -102,6 +102,11 @@ hashes. All times are epoch seconds. It also adds `tokens.origin`
 rotated in place. The daily cleanup removes expired connections, requests and
 codes, and OAuth grants past `refresh_expires_at`.
 
+Migration `0012_oauth_client_uri.sql` adds `oauth_clients.client_uri` (the
+client's self-declared website, shown on the consent screen) and
+`oauth_requests.redirect_url`, which holds the finished redirect for a request
+decided in the app until the consent page collects it once.
+
 The poll database has its own migration sequence. Migration
 `server/migrations-poll/0001_feed_polling.sql` adds `polled_feeds` (per-URL
 validators and schedule), `polled_items` (retained entries keyed by feed URL

@@ -64,6 +64,12 @@ export const RATE_LIMITS = {
   itemsPull: { windowSeconds: 60, limit: 120 },
   accountDelete: { windowSeconds: 3600, limit: 10 },
   discover: { windowSeconds: 60, limit: 20 },
+  connectionsMint: { windowSeconds: 3600, limit: 20 },
+  oauthRegister: { windowSeconds: 3600, limit: 30 },
+  oauthAuthorize: { windowSeconds: 60, limit: 60 },
+  oauthToken: { windowSeconds: 60, limit: 120 },
+  approvalLookupIp: { windowSeconds: 60, limit: 60 },
+  approvalLookupKey: { windowSeconds: 60, limit: 20 },
 } as const;
 
 export const KEYED_RATE_LIMIT_PREFIXES = [
@@ -77,4 +83,6 @@ export const KEYED_RATE_LIMIT_PREFIXES = [
   'items-pull',
   'account-delete',
   'discover',
+  'connections:mint',
+  'approval:key',
 ] as const;

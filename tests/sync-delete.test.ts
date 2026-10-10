@@ -289,7 +289,9 @@ describe('DELETE /sync/account', () => {
   });
 
   it('removes keyed rate-limit scopes used by every route', () => {
-    const source = readFileSync(path.resolve(__dirname, '../server/sync/routes.ts'), 'utf8');
+    const source = ['../server/sync/routes.ts', '../server/agent/oauth/decisions.ts']
+      .map((file) => readFileSync(path.resolve(__dirname, file), 'utf8'))
+      .join('\n');
     const prefixes = new Set<string>();
     for (const match of source.matchAll(/`([a-z][a-z:-]*):\$\{(?:syncKey|oldKey)\}`/g)) prefixes.add(match[1]);
     for (const match of source.matchAll(/rateLimitKey\(ctx, '([a-z][a-z:-]*)'\)/g)) prefixes.add(match[1]);

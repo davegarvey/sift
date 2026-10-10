@@ -23,6 +23,7 @@ if (databases) {
 const app = createApp({
   db: databases?.sync as unknown as D1Database | undefined,
   pollDb: process.env.FEED_POLLING === 'true' ? databases?.poll as unknown as D1Database | undefined : undefined,
+  publicUrl: process.env.PUBLIC_URL?.trim() || undefined,
   proxy: { clientIp: nodeClientIp(parseTrustedProxyHops(process.env.TRUST_PROXY_HOPS)) },
 });
 for (const page of ['about', 'privacy', 'terms']) {

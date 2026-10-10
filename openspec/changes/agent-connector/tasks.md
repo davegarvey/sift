@@ -7,14 +7,14 @@
 
 ## 2. OAuth authorisation server
 
-- [ ] 2.1 Serve `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, honouring `PUBLIC_URL`, including the per-connection variants under `/mcp/c/<id>` and `/oauth/c/<id>`
-- [ ] 2.1a Add the master-key endpoint that mints connection IDs, and route `/mcp/c/<id>` as an alias of `/mcp`
-- [ ] 2.2 Implement `POST /oauth/register` (public clients, redirect URI rules, IP rate limit)
-- [ ] 2.3 Implement Client ID Metadata Document resolution through the upstream fetch policy, with caching
-- [ ] 2.4 Implement `GET /oauth/authorize` validation and pending-request creation; serve the consent route
-- [ ] 2.5 Implement decision endpoints: connection-ID approve/deny (consumes the ID), same-browser approve/deny (master key), app approve/deny by approval code (master key), request lookup by code, and status polling for the consent page
-- [ ] 2.6 Implement `POST /oauth/token` for both grants, with PKCE verification, rotation and reuse detection; implement `POST /oauth/revoke`
-- [ ] 2.7 Conformance tests for every validation branch, including redirect-URI mismatch, PKCE failure, code replay, refresh reuse, scope down-selection and expiry
+- [x] 2.1 Serve `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, honouring `PUBLIC_URL`, including the per-connection variants under `/mcp/c/<id>` and `/oauth/c/<id>`
+- [x] 2.1a Add the master-key endpoint that mints connection IDs (the `/mcp/c/<id>` alias is routed with the MCP handler in 3.2)
+- [x] 2.2 Implement `POST /oauth/register` (public clients, redirect URI rules, IP rate limit)
+- [x] 2.3 Implement Client ID Metadata Document resolution through the upstream fetch policy, with caching
+- [x] 2.4 Implement `GET /oauth/authorize` validation and pending-request creation; serve the consent route
+- [x] 2.5 Implement decision endpoints: connection-ID approve/deny (consumes the ID), same-browser approve/deny (master key), app approve/deny by approval code (master key), request lookup by code, and status polling for the consent page
+- [x] 2.6 Implement `POST /oauth/token` for both grants, with PKCE verification, rotation and reuse detection; implement `POST /oauth/revoke`
+- [x] 2.7 Conformance tests for every validation branch, including redirect-URI mismatch, PKCE failure, code replay, refresh reuse, scope down-selection and expiry
 
 ## 3. MCP server and tools
 

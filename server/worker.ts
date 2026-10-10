@@ -13,6 +13,7 @@ interface WorkerBindings {
   FEED_POLLING?: string;
   FEED_POLL_BATCH?: string;
   POLL_DB_MAX_BYTES?: string;
+  PUBLIC_URL?: string;
 }
 
 type WorkerEnv = AppEnv & { Bindings: WorkerBindings };
@@ -25,6 +26,7 @@ function buildApp(env: WorkerBindings) {
   const app = createApp<WorkerEnv>({
     db: env.DB,
     pollDb: pollDatabase(env),
+    publicUrl: env.PUBLIC_URL?.trim() || undefined,
     proxy: {
       fetchLimiter: env.PROXY_FETCH_LIMITER,
       imageLimiter: env.PROXY_IMAGE_LIMITER,

@@ -65,7 +65,8 @@ export async function ensureSchema(db: D1Database): Promise<void> {
       redirect_uris TEXT NOT NULL,
       kind          TEXT NOT NULL,
       created_at    INTEGER NOT NULL,
-      expires_at    INTEGER
+      expires_at    INTEGER,
+      client_uri    TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS oauth_connections (
       connection_id TEXT PRIMARY KEY,
@@ -143,6 +144,8 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `ALTER TABLE tokens ADD COLUMN expires_at INTEGER`,
     `ALTER TABLE tokens ADD COLUMN family_id TEXT`,
     `ALTER TABLE tokens ADD COLUMN label TEXT`,
+    `ALTER TABLE oauth_clients ADD COLUMN client_uri TEXT`,
+    `ALTER TABLE oauth_requests ADD COLUMN redirect_url TEXT`,
   ];
   for (const sql of migrations) {
     try {

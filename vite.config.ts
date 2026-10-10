@@ -28,6 +28,7 @@ function honoDevMiddleware() {
       const devApp = createApp({
         db: databases.sync as unknown as D1Database,
         pollDb: process.env.FEED_POLLING === 'true' ? databases.poll as unknown as D1Database : undefined,
+        publicUrl: process.env.PUBLIC_URL?.trim() || undefined,
         proxy: { clientIp: nodeClientIp(parseTrustedProxyHops(process.env.TRUST_PROXY_HOPS)) },
       });
       server.middlewares.use(

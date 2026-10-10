@@ -122,12 +122,14 @@ Copy `.env.example` to `.env` and set:
 
 For Node and Bun:
 
+- `PUBLIC_URL` — public origin of the deployment (for example `https://sift.example.com`); when set, it defines the OAuth issuer and resource URLs instead of the request origin, which matters behind a reverse proxy
 - `SIFT_DATA_DIR` — enable sync and store the `sift-sync.sqlite` and `sift-poll.sqlite` files in this directory
 - `FEED_POLLING=true` — enable server-side polling when `SIFT_DATA_DIR` is set; the process checks every 10 minutes
 - `FEED_POLL_BATCH` and `POLL_DB_MAX_BYTES` — polling batch size and poll-database limit, with the same defaults as Workers
 
 Cloudflare Workers variables (`wrangler.toml` `[vars]`):
 
+- `PUBLIC_URL` — optional public origin used for OAuth issuer and resource URLs
 - `FEED_POLLING=true` — poll synced subscriptions on the 10-minute cron and serve `/sync/items`
 - `FEED_POLL_BATCH` — maximum feeds fetched per polling run (default 50, maximum 500)
 - `POLL_DB_MAX_BYTES` — pause polling above this poll-database size in bytes (default 8 GiB)

@@ -11,6 +11,7 @@ import { assertNoUrlLog } from './log';
 import { ARTICLE_MAX_BYTES, FEED_MAX_BYTES, IMAGE_MAX_BYTES, capBody, declaredLengthExceeds } from './body-cap';
 import { proxyGuard, type ProxyGuardOptions } from './proxy-guard';
 import { createSyncRoutes } from './sync/routes';
+import { createOAuthRoutes } from './agent/oauth';
 
 export type AppEnv = Env;
 
@@ -38,11 +39,12 @@ export interface CreateAppOptions {
   proxy?: ProxyGuardOptions;
   db?: D1Database;
   pollDb?: D1Database;
+  publicUrl?: string;
   scheduledHandler?: (event: { scheduledTime: Date; waitUntil?: (p: Promise<unknown>) => void }) => Promise<void>;
 }
 
 export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}): Hono<E> {
-  const { db, pollDb, scheduledHandler, proxy } = options;
+  const { db, pollDb, publicUrl, scheduledHandler, proxy } = options;
   const app = new Hono<E>();
 
   app.use('/feed', isolateProxyResponse(PROXY_CSP));
@@ -212,6 +214,12 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
 
   // Sync routes — only registered when a D1 binding is provided.
   if (db) {
+    app.route('/', createOAuthRoutes({ db, publicUrl }));
+    app.use('/connect', async (c, next) => {
+      await next();
+      c.res = new Response(c.res.body, c.res);
+      c.res.headers.set('Content-Security-Policy', "frame-ancestors 'none'");
+    });
     const syncApp = createSyncRoutes(db, { pollDb });
     app.route('/', syncApp);
     if (scheduledHandler) {

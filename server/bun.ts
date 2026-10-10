@@ -22,6 +22,7 @@ if (databases) {
 const app = createApp({
   db: databases?.sync as unknown as D1Database | undefined,
   pollDb: process.env.FEED_POLLING === 'true' ? databases?.poll as unknown as D1Database | undefined : undefined,
+  publicUrl: process.env.PUBLIC_URL?.trim() || undefined,
   proxy: {
     clientIp: trustedProxyClientIp((c) => {
       try {
