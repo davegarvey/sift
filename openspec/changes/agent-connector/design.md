@@ -69,7 +69,7 @@ The primary user is someone whose signed-in Sift is an installed PWA, often in a
 
 #### Primary: single-use connection URL
 
-1. In the PWA, Settings → Agents → **Connect an agent** mints a connection ID bound to the sync key, single-use, with a ten-minute expiry. The PWA shows and copies `<origin>/mcp/c/<id>`.
+1. In the PWA, Settings → Sync → Agent access → **Connect an agent** mints a connection ID bound to the sync key, single-use, with a ten-minute expiry. The PWA shows and copies `<origin>/mcp/c/<id>`.
 2. The user pastes that URL into any MCP client as a custom connector or remote server. The client's unauthenticated request receives `401` with `resource_metadata` pointing at `/.well-known/oauth-protected-resource/mcp/c/<id>`. That document names `<origin>/mcp/c/<id>` as the resource and `<origin>/oauth/c/<id>` as the authorisation server. The authorisation-server metadata at `/.well-known/oauth-authorization-server/oauth/c/<id>` advertises endpoints that carry the connection ID. Sift therefore recovers the ID during authorisation whether or not the client sends the `resource` parameter.
 3. The consent page, in any browser, resolves the connection ID to the account and shows "Connect *client name* to your Sift?", the time the link was created, and one **Allow** button. Allow consumes the connection ID and completes the authorisation.
 4. After use, `/mcp/c/<id>` remains a working alias of `/mcp`, because clients store the URL in their configuration. Access is governed by the token, and the spent ID has no further effect.
@@ -95,7 +95,7 @@ Authorisation codes are stored hashed with a 60-second life. For a decision made
 These apply when the connection ID is absent, expired or spent (for example, a client reconnecting after losing its token):
 
 - **Same browser.** If the consent page's IndexedDB holds a sync key, Allow posts the decision with `X-Sync-Key`.
-- **Approval code.** The consent page shows an 8-character code with a copy button, and a QR code for approval from another device. In the PWA, Settings → Agents → *Approve a connection* accepts a pasted or typed code, or a QR scan. It shows the client name and redirect host before approval. The consent page polls the request status every two seconds and redirects once a decision is made.
+- **Approval code.** The consent page shows an 8-character code with a copy button, and a QR code for approval from another device. In the PWA, Settings → Sync → Agent access → *Approve a connection* accepts a pasted or typed code, or a QR scan. It shows the client name and redirect host before approval. The consent page polls the request status every two seconds and redirects once a decision is made.
 
 #### Common rules
 

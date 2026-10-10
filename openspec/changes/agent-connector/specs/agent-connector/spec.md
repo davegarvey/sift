@@ -149,7 +149,7 @@ When the consent request has no usable connection ID and the consent page's loca
 
 ### Requirement: Approval code fallback
 
-When the consent request has no usable connection ID, the consent screen SHALL show an 8-character, single-use approval code with a copy action, and a QR code of it for the in-app scanner. Under Settings → Agents, the app SHALL accept a pasted, typed or scanned code. It SHALL show the client name, redirect host and scopes before approving. The consent page SHALL poll and redirect once a decision is made.
+When the consent request has no usable connection ID, the consent screen SHALL show an 8-character, single-use approval code with a copy action, and a QR code of it for the in-app scanner. Under Settings → Sync → Agent access, the app SHALL accept a pasted, typed or scanned code. It SHALL show the client name, redirect host and scopes before approving. The consent page SHALL poll and redirect once a decision is made.
 
 #### Scenario: Approve by pasted code
 - **WHEN** the user copies the code from the consent page, pastes it into the installed app, and approves

@@ -41,9 +41,9 @@
 
 ## 6. Documentation
 
-- [ ] 6.1 Update `public/openapi.json` with the bearer scheme, per-operation scopes and the OAuth reference; remove code authentication
-- [ ] 6.2 Add `public/llms.txt`
-- [ ] 6.3 Rewrite the README agent sections (connecting an agent, scopes, data exposure, revocation, `PUBLIC_URL`, the seven-day content limit) and remove the MCP experimental limitation
+- [x] 6.1 Update `public/openapi.json` with the bearer scheme, per-operation scopes and the OAuth reference; remove code authentication
+- [x] 6.2 Add `public/llms.txt`
+- [x] 6.3 Rewrite the README agent sections (connecting an agent, scopes, data exposure, revocation, `PUBLIC_URL`, the seven-day content limit) and remove the MCP experimental limitation
 
 ## 7. Verification
 

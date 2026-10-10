@@ -127,7 +127,7 @@ describe('consent page', () => {
     const calls = mockFetch([makeView(), makeView(), makeView({ status: 'approved', approvalCode: undefined, redirect: 'https://client.example/cb?code=y' })]);
     const navigate = mount();
     await vi.waitFor(() => expect(document.body.textContent).toContain('abcd-2345'));
-    expect(document.body.textContent).toContain('Settings → Agents → Approve a connection');
+    expect(document.body.textContent).toContain('Settings → Sync → Agent access → Approve a connection');
     expect(document.querySelector('.connect__qr svg')).not.toBeNull();
     expect(button('Copy code')).toBeTruthy();
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('https://client.example/cb?code=y'));

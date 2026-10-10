@@ -101,7 +101,7 @@ The system SHALL provide `GET /sync/tokens` and `DELETE /sync/tokens`, both mast
 Agent management in Settings SHALL be provided by the agent-connector "Connect an agent" screen. The screen SHALL NOT offer `siftctl` pairing codes, SHALL NOT display or store raw tokens, and SHALL NOT offer a copyable chat prompt. Existing paired tokens SHALL appear in its connected-agents list as "Paired token" until they are revoked.
 
 #### Scenario: Pair an agent
-- **WHEN** the user opens Settings → Agents
+- **WHEN** the user opens Settings → Sync → Agent access
 - **THEN** the screen SHALL offer Connect an agent, which mints and copies a single-use connection URL
 - **AND** SHALL NOT show a chat prompt or a pairing code
 
