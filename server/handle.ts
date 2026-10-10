@@ -10,8 +10,6 @@ import {
 import { assertNoUrlLog } from './log';
 import { ARTICLE_MAX_BYTES, FEED_MAX_BYTES, IMAGE_MAX_BYTES, capBody, declaredLengthExceeds } from './body-cap';
 import { proxyGuard, type ProxyGuardOptions } from './proxy-guard';
-import { Relay, sseResponse } from './relay';
-import { createMcpHttpHandler } from './mcp';
 import { createSyncRoutes } from './sync/routes';
 
 export type AppEnv = Env;
@@ -38,19 +36,13 @@ function proxyError(response: Response): Response {
 
 export interface CreateAppOptions {
   proxy?: ProxyGuardOptions;
-  relay?: Relay;
   db?: D1Database;
   pollDb?: D1Database;
   scheduledHandler?: (event: { scheduledTime: Date; waitUntil?: (p: Promise<unknown>) => void }) => Promise<void>;
 }
 
 export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}): Hono<E> {
-  const { relay: providedRelay, db, pollDb, scheduledHandler, proxy } = options;
-  let relay = providedRelay;
-  if (!relay && typeof process !== 'undefined' && process.env?.MCP_ENABLED === 'true') {
-    relay = new Relay();
-  }
-  const mcpEnabled = relay !== undefined;
+  const { db, pollDb, scheduledHandler, proxy } = options;
   const app = new Hono<E>();
 
   app.use('/feed', isolateProxyResponse(PROXY_CSP));
@@ -217,53 +209,6 @@ export function createApp<E extends Env = AppEnv>(options: CreateAppOptions = {}
     headers.set('X-Sift-Request-Source', upstreamRes.headers.get('X-Sift-Request-Source') ?? 'upstream');
     return new Response(capBody(upstreamRes.body, IMAGE_MAX_BYTES), { status: upstreamRes.status, headers });
   });
-
-  if (mcpEnabled && relay) {
-    const mcpHttpHandler = createMcpHttpHandler(relay, { db });
-
-    app.get('/api/capabilities', (c) => c.json({ mcp: true }));
-
-    app.get('/api/events', () => sseResponse(relay));
-
-    app.post('/api/events', async (c) => {
-      const body = await c.req.json<Record<string, unknown>>();
-      const kind = body.kind;
-      if (kind === 'sync' && Array.isArray(body.feeds)) {
-        relay.handleSync(body.feeds as import('../src/db/types').Feed[]);
-        return c.body(null, 204);
-      }
-      if (kind === 'ack' && typeof body.id === 'string') {
-        relay.handleAck(body.id);
-        return c.body(null, 204);
-      }
-      return c.text('Invalid request', 400);
-    });
-
-    app.all('/mcp', async (c) => {
-      const raw = c.req.raw;
-      const headers = new Headers(raw.headers);
-      if (raw.method === 'POST') {
-        // SDK's transport requires Accept header to advertise support for
-        // both application/json and text/event-stream. Ensure they're present
-        // so clients like OpenCode (which may send */*) are not rejected.
-        if (!headers.has('accept') || !headers.get('accept')!.includes('application/json')) {
-          const existing = headers.get('accept') || '';
-          headers.set('accept', existing
-            ? `${existing}, application/json`
-            : 'application/json');
-        }
-        if (!headers.get('accept')!.includes('text/event-stream')) {
-          headers.set('accept', `${headers.get('accept')}, text/event-stream`);
-        }
-      }
-      const request = new Request(raw.url, {
-        method: raw.method,
-        headers,
-        body: raw.method === 'GET' ? undefined : await raw.blob(),
-      });
-      return mcpHttpHandler.fetch(request);
-    });
-  }
 
   // Sync routes — only registered when a D1 binding is provided.
   if (db) {

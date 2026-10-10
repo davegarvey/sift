@@ -3,7 +3,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import solid from 'vite-plugin-solid';
 import { VitePWA } from 'vite-plugin-pwa';
 import { createApp } from './server/handle.ts';
-import { Relay } from './server/relay.ts';
 import { loadEnv } from './server/env.ts';
 import { nodeClientIp } from './server/node-client-ip.ts';
 import { parseTrustedProxyHops } from './server/proxy-guard.ts';
@@ -19,8 +18,6 @@ function honoDevMiddleware() {
   return {
     name: 'hono-proxy-dev',
     async configureServer(server: ViteDevServer) {
-      const mcpEnabled = process.env.MCP_ENABLED === 'true';
-      const relay = mcpEnabled ? new Relay() : undefined;
       const databases = await createSelfHostedDatabases(process.env.SIFT_DATA_DIR || 'node_modules/.cache/sift', openNodeSqlite);
       const stopJobs = startSelfHostedJobs(databases, {
         feedPolling: process.env.FEED_POLLING === 'true',
@@ -29,7 +26,6 @@ function honoDevMiddleware() {
       });
       server.httpServer?.once('close', stopJobs);
       const devApp = createApp({
-        relay,
         db: databases.sync as unknown as D1Database,
         pollDb: process.env.FEED_POLLING === 'true' ? databases.poll as unknown as D1Database : undefined,
         proxy: { clientIp: nodeClientIp(parseTrustedProxyHops(process.env.TRUST_PROXY_HOPS)) },
@@ -46,7 +42,6 @@ function honoDevMiddleware() {
             url.startsWith('/article') ||
             url.startsWith('/img') ||
             url.startsWith('/api') ||
-            url.startsWith('/mcp') ||
             url.startsWith('/sync')
           ) {
               try {

@@ -17,10 +17,8 @@ export function AgentsModal() {
   const ctx = useApp();
   const [code, setCode] = createSignal<string | null>(null);
   const [expiresAt, setExpiresAt] = createSignal<number | null>(null);
-  const [copied, setCopied] = createSignal(false);
   const [copiedInstall, setCopiedInstall] = createSignal(false);
   const [copiedCmd, setCopiedCmd] = createSignal(false);
-  const [showTerminal, setShowTerminal] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [ringFraction, setRingFraction] = createSignal(1);
   let ringTimer: ReturnType<typeof setInterval> | undefined;
@@ -44,7 +42,6 @@ export function AgentsModal() {
       const res = await mintAgentCode();
       setCode(res.code);
       setExpiresAt(res.expiresAt);
-      setShowTerminal(false);
       startRingTimer(res.expiresAt);
     } catch (e) {
       setCode(null);
@@ -52,27 +49,6 @@ export function AgentsModal() {
       console.error('Failed to create a code:', e);
       setError('Failed to create a code. Try again.');
     }
-  };
-
-  const copyPrompt = async () => {
-    const c = code();
-    if (!c) return;
-    const origin = window.location.origin;
-    await navigator.clipboard.writeText(
-      `You are my Sift RSS agent.
-
-What you can do
-- Read my subscriptions and items. Fetch GET ${origin}/sync/pull?code=${c}
-- Propose feeds to add. Send a link: ${origin}/?intent=add&url=<feed-url>
-
-Rules
-- Access expires in 5 minutes.
-- You cannot change my subscriptions. I approve each add by clicking its link.
-
-Reference: ${origin}/openapi.json`,
-    );
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const copyInstall = async () => {
@@ -116,26 +92,19 @@ Reference: ${origin}/openapi.json`,
 
   return (
     <div class="modal modal-center">
-      <div class="modal-header">Agents</div>
+      <div class="modal-header">Pair siftctl</div>
       <div class="modal-body">
         <Show when={!code()}>
           <div style="margin-bottom: 10px; font-size: 14px; color: var(--subtext)">
-            Give a chat tool or coding agent access to read your feeds and propose additions.
+            Pair the siftctl command-line tool to manage your subscriptions from a terminal.
           </div>
         </Show>
         <Show when={!code() && !error()}>
-          <button class="btn" onClick={() => void generateCode()}>Pair an agent</button>
+          <button class="btn" onClick={() => void generateCode()}>Create a pairing code</button>
         </Show>
         <Show when={code()}>
           <Show when={!expired()}>
-            <div style="margin-bottom: 10px; font-size: 14px; color: var(--subtext)">
-              Copy the prompt and paste it into a chat tool or coding agent.
-            </div>
             <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px">
-              <button class="btn primary" onClick={() => void copyPrompt()} aria-label="Copy starter prompt for a chat tool">
-                {copied() ? <Check size={14} /> : <Copy size={14} />}
-                <span style="margin-left: 4px">Copy prompt</span>
-              </button>
               <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--subtext)">
                 <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
                   <circle class="code-timer__bg" cx="12" cy="12" r="10" />
@@ -150,31 +119,21 @@ Reference: ${origin}/openapi.json`,
                 {`Expires in ${expiryLabel(expiresAt()!)}`}
               </div>
             </div>
-            <button
-              class="sync-grid__copy"
-              style="margin-bottom: 10px"
-              onClick={() => setShowTerminal((v) => !v)}
-              aria-expanded={showTerminal()}
-            >
-              Using a terminal?
-            </button>
-            <Show when={showTerminal()}>
-              <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 13px; color: var(--subtext)">
-                <div>Install <code style="font-size: 13px">siftctl</code> and pair it to manage your subscriptions from the terminal.</div>
-                <div class="codeblock">
-                  <code>npm i -g siftctl</code>
-                  <button class="codeblock__copy" onClick={() => void copyInstall()} aria-label="Copy install command">
-                    {copiedInstall() ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                </div>
-                <div class="codeblock">
-                  <code>siftctl pair {code() ?? '&lt;code&gt;'}</code>
-                  <button class="codeblock__copy" onClick={() => void copyCommand()} aria-label="Copy siftctl pair command">
-                    {copiedCmd() ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                </div>
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 13px; color: var(--subtext)">
+              <div>Install <code style="font-size: 13px">siftctl</code> and pair it to manage your subscriptions from the terminal.</div>
+              <div class="codeblock">
+                <code>npm i -g siftctl</code>
+                <button class="codeblock__copy" onClick={() => void copyInstall()} aria-label="Copy install command">
+                  {copiedInstall() ? <Check size={14} /> : <Copy size={14} />}
+                </button>
               </div>
-            </Show>
+              <div class="codeblock">
+                <code>siftctl pair {code() ?? '&lt;code&gt;'}</code>
+                <button class="codeblock__copy" onClick={() => void copyCommand()} aria-label="Copy siftctl pair command">
+                  {copiedCmd() ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+            </div>
           </Show>
           <Show when={expired()}>
             <p style="margin: 0 0 8px; font-size: 14px; color: var(--subtext)">The code expired.</p>

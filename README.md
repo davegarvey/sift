@@ -9,7 +9,7 @@ provides multi-device sync and AI agent integration.
 - **Local-only**: subscriptions, items, read/starred state, and lifetime reading statistics live in IndexedDB.
 - **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based), including exact group read-once deduplication and approximate observed volume. You can delete your server-side sync data from Settings.
 - **Server-side polling**: on Workers, synced subscriptions are polled every 30 minutes, so items published while no device is open still arrive.
-- **AI agent integration**: built-in MCP server for AI tool access to feeds.
+- **AI agent integration**: agents read and change subscriptions through the sync API and `siftctl`.
 - **Portable**: import/export your subscription list as OPML.
 - **Offline**: installable PWA; works offline against cached data.
 - **Deploy anywhere**: local dev, Node/Bun server, Docker, or Cloudflare Workers — all from one codebase.
@@ -118,7 +118,6 @@ volumes:
 
 Copy `.env.example` to `.env` and set:
 
-- `MCP_ENABLED=true` — enable the MCP server and SSE relay at `/mcp` and `/api/events`
 - `TRUST_PROXY_HOPS` — number of reverse proxies in front of Node or Bun whose `X-Forwarded-For` entry may identify the client for proxy limits (default 0, which ignores the header and uses the socket address)
 
 For Node and Bun:
@@ -169,7 +168,7 @@ ignored because clients can supply it themselves.
 
 - `npm run dev` — Vite dev server with HMR and the Hono proxy mounted as middleware
 - `npm run build` — produce `dist/`
-- `npm start` — run the production node server (serves `dist/`, proxy, API, MCP, and sync routes)
+- `npm start` — run the production node server (serves `dist/`, proxy, API, and sync routes)
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run lint` — eslint
 - `npm test` — vitest unit/integration tests
@@ -260,9 +259,7 @@ all their rows, accounts with no sync pull for 365 days (or, if they never
 pulled, created more than 365 days ago) and accounts whose key was regenerated
 more than 30 days ago. At most 50 accounts are deleted per run. Deleted sync
 data can persist in Cloudflare D1's point-in-time recovery (Time Travel) for up
-to 30 days on the Workers Paid plan, after which it is gone. The
-`/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
-not persist data. Sync state is stored in Cloudflare D1 and is never logged
+to 30 days on the Workers Paid plan, after which it is gone. Sync state is stored in Cloudflare D1 and is never logged
 or exposed to third parties. Synced lifetime reading statistics contain only
 per-feed aggregate counters and compact per-item `everRead` markers; article
 content and a detailed reading event history are not synchronized. Authorized
@@ -271,24 +268,13 @@ key can write statistics snapshots or historical markers. Agent tokens are
 stored in D1 as SHA-256 hashes only — the raw token never touches the
 database — and are revocable from Settings.
 
-## MCP server
-
-When `MCP_ENABLED=true`, the server exposes a Model Context Protocol endpoint
-at `/mcp` for AI agent integration. Available tools: `list_feeds`, `get_feed`,
-`discover_feed`, `add_feed`, `remove_feed`, `get_feed_items`. The endpoint
-serves both the `2025-11-25` and `2026-07-28` protocol revisions — modern
-clients negotiate via `server/discover`; legacy clients fall back to the
-`initialize` handshake. An SSE relay at `/api/events` provides real-time
-browser communication for feed operations.
-
-MCP is a **local-only** feature of the Node/Bun server. For agent access on
-the hosted deployment, use the sync API instead (below).
-
 ## AI agents (sync API)
 
 The sync API treats an AI agent as just another sync device. Agents read
 feeds and change subscriptions through the same D1-backed, multi-tenant,
-conflict-merged sync the browsers use — no MCP, no gateway process.
+conflict-merged sync the browsers use — no gateway process.
+
+A remote MCP connector is coming; see `openspec/changes/agent-connector`.
 
 ### Via `siftctl` (recommended)
 
@@ -360,26 +346,13 @@ Point an OpenAPI-aware agent (ChatGPT Actions, a coding agent like Claude
 Code or opencode) at that URL with `X-Sync-Key` as the API-key header.
 Writes carry no timestamps — the server stamps everything.
 
-### Via a hosted chat tool (ChatGPT, Claude web)
-
-Hosted chat tools cannot POST or send auth headers, but they can fetch plain
-GET URLs. Settings → Sync → Agents → "Copy prompt" gives a prompt built for
-them:
-
-- **Reads**: pairing codes no longer authenticate `GET /sync/pull`; the
-  server answers 401. Agents authenticate with a token (`Authorization: Bearer`
-  or `X-Sync-Key`).
-- **Writes**: the agent proposes adds as clickable links
-  `…/?intent=add&url=<feed-url>`. Clicking opens the app's add-feed modal
-  prefilled; you approve by running discovery and subscribing. The agent
-  never touches your subscriptions directly.
-
 ### Pairing and tokens
 
-- Pairing: Settings → Sync → Agents → "Pair an agent" mints an 8-character
-  code (5-minute expiry), embedded in the copied prompt and the `siftctl pair`
-  command. `siftctl pair` or `POST /sync/tokens/redeem` exchange it for a
-  token.
+- Pairing: Settings → Sync → Agent access → "Pair siftctl" mints an 8-character
+  code (5-minute expiry) for the `siftctl pair` command. `siftctl pair` or
+  `POST /sync/tokens/redeem` exchange it for a token. Pairing codes do not
+  authenticate `GET /sync/pull`; agents authenticate with a token
+  (`Authorization: Bearer` or `X-Sync-Key`).
 - Tokens are 23-character credentials starting with `t` — distinct from the
   master sync key, which never leaves your browser. Send them as
   `Authorization: Bearer <token>` or in `X-Sync-Key`. Each token carries
@@ -419,7 +392,6 @@ them:
   storage usage and lets you request persistent browser storage.
 - **OPML import/export covers only the subscription list.** Read/starred state is
   intentionally not exported in v0 (no standard format).
-- **MCP is experimental.** The MCP server tools and SSE relay may change in breaking ways.
 
 ## License
 

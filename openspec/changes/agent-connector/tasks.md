@@ -34,9 +34,9 @@
 
 ## 5. Removals
 
-- [ ] 5.1 Delete `server/mcp.ts`, `server/relay.ts`, `/api/events`, `/api/capabilities` and `MCP_ENABLED` handling in all adapters and `.env.example`
-- [ ] 5.2 Remove the relay EventSource, `mcpNotifySync` and `?intent=add` handling from `src/state.tsx` and callers
-- [ ] 5.3 Remove the copied chat prompt and code-on-pull client code; delete or update the affected tests
+- [x] 5.1 Delete `server/mcp.ts`, `server/relay.ts`, `/api/events`, `/api/capabilities` and `MCP_ENABLED` handling in all adapters and `.env.example`
+- [x] 5.2 Remove the relay EventSource, `mcpNotifySync` and `?intent=add` handling from `src/state.tsx` and callers
+- [x] 5.3 Remove the copied chat prompt and code-on-pull client code; delete or update the affected tests
 
 ## 6. Documentation
 

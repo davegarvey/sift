@@ -63,12 +63,6 @@ test.describe('Boot empty-state flash', () => {
     await seedData(page);
     await page.waitForTimeout(500);
 
-    // Slow the capabilities fetch so the hydration window is observable.
-    await page.route('**/api/capabilities', async (route) => {
-      await new Promise((r) => setTimeout(r, 1500));
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"mcp":false}' });
-    });
-
     await page.reload();
 
     // During hydration: loading message fades in after ~500ms; no empty-state headline appears.

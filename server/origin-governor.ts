@@ -9,7 +9,7 @@ const CHALLENGE_RETRY_MS = [6, 12, 24].map((hours) => hours * 60 * 60_000);
 const STATE_RETENTION_MS = 7 * 24 * 60 * 60_000;
 const ALLOWED_METADATA_HEADERS = ['server', 'via', 'cf-ray', 'x-cache', 'content-type'];
 
-export type UpstreamRoute = 'feed' | 'article' | 'image' | 'discovery' | 'mcp';
+export type UpstreamRoute = 'feed' | 'article' | 'image' | 'discovery';
 
 export interface OriginPolicyOptions {
   db?: D1Database;

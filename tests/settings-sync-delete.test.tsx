@@ -28,9 +28,8 @@ function makeContext() {
   const modals: ModalKind[] = [];
   const disableSync = vi.fn(async () => {});
   contextRef.value = {
-    settings: () => ({ theme: 'system', highContrast: false, mcpEnabled: false, syncKey: KEY }),
+    settings: () => ({ theme: 'system', highContrast: false, syncKey: KEY }),
     syncKey: () => KEY,
-    mcpAvailable: () => false,
     feeds: () => [],
     openModal: (modal: ModalKind) => { modals.push(modal); },
     closeModal: () => {},
