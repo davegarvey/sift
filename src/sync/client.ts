@@ -214,36 +214,37 @@ export async function redeemCode(code: string): Promise<string> {
   }, (err) => err instanceof SyncClientError && err.status === 429);
 }
 
-/** Mint an agent pairing code (master-key auth). The code is redeemed by
- *  `siftctl pair` or an OAS consumer; the token never passes through here. */
-export async function mintAgentCode(): Promise<{ code: string; expiresAt: number }> {
+export interface AgentConnection {
+  connectionId: string;
+  url: string;
+  expiresAt: number;
+}
+
+/** Mint a single-use connection URL for an agent (master-key auth). */
+export async function mintAgentConnection(): Promise<AgentConnection> {
   const key = await getStoredSyncKey();
   if (!key) throw new SyncClientError('No sync key stored', 401);
-  return withRetry(async () => {
-    const res = await fetchWithTimeout(
-      '/sync/tokens',
-      { method: 'POST', headers: { 'X-Sync-Key': key } },
-      PUSH_TIMEOUT_MS,
-    );
-    if (res.status === 429) {
-      const ra = Number(res.headers.get('Retry-After') ?? '60');
-      await sleep(ra * 1000);
-      throw new SyncClientError('Token mint rate-limited', 429, ra);
-    }
-    if (!res.ok) throw new SyncClientError(`Token mint failed: ${res.status}`, res.status);
-    return (await res.json()) as { code: string; expiresAt: number };
-  }, (err) => err instanceof SyncClientError && err.status === 429);
+  const res = await fetchWithTimeout('/sync/connections', { method: 'POST', headers: { 'X-Sync-Key': key } }, PUSH_TIMEOUT_MS);
+  if (res.status === 429) throw new SyncClientError('Connection mint rate-limited', 429, Number(res.headers.get('Retry-After') ?? '60'));
+  if (!res.ok) throw new SyncClientError(`Connection mint failed: ${res.status}`, res.status);
+  return (await res.json()) as AgentConnection;
 }
 
 export interface AgentTokenInfo {
   token_id: string;
   fingerprint: string;
   scope: string;
+  origin: string;
+  label: string | null;
+  client_name: string | null;
+  client_host: string | null;
+  unverified: boolean;
+  scopes: string;
   created_at: number;
   last_seen_at: number | null;
 }
 
-/** List agent tokens (master-key auth). Metadata only — never raw tokens. */
+/** List agent grants (master-key auth). Metadata only — never raw tokens. */
 export async function listAgentTokens(): Promise<AgentTokenInfo[]> {
   const key = await getStoredSyncKey();
   if (!key) throw new SyncClientError('No sync key stored', 401);
@@ -255,6 +256,22 @@ export async function listAgentTokens(): Promise<AgentTokenInfo[]> {
   if (!res.ok) throw new SyncClientError(`Token list failed: ${res.status}`, res.status);
   const body = (await res.json()) as { tokens: AgentTokenInfo[] };
   return body.tokens;
+}
+
+/** Rename an agent grant (master-key auth). An empty label restores the default. */
+export async function renameAgentToken(tokenId: string, label: string): Promise<void> {
+  const key = await getStoredSyncKey();
+  if (!key) throw new SyncClientError('No sync key stored', 401);
+  const res = await fetchWithTimeout(
+    '/sync/tokens',
+    {
+      method: 'PATCH',
+      headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenId, label }),
+    },
+    PUSH_TIMEOUT_MS,
+  );
+  if (!res.ok) throw new SyncClientError(`Token rename failed: ${res.status}`, res.status);
 }
 
 /** Revoke an agent token by id (master-key auth). */

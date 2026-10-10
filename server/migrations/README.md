@@ -88,6 +88,25 @@ Migration `0010_feeds_live_url_index.sql` adds a partial index on live
 `feeds.feed_url`. `DELETE /sync/account` uses it to check whether another
 account still subscribes to a URL before removing its polling state.
 
+Migration `0011_agent_connector.sql` adds the agent connector storage.
+`oauth_clients` caches registered and metadata-document clients,
+`oauth_connections` holds single-use connection IDs bound to a sync key,
+`oauth_requests` holds pending authorisation requests with their approval code
+and decision, and `oauth_codes` holds one-time authorisation codes as SHA-256
+hashes. All times are epoch seconds. It also adds `tokens.origin`
+(`paired` or `oauth`), `client_id`, `client_name`, `label` (user-chosen name),
+`scopes` (space-separated `read`/`write`), `expires_at` (access token expiry),
+`refresh_hash`, `prev_refresh_hash` (for refresh reuse detection),
+`refresh_expires_at` and `family_id`. Existing tokens are backfilled as
+`paired` with `read write`. An OAuth grant is one `tokens` row whose hashes are
+rotated in place. The daily cleanup removes expired connections, requests and
+codes, and OAuth grants past `refresh_expires_at`.
+
+Migration `0012_oauth_client_uri.sql` adds `oauth_clients.client_uri` (the
+client's self-declared website, shown on the consent screen) and
+`oauth_requests.redirect_url`, which holds the finished redirect for a request
+decided in the app until the consent page collects it once.
+
 The poll database has its own migration sequence. Migration
 `server/migrations-poll/0001_feed_polling.sql` adds `polled_feeds` (per-URL
 validators and schedule), `polled_items` (retained entries keyed by feed URL

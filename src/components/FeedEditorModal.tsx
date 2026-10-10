@@ -102,7 +102,6 @@ export function FeedEditorModal() {
       danger: true,
       onConfirm: async () => {
         await ctx.unsubscribeFeed(feedId);
-        void ctx.mcpNotifySync();
       },
     });
   };

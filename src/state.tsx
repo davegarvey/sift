@@ -77,7 +77,7 @@ type ModalKind =
   | { kind: 'palette' }
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
-  | { kind: 'add-feed'; url?: string }
+  | { kind: 'add-feed' }
   | { kind: 'feed-editor'; feedId: string }
   | { kind: 'pair-result'; success: boolean; message: string }
   | { kind: 'confirm'; title: string; message: string; hint?: string; confirmLabel: string; danger?: boolean; onConfirm: () => void | Promise<void>; returnTo?: ModalKind }
@@ -139,9 +139,6 @@ export interface AppContext {
   refreshSelected: () => Promise<void>;
   refreshFeeds: (feedIds: readonly string[]) => Promise<void>;
   saveSettingsPatch: (patch: Partial<AppSettings>) => Promise<void>;
-  mcpAvailable: () => boolean;
-  mcpConnected: () => boolean;
-  mcpNotifySync: () => Promise<void>;
   enableSync: () => Promise<void>;
   disableSync: () => Promise<void>;
   pairSyncWithKey: (key: string) => Promise<void>;
@@ -223,85 +220,8 @@ export const AppProvider: ParentComponent = (props) => {
     highContrast: false,
     lastRefreshRunAt: null,
     lastFeedUrl: null,
-    mcpEnabled: false,
     statsSort: { ...DEFAULT_STATS_SORT },
   });
-
-  const [mcpAvailable, setMcpAvailable] = createSignal(false);
-  const [mcpConnected, setMcpConnected] = createSignal(false);
-  let mcpEventSource: EventSource | null = null;
-
-  const startMcp = () => {
-    if (mcpEventSource) return;
-    mcpEventSource = new EventSource('/api/events');
-
-    mcpEventSource.addEventListener('add-feed', async (e) => {
-      const data = JSON.parse(e.data);
-      if (typeof data.feed?.url !== 'string') return;
-      try {
-        const feed = data.feed as Feed;
-        await subscribeFeedCtx({
-          url: feed.url,
-          title: feed.title,
-          folder: feed.folder,
-          htmlUrl: feed.htmlUrl,
-        });
-        await fetch('/api/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind: 'ack', id: data.id }),
-        });
-      } catch {}
-    });
-
-    mcpEventSource.addEventListener('remove-feed', async (e) => {
-      const data = JSON.parse(e.data);
-      if (typeof data.url !== 'string') return;
-      try {
-        const feed = feedMap().get(data.url);
-        if (feed) {
-          await unsubscribeFeedCtx(feed.id);
-        }
-        await fetch('/api/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind: 'ack', id: data.id }),
-        });
-      } catch {}
-    });
-
-    mcpEventSource.addEventListener('keepalive', () => {});
-
-    mcpEventSource.onopen = () => {
-      setMcpConnected(true);
-      void mcpNotifySync();
-    };
-
-    mcpEventSource.onerror = () => {
-      setMcpConnected(false);
-    };
-  };
-
-  const stopMcp = () => {
-    if (mcpEventSource) {
-      mcpEventSource.close();
-      mcpEventSource = null;
-    }
-    setMcpConnected(false);
-  };
-
-  const mcpNotifySync = async () => {
-    const es = mcpEventSource;
-    if (!es || es.readyState !== EventSource.OPEN) return;
-    try {
-      const feeds = await listFeeds();
-      await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'sync', feeds }),
-      });
-    } catch {}
-  };
 
   const markReadAndSync = async (item: Item, read: boolean) => {
     await markRead(item.id, read);
@@ -605,13 +525,6 @@ export const AppProvider: ParentComponent = (props) => {
     if ('theme' in patch || 'highContrast' in patch) {
       applyTheme(next.theme, next.highContrast);
     }
-    if ('mcpEnabled' in patch) {
-      if (patch.mcpEnabled && mcpAvailable()) {
-        startMcp();
-      } else if (!patch.mcpEnabled) {
-        stopMcp();
-      }
-    }
   };
 
   const updateSettingsWith = async (patch: Partial<AppSettings>) => {
@@ -735,9 +648,6 @@ export const AppProvider: ParentComponent = (props) => {
     refreshSelected,
     refreshFeeds,
     saveSettingsPatch,
-    mcpAvailable,
-    mcpConnected,
-    mcpNotifySync,
     enableSync,
     disableSync,
     pairSyncWithKey,
@@ -762,17 +672,6 @@ export const AppProvider: ParentComponent = (props) => {
     const s = await getSettings();
     setSettings(s);
     applyTheme(s.theme, s.highContrast);
-
-    try {
-      const capRes = await fetch('/api/capabilities');
-      if (capRes.ok) {
-        const cap: { mcp?: boolean } = await capRes.json() as { mcp?: boolean };
-        if (cap.mcp === true) {
-          setMcpAvailable(true);
-          if (s.mcpEnabled) startMcp();
-        }
-      }
-    } catch {}
 
     await reloadFeeds();
     const matchingFeed = s.lastFeedUrl ? feeds().find((f) => f.url === s.lastFeedUrl) : undefined;
@@ -844,15 +743,6 @@ export const AppProvider: ParentComponent = (props) => {
       }
       history.replaceState(null, '', window.location.pathname);
       openModal({ kind: 'pair-result', success, message });
-    }
-
-    // Agent intent: ?intent=add&url=<feed-url> opens the add-feed modal
-    // prefilled. The value is passed through unvalidated — discovery-time
-    // validation gates it; nothing is fetched as a side effect of loading.
-    const intent = params.get('intent');
-    if (intent === 'add') {
-      openModal({ kind: 'add-feed', url: params.get('url') ?? undefined });
-      history.replaceState(null, '', window.location.pathname);
     }
   })().finally(() => setHydrated(true));
 

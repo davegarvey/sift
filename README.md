@@ -9,7 +9,7 @@ provides multi-device sync and AI agent integration.
 - **Local-only**: subscriptions, items, read/starred state, and lifetime reading statistics live in IndexedDB.
 - **Multi-device sync**: optional D1-backed sync via Cloudflare Workers (pairing-code based), including exact group read-once deduplication and approximate observed volume. You can delete your server-side sync data from Settings.
 - **Server-side polling**: on Workers, synced subscriptions are polled every 30 minutes, so items published while no device is open still arrive.
-- **AI agent integration**: built-in MCP server for AI tool access to feeds.
+- **AI agent connector**: a remote MCP server with OAuth lets chat and coding agents read subscriptions, statistics and recent articles, and manage subscriptions, after one approval. `siftctl` and an OpenAPI document cover scripts.
 - **Portable**: import/export your subscription list as OPML.
 - **Offline**: installable PWA; works offline against cached data.
 - **Deploy anywhere**: local dev, Node/Bun server, Docker, or Cloudflare Workers — all from one codebase.
@@ -118,17 +118,18 @@ volumes:
 
 Copy `.env.example` to `.env` and set:
 
-- `MCP_ENABLED=true` — enable the MCP server and SSE relay at `/mcp` and `/api/events`
 - `TRUST_PROXY_HOPS` — number of reverse proxies in front of Node or Bun whose `X-Forwarded-For` entry may identify the client for proxy limits (default 0, which ignores the header and uses the socket address)
 
 For Node and Bun:
 
+- `PUBLIC_URL` — public origin of the deployment (for example `https://sift.example.com`); when set, it defines the OAuth issuer and resource URLs instead of the request origin, which matters behind a reverse proxy
 - `SIFT_DATA_DIR` — enable sync and store the `sift-sync.sqlite` and `sift-poll.sqlite` files in this directory
 - `FEED_POLLING=true` — enable server-side polling when `SIFT_DATA_DIR` is set; the process checks every 10 minutes
 - `FEED_POLL_BATCH` and `POLL_DB_MAX_BYTES` — polling batch size and poll-database limit, with the same defaults as Workers
 
 Cloudflare Workers variables (`wrangler.toml` `[vars]`):
 
+- `PUBLIC_URL` — optional public origin used for OAuth issuer and resource URLs
 - `FEED_POLLING=true` — poll synced subscriptions on the 10-minute cron and serve `/sync/items`
 - `FEED_POLL_BATCH` — maximum feeds fetched per polling run (default 50, maximum 500)
 - `POLL_DB_MAX_BYTES` — pause polling above this poll-database size in bytes (default 8 GiB)
@@ -169,7 +170,7 @@ ignored because clients can supply it themselves.
 
 - `npm run dev` — Vite dev server with HMR and the Hono proxy mounted as middleware
 - `npm run build` — produce `dist/`
-- `npm start` — run the production node server (serves `dist/`, proxy, API, MCP, and sync routes)
+- `npm start` — run the production node server (serves `dist/`, proxy, API, and sync routes)
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run lint` — eslint
 - `npm test` — vitest unit/integration tests
@@ -260,43 +261,131 @@ all their rows, accounts with no sync pull for 365 days (or, if they never
 pulled, created more than 365 days ago) and accounts whose key was regenerated
 more than 30 days ago. At most 50 accounts are deleted per run. Deleted sync
 data can persist in Cloudflare D1's point-in-time recovery (Time Travel) for up
-to 30 days on the Workers Paid plan, after which it is gone. The
-`/api/events` SSE relay and `/mcp` endpoint are in-memory only and do
-not persist data. Sync state is stored in Cloudflare D1 and is never logged
+to 30 days on the Workers Paid plan, after which it is gone. Sync state is stored in Cloudflare D1 and is never logged
 or exposed to third parties. Synced lifetime reading statistics contain only
 per-feed aggregate counters and compact per-item `everRead` markers; article
 content and a detailed reading event history are not synchronized. Authorized
 agent pulls can read the same aggregate statistics, while only the master sync
 key can write statistics snapshots or historical markers. Agent tokens are
 stored in D1 as SHA-256 hashes only — the raw token never touches the
-database — and are revocable from Settings.
+database — and are revocable from Settings. The same applies to the refresh
+tokens of connected agents.
 
-## MCP server
+## AI agents
 
-When `MCP_ENABLED=true`, the server exposes a Model Context Protocol endpoint
-at `/mcp` for AI agent integration. Available tools: `list_feeds`, `get_feed`,
-`discover_feed`, `add_feed`, `remove_feed`, `get_feed_items`. The endpoint
-serves both the `2025-11-25` and `2026-07-28` protocol revisions — modern
-clients negotiate via `server/discover`; legacy clients fall back to the
-`initialize` handshake. An SSE relay at `/api/events` provides real-time
-browser communication for feed operations.
+Sift runs a remote [MCP](https://modelcontextprotocol.io) server at `/mcp`, with
+OAuth 2.1 authorisation on the same origin. Any MCP client that supports remote
+servers and OAuth can connect by being given one URL. The agent's tool calls
+come from its host, not from a code sandbox, so the agent needs no network
+access to Sift of its own. Sync must be turned on first, because the connector
+works on the synced account.
 
-MCP is a **local-only** feature of the Node/Bun server. For agent access on
-the hosted deployment, use the sync API instead (below).
+### Connecting an agent
 
-## AI agents (sync API)
+1. In Sift, open Settings → Sync → Agent access and choose **Connect an agent**. Sift copies
+   a single-use connection URL of the form `https://<your-origin>/mcp/c/<id>`,
+   valid for ten minutes.
+2. Paste the URL into the agent as a custom connector or remote MCP server.
+3. The agent opens a consent page in its own browser. Check the agent's name
+   and press **Allow**. The page works in any browser, including one that has
+   never run Sift, because the connection URL identifies your account.
 
-The sync API treats an AI agent as just another sync device. Agents read
-feeds and change subscriptions through the same D1-backed, multi-tenant,
-conflict-merged sync the browsers use — no MCP, no gateway process.
+The connection URL stays valid as an address for `/mcp` after use, since clients
+store it. Once spent, it no longer approves anything.
 
-### Via `siftctl` (recommended)
+Two fallbacks apply when the URL has expired or been used, or when a client is
+configured with the plain `https://<your-origin>/mcp`:
+
+- If the consent page runs in a browser that holds your sync key, **Allow**
+  works directly.
+- Otherwise the consent page shows an 8-character approval code and a QR code.
+  In Sift, open Settings → Sync → Agent access → **Approve a connection**, enter or scan the
+  code, check the agent's name and redirect host, and approve. The consent page
+  then completes by itself. Approve only codes you generated by starting a
+  connection yourself.
+
+Behind a reverse proxy, set `PUBLIC_URL` (see Configuration) so that the OAuth
+issuer and resource URLs use your public origin rather than the origin the proxy
+forwards.
+
+### What an agent can access
+
+One **Allow** grants both scopes the client requests: `read` and `write`. A
+client that asks only for `read` receives only `read`, and then sees only the
+read tools. There are no per-scope or per-data-type choices.
+
+| Tool | Scope | Purpose |
+|---|---|---|
+| `list_subscriptions` | read | Feeds with `feedId`, tags and reading statistics, sortable by engagement, title or backlog |
+| `get_reading_stats` | read | Account and per-feed reading statistics |
+| `list_items` | read | Recent articles, filtered by feed, tag, date, read state, starred state or text |
+| `get_item` | read | One article converted to Markdown, truncated at a character limit |
+| `discover_feeds` | read | Feed candidates for a site, page or feed URL, and whether you already subscribe |
+| `subscribe` | write | Subscribe to a feed URL, or to the feed a page advertises |
+| `update_subscription` | write | Set a subscription's title and tags |
+| `unsubscribe` | write | Remove a subscription |
+| `set_item_state` | write | Mark up to 100 items read, unread, starred or unstarred |
+
+The server describes these workflows to the agent, so a prompt such as
+"recommend feeds based on what I read" works without further instruction. The
+agent must verify suggestions with `discover_feeds` before proposing them.
+Write tools use the same merge as a device sync, so changes reach your browsers
+on their next sync. `list_items` and `get_item` need server-side polling
+(`FEED_POLLING`); without it they are not offered.
+
+**Data exposure.** An agent can read everything Sift synchronises: subscriptions,
+tags, read and starred state and reading statistics. With polling enabled it
+can also read the text of articles from the last seven days. That text is sent
+to whichever model service the agent uses. Feed URLs in tool output have
+embedded credentials removed: user information is dropped and the values of
+query parameters whose names suggest a secret (token, key, auth, and similar)
+are replaced with `REDACTED`. Item IDs are returned unchanged because the agent
+must pass them back. Extracted full articles and detailed reading history stay
+on your devices and are not available.
+
+**Content limit.** Article content comes from the server's poll database, which
+keeps items for seven days and covers at most 500 feeds per account. An agent
+cannot read older articles through the connector.
+
+**Rate limits.** Each connection has its own budget of 120 tool calls a minute,
+separate from your devices' sync budget. `discover_feeds` is further limited to
+20 a minute per account because it fetches from upstream sites.
+
+### Managing connections
+
+Settings → Sync → Agent access lists every connected agent with its name, access, creation
+date and last use.
+
+- **Identify and rename.** Agents appear under the name they registered with.
+  Rename gives one a label you will recognise, such as "Work laptop".
+- **Lifetime.** Access tokens last one hour and the agent renews them silently
+  with a refresh token, so you connect once. A grant expires after a year
+  without use. An agent whose grant has expired or been revoked must be
+  connected again.
+- **Revoke.** Revoke deletes the grant's access and refresh tokens at once. It
+  does not affect your devices.
+- **Kill switch.** Regenerating the sync key (Settings → Sync → Regenerate)
+  stops every agent connection and `siftctl` token immediately. Deleting sync
+  data does the same and removes the account.
+
+A grant gives the agent read and write access to your subscriptions. Treat the
+connection URL and approval codes like passwords for the ten minutes they live,
+and revoke agents you no longer use.
+
+### Command line and HTTP
+
+The remainder of this section covers `siftctl` and the OpenAPI document, for
+scripts and tools that do not speak MCP. Coding agents should use the connector
+instead. `siftctl` will be retired once the connector has been verified in
+practice.
+
+#### `siftctl`
 
 Published to npm on each release. Install and pair:
 
 ```sh
 npm i -g siftctl        # or: npx siftctl
-siftctl pair <code>     # code from Settings → Sync → Agents
+siftctl pair <code>     # code from POST /sync/tokens (master key)
 siftctl feeds
 siftctl feed add https://example.com/feed.xml
 siftctl feed edit https://example.com/feed.xml --title "Example" --tags "tech, reading"
@@ -353,54 +442,38 @@ With `--json`, stats output has a stable shape for scripts and LLMs:
 `readRate`, `expectedReads`, and `readIndex` are `null` when there is not
 enough data to calculate them.
 
-### Via the OpenAPI document
+#### OpenAPI document
 
 The sync API is described at `https://sift.davegarvey.workers.dev/openapi.json`.
-Point an OpenAPI-aware agent (ChatGPT Actions, a coding agent like Claude
-Code or opencode) at that URL with `X-Sync-Key` as the API-key header.
-Writes carry no timestamps — the server stamps everything.
+It documents the HTTP bearer scheme for agents, the `X-Sync-Key` header for
+devices, and the scope (`read` or `write`) each operation needs. Point an
+OpenAPI-aware tool at it. Obtain an OAuth token through the metadata at
+`/.well-known/oauth-authorization-server`, or use a `siftctl` token. Writes
+carry no timestamps; the server stamps everything. `/llms.txt` gives agents a
+short description of the connector.
 
-### Via a hosted chat tool (ChatGPT, Claude web)
+#### Pairing and tokens
 
-Hosted chat tools cannot POST or send auth headers, but they can fetch plain
-GET URLs. Settings → Sync → Agents → "Copy prompt" gives a prompt built for
-them:
-
-- **Reads**: the agent fetches `GET /sync/pull?code=<code>`. The code is the
-  credential — read-only, multi-use, valid until its 5-minute expiry, and
-  rate-limited per IP. No token is minted, so nothing to revoke.
-- **Writes**: the agent proposes adds as clickable links
-  `…/?intent=add&url=<feed-url>`. Clicking opens the app's add-feed modal
-  prefilled; you approve by running discovery and subscribing. The agent
-  never touches your subscriptions directly.
-
-### Pairing and tokens
-
-- Pairing: Settings → Sync → Agents → "Pair an agent" mints an 8-character
-  code (5-minute expiry), embedded in the copied prompt and the `siftctl pair`
-  command. `siftctl pair` or `POST /sync/tokens/redeem` exchange it for a
-  token. The same code works on `GET /sync/pull` as a read-only credential
-  for hosted chat agents.
-- Tokens are 23-character credentials starting with `t` — distinct from the
-  master sync key, which never leaves your browser. Tokens can call
-  `/sync/pull`, `/sync/stats/pull`, and `/sync/push`; statistics writes remain
-  master-key-only. They cannot mint device codes, register, or manage tokens
-  (a device code would redeem to the master key).
-- **Revocation**: Settings → Sync → Agents lists every token (by fingerprint)
-  with a revoke button. Revocation is immediate and does not affect your
-  devices. Regenerating the sync key (Settings → Sync → Regenerate) is the
-  kill switch: the old key is marked dead server-side — every agent token
-  stops working instantly, `register` refuses to resurrect the old key, and
-  other devices must re-pair with the new key. Rotation does not delete the
-  old key's data at once; it is deleted 30 days later (see Privacy).
-  Settings → Sync → Delete sync data deletes the account and every token
-  immediately.
-- **Warning**: a token grants read/write of your subscriptions to whoever
-  holds it. Treat it like a password; if you paste it into a third-party
-  service, you are trusting that service with it. Revoke it when done. A
-  pairing code pasted into a chat tool is far less dangerous — read-only and
-  dead in 5 minutes — but agents share your per-sync-key pull budget with
-  your browsers, so a runaway agent can slow your devices' sync.
+- Pairing: `POST /sync/tokens` (master key) mints an 8-character code
+  (5-minute expiry) for `siftctl pair` or `POST /sync/tokens/redeem`, which
+  exchange it for a token. The Settings screen no longer offers pairing codes.
+  Pairing codes do not authenticate any other request.
+- Tokens are 23-character credentials starting with `t`, distinct from the
+  master sync key, which never leaves your browser. Send them as
+  `Authorization: Bearer <token>`. `siftctl` tokens hold both scopes and do not
+  expire. OAuth access tokens carry the scopes you approved: `read` allows
+  `/sync/pull`, `/sync/stats/pull` and `/sync/items`; `write` additionally
+  allows `/sync/push` (403 without it). Statistics writes remain master-key-only.
+  Tokens cannot mint device codes, register, or manage tokens, because a device
+  code would redeem to the master key.
+- Revocation and the sync-key kill switch work as described under Managing
+  connections. Rotation does not delete the old key's data at once; it is
+  deleted 30 days later (see Privacy).
+- **Warning**: a `siftctl` token grants read and write access to your
+  subscriptions to whoever holds it, and never expires. Treat it like a
+  password and revoke it when done. Tokens from `siftctl pair` share your
+  per-sync-key budgets with your browsers, so a runaway script can slow your
+  devices' sync. OAuth tokens draw from their own per-token budgets.
 
 ## Known v0 limitations
 
@@ -417,7 +490,6 @@ them:
   storage usage and lets you request persistent browser storage.
 - **OPML import/export covers only the subscription list.** Read/starred state is
   intentionally not exported in v0 (no standard format).
-- **MCP is experimental.** The MCP server tools and SSE relay may change in breaking ways.
 
 ## License
 
