@@ -63,12 +63,24 @@ test.describe('Boot empty-state flash', () => {
     await seedData(page);
     await page.waitForTimeout(500);
 
-    // Slow the capabilities fetch so the hydration window is observable.
-    await page.route('**/api/capabilities', async (route) => {
-      await new Promise((r) => setTimeout(r, 1500));
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"mcp":false}' });
+    // Hold hydration open by deferring the first IndexedDB success callback after reload.
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem('slow-idb')) return;
+      const original = IDBRequest.prototype.addEventListener;
+      let delayed = false;
+      IDBRequest.prototype.addEventListener = function (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
+        if (type !== 'success' || delayed) return original.call(this, type, listener, options);
+        delayed = true;
+        const wrapped = (event: Event) => {
+          setTimeout(() => {
+            if (typeof listener === 'function') listener.call(this, event);
+            else listener.handleEvent(event);
+          }, 1500);
+        };
+        return original.call(this, type, wrapped, options);
+      };
     });
-
+    await page.evaluate(() => sessionStorage.setItem('slow-idb', '1'));
     await page.reload();
 
     // During hydration: loading message fades in after ~500ms; no empty-state headline appears.

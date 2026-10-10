@@ -2950,3 +2950,266 @@ a:hover { text-decoration: underline; }
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* Agent connection: consent page and Agents screen. */
+.connect {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px;
+  gap: 20px;
+}
+.connect__brand {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+.connect__card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--mantle);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.connect__card h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.connect__card p {
+  margin: 0;
+  font-size: 14px;
+}
+.connect__muted {
+  color: var(--subtext);
+  font-size: 13px;
+}
+.connect__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.connect__actions--center {
+  justify-content: center;
+}
+.connect__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  padding: 8px 16px;
+}
+.connect__actions .btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.connect__code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-align: center;
+  padding: 14px 8px;
+  background: var(--crust, var(--base));
+  border-radius: 6px;
+  user-select: all;
+}
+.connect__qr {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+  background: var(--crust, var(--base));
+  border-radius: 6px;
+  color: var(--text);
+}
+.connect__qr svg {
+  width: 140px;
+  height: 140px;
+}
+.client-summary {
+  background: var(--base);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.client-summary__name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.client-summary__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.client-summary__facts dt {
+  color: var(--subtext);
+}
+.client-summary__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.unverified-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--red);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 8px;
+}
+
+.agents-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid var(--hairline);
+}
+.agents-section:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.agents-section h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.agents-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--subtext);
+}
+.agents-small {
+  font-size: 12px;
+}
+.agents-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+.agents-url {
+  padding-right: 40px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.agents-timer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--subtext);
+}
+.agents-details summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+}
+.agents-details summary::-webkit-details-marker {
+  display: none;
+}
+.agents-details[open] summary svg {
+  transform: rotate(90deg);
+}
+.agents-details > div {
+  margin-top: 8px;
+}
+.agents-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.agents-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  padding: 7px 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+.agents-input--code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+}
+.agents-button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agents-button-row .btn,
+.agents-row__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agents-list {
+  display: flex;
+  flex-direction: column;
+}
+.agents-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.agents-row:last-child {
+  border-bottom: none;
+}
+.agents-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.agents-row__title {
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.agents-row__detail {
+  font-size: 13px;
+  color: var(--subtext);
+  overflow-wrap: anywhere;
+}
+.agents-row__secondary {
+  font-size: 12px;
+  color: var(--subtext);
+}
+.agents-row__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.agents-row__actions .btn {
+  padding: 6px 8px;
+}

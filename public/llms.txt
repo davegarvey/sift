@@ -1,0 +1,44 @@
+# Sift
+
+> Sift is a browser-first RSS reader. An AI agent can connect to a user's Sift account through a remote MCP server to read subscriptions, reading statistics and recent articles, and to manage subscriptions.
+
+Paths in this file are relative to the origin that serves it, written `<origin>` where a full URL is meant.
+
+## Connect
+
+- MCP endpoint: `<origin>/mcp` (Streamable HTTP, stateless, `POST` only). An unauthenticated request returns `401` with a `WWW-Authenticate` header that points to the OAuth metadata.
+- Connection URL: the user opens Settings → Sync → Agent access → Connect an agent in Sift, which produces a single-use URL of the form `<origin>/mcp/c/<id>` that is valid for ten minutes. They paste it into the agent as a custom connector or remote MCP server, then press Allow on the consent page. The URL keeps working as an alias of `/mcp` afterwards, because clients store it.
+- Hand-configured clients: a client given only `<origin>/mcp` can still connect. The consent page shows an 8-character approval code, which the user enters in Sift under Settings → Sync → Agent access → Approve a connection.
+- Sync must be turned on in Sift first. Without a sync account there is nothing to connect to.
+
+## Authorisation
+
+- [Authorisation server metadata](/.well-known/oauth-authorization-server): RFC 8414. OAuth 2.1 with PKCE (`S256`), public clients, authorisation code and refresh token grants. Clients identify themselves with a Client ID Metadata Document URL or by Dynamic Client Registration.
+- [Protected resource metadata](/.well-known/oauth-protected-resource): RFC 9728. Names `<origin>/mcp` as the resource.
+- Scopes: `read` allows the read tools. `write` also allows the tools that change subscriptions and reading state. One Allow grants every scope the client requests, or both if it requests none.
+- Access tokens last one hour and are renewed with the refresh token. A grant expires after a year without use. The user can rename or revoke an agent in Settings → Sync → Agent access.
+
+## Tools
+
+Read scope:
+
+- `list_subscriptions`: the user's feeds with `feedId`, tags and reading statistics, sortable by engagement, title or backlog.
+- `get_reading_stats`: account-level and per-feed reading statistics.
+- `list_items`: articles from the last seven days, newest first, filtered by feed, tag, date, read state, starred state or text. Not offered when the deployment has no server-side polling.
+- `get_item`: one article converted to Markdown, truncated at `maxChars`. Not offered when the deployment has no server-side polling.
+- `discover_feeds`: finds the feeds for a site, page or feed URL and reports whether the user already subscribes. Use it to verify any feed before recommending it.
+
+Write scope:
+
+- `subscribe`: subscribes to a feed URL, or to the feed a page advertises.
+- `update_subscription`: sets the title and tags of a subscription.
+- `unsubscribe`: removes a subscription. Confirm with the user first.
+- `set_item_state`: marks up to 100 items read, unread, starred or unstarred.
+
+Identify feeds by `feedId` and items by `<feedId>::<guid>`, exactly as returned. Feed URLs in results have credentials removed. Article content covers only the last seven days.
+
+## HTTP clients
+
+- [OpenAPI document](/openapi.json): the sync API (`/sync/pull`, `/sync/push`, `/sync/items`, `/sync/stats/pull`) with the scope each operation needs. Send an OAuth access token, or a `siftctl` token, as `Authorization: Bearer <token>`.
+- [About Sift](/about): what Sift is and how it handles data.
+- [Source and README](https://github.com/davegarvey/sift): deployment, configuration and the `siftctl` command-line tool.

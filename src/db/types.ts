@@ -165,7 +165,6 @@ export interface AppSettings {
   /** @deprecated No longer used. Kept for backward compat with persisted settings. */
   readFilter?: 'unread' | 'all';
   articleReadMode?: 'all' | 'unread';
-  mcpEnabled: boolean;
   sidebarWidth?: number;
   articleListWidth?: number;
   articleListWidthCustomized?: boolean;
@@ -193,7 +192,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   highContrast: false,
   lastRefreshRunAt: null,
   lastFeedUrl: null,
-  mcpEnabled: false,
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   articleListWidth: ARTICLE_LIST_WIDTH_DEFAULT,
   articleListWidthCustomized: false,

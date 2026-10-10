@@ -2,7 +2,6 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function seed(page: Page) {
   await page.route('**/registerSW.js', (route) => route.abort());
-  await page.route('**/api/capabilities', (route) => route.fulfill({ json: { mcp: false } }));
   await page.goto('/');
   await expect(page.locator('.empty-state')).toBeVisible();
   await page.evaluate(async () => {

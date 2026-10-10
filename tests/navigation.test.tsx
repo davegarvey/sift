@@ -47,7 +47,7 @@ function makeContext(collapsed = false, view: 'river' | 'reading' = 'river') {
     feedMap: createMemo(() => new Map()),
     allTags: () => [],
     activeTagSet: () => new Set<string>(),
-    settings: () => ({ theme: 'system', highContrast: false, lastRefreshRunAt: null, lastFeedUrl: null, mcpEnabled: false }),
+    settings: () => ({ theme: 'system', highContrast: false, lastRefreshRunAt: null, lastFeedUrl: null }),
     fetching: () => 0,
     feedErrors: () => ({}),
     fetchingFeeds: () => new Set<string>(),

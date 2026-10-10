@@ -13,6 +13,7 @@ interface WorkerBindings {
   FEED_POLLING?: string;
   FEED_POLL_BATCH?: string;
   POLL_DB_MAX_BYTES?: string;
+  PUBLIC_URL?: string;
 }
 
 type WorkerEnv = AppEnv & { Bindings: WorkerBindings };
@@ -25,6 +26,7 @@ function buildApp(env: WorkerBindings) {
   const app = createApp<WorkerEnv>({
     db: env.DB,
     pollDb: pollDatabase(env),
+    publicUrl: env.PUBLIC_URL?.trim() || undefined,
     proxy: {
       fetchLimiter: env.PROXY_FETCH_LIMITER,
       imageLimiter: env.PROXY_IMAGE_LIMITER,
@@ -35,7 +37,7 @@ function buildApp(env: WorkerBindings) {
     const assets = c.env.ASSETS;
     if (assets && typeof assets.fetch === 'function') {
       const requestUrl = new URL(c.req.url);
-      if (['/about', '/privacy', '/terms'].includes(requestUrl.pathname)) {
+      if (['/about', '/privacy', '/terms', '/connect'].includes(requestUrl.pathname)) {
         requestUrl.pathname += '.html';
       }
       return assets.fetch(new Request(requestUrl, c.req.raw));
