@@ -3,7 +3,7 @@
   "info": {
     "title": "Sift Sync API",
     "version": "0.49.6",
-    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags) and aggregate feed-reading statistics for AI agents and other tools. Agents are first-class sync devices: they authenticate with a scoped, revocable agent token and can read your feeds and change subscriptions.\n\nGet started: open Sift Settings → Sync → Agents → pair an agent, then redeem the 8-character code via POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the Authorization: Bearer header or the X-Sync-Key header.\n\nSecurity notes:\n- Agent tokens carry scopes. `read` allows GET /sync/pull, GET /sync/stats/pull and GET /sync/items. `write` additionally allows POST /sync/push (403 without it). Statistics writes are master-key-only.\n- Aggregate statistics contain feed identities, counters, and lifetime-read marker identities only; they do not contain article content or reading-event history.\n- A token grants read/write of the subscriptions it is bound to. Revoke it anytime from Settings; revocation takes effect immediately. Rotating the sync key orphans all tokens.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
+    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags), aggregate feed-reading statistics and server-polled items to AI agents and other tools. Agents are first-class sync devices that act with a scoped, revocable credential.\n\nGetting a credential:\n- MCP and OAuth clients: use the MCP endpoint at /mcp. Authorisation server metadata is published at /.well-known/oauth-authorization-server (RFC 8414) and protected resource metadata at /.well-known/oauth-protected-resource. The OAuth endpoints are discovered from that metadata and are not described here. The access token is sent as Authorization: Bearer.\n- Scripts and the siftctl CLI: open Sift Settings → Agents, create a siftctl pairing code, then redeem the 8-character code with POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the Authorization: Bearer header.\n- Devices: Sift browsers authenticate with the master sync key in the X-Sync-Key header. Agents should not use it.\n\nSecurity notes:\n- Agent credentials carry scopes. `read` allows GET /sync/pull, GET /sync/stats/pull, GET /sync/items and GET /sync/status. `write` additionally allows POST /sync/push. A credential without the required scope receives 403. Each operation below states its scope in `x-required-scope`.\n- OAuth access tokens expire after one hour and are renewed by the client with its refresh token. Siftctl tokens do not expire.\n- Statistics writes, token management, connection URLs, device codes and account deletion are master-key-only.\n- Aggregate statistics contain feed identities, counters, and lifetime-read marker identities only; they do not contain article content or reading-event history.\n- A credential grants read or write access to the subscriptions it is bound to. Revoke it anytime from Settings → Agents; revocation takes effect immediately. Rotating the sync key orphans all tokens.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
     "contact": {
       "name": "Sift"
     }
@@ -15,21 +15,24 @@
   ],
   "security": [
     {
+      "bearerAuth": []
+    },
+    {
       "X-Sync-Key": []
     }
   ],
   "components": {
     "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "For agents. An OAuth access token (obtain one through the endpoints advertised at /.well-known/oauth-authorization-server) or a siftctl token from POST /sync/tokens/redeem, sent as Authorization: Bearer <token>. Tokens carry the scopes `read` and `write`, stated per operation in `x-required-scope`. The master sync key is not accepted here."
+      },
       "X-Sync-Key": {
         "type": "apiKey",
         "in": "header",
         "name": "X-Sync-Key",
-        "description": "The agent token (23 chars, starts with 't') obtained from POST /sync/tokens/redeem, or the master sync key. Agent tokens work only on routes that accept their scopes: `read` for pull, stats pull and items, `write` additionally for push."
-      },
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "description": "An agent token sent as Authorization: Bearer. Master sync keys are not accepted here."
+        "description": "For devices. The 22-character master sync key, which grants every scope and is the only credential accepted by the master-key-only operations. Siftctl tokens are also accepted in this header. OAuth access tokens should use the bearer scheme."
       }
     },
     "schemas": {
@@ -165,11 +168,11 @@
         "properties": {
           "token_id": { "type": "string" },
           "fingerprint": { "type": "string", "description": "4-char display fingerprint (SHA-256, first 20 bits, Crockford base32)." },
-          "scope": { "type": "string", "enum": ["rw"] },
+          "scope": { "type": "string", "enum": ["rw"], "description": "Legacy column; use `scopes`." },
           "origin": { "type": "string", "enum": ["paired", "oauth"] },
           "label": { "type": ["string", "null"], "description": "User-chosen display name." },
           "client_name": { "type": ["string", "null"], "description": "OAuth client name; null for paired tokens." },
-          "scopes": { "type": "string", "description": "Space-separated: read, write." },
+          "scopes": { "type": "string", "description": "Granted scopes, space-separated: read, write." },
           "created_at": { "type": "integer" },
           "last_seen_at": { "type": ["integer", "null"] }
         }
@@ -186,7 +189,7 @@
             "description": "Sync availability",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "sync": { "type": "boolean" }, "stats": { "type": "boolean", "description": "Aggregate feed-reading statistics sync support." } } }
+                "schema": { "type": "object", "properties": { "sync": { "type": "boolean" }, "stats": { "type": "boolean", "description": "Aggregate feed-reading statistics sync support." }, "items": { "type": "boolean", "description": "True when server-side polling is enabled and GET /sync/items is available." } } }
               }
             }
           }
@@ -196,7 +199,7 @@
     "/sync/tokens/redeem": {
       "post": {
         "summary": "Exchange an agent pairing code for a token",
-        "description": "Public. The code comes from Sift Settings → Sync → Agents. One-time use, 5-minute expiry. The returned token is 23 characters, starts with 't'.",
+        "description": "Public. For siftctl and HTTP scripts; MCP clients use OAuth instead. The code comes from Sift Settings → Agents and is minted by POST /sync/tokens. One-time use, 5-minute expiry. The returned token is 23 characters, starts with 't', never expires, and holds both `read` and `write`.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -224,7 +227,8 @@
     "/sync/pull": {
       "get": {
         "summary": "Pull changes since a cursor",
-        "description": "Returns feeds and flags with row_at >= since, plus the new serverTime to use as the next cursor. since=0 returns everything. Authenticate with the X-Sync-Key header (master key or agent token) or Authorization: Bearer (agent token). Agent tokens need the `read` scope (403 without it). Pairing codes are not accepted. Responses are Cache-Control: no-store.",
+        "description": "Returns feeds and flags with row_at >= since, plus the new serverTime to use as the next cursor. since=0 returns everything. Agent credentials need the `read` scope (403 without it). Responses are Cache-Control: no-store.",
+        "x-required-scope": "read",
         "parameters": [
           {
             "name": "since",
@@ -251,7 +255,8 @@
     "/sync/push": {
       "post": {
         "summary": "Push subscription and flag changes",
-        "description": "PATCH semantics with bare values — the server stamps every write with its own monotonic time. Sending a legacy {value, at} shape is rejected with 400. Agent tokens are allowed. Rows are delivered to devices in arrival order via pull.",
+        "description": "PATCH semantics with bare values — the server stamps every write with its own monotonic time. Sending a legacy {value, at} shape is rejected with 400. Agent credentials need the `write` scope (403 without it). Rows are delivered to devices in arrival order via pull.",
+        "x-required-scope": "write",
         "requestBody": {
           "required": true,
           "content": {
@@ -264,15 +269,17 @@
           "204": { "description": "Applied" },
           "400": { "description": "Validation error (includes legacy timestamp shapes)" },
           "401": { "description": "Missing, revoked, or invalid credential" },
+          "403": { "description": "Token lacks the `write` scope" },
           "413": { "description": "Payload too large (split and retry)" },
-          "429": { "description": "Rate limited (per sync key)" }
+          "429": { "description": "Rate limited (per sync key, or per token for OAuth tokens)" }
         }
       }
     },
     "/sync/stats/push": {
       "post": {
         "summary": "Push aggregate feed-reading statistics (master key only)",
-        "description": "Pushes approximate observed-volume snapshots and compact once-read marker identities. The server derives readOnce atomically from ever-read state and returns marker acknowledgements plus authoritative affected aggregates. Agent tokens are rejected.",
+        "security": [{ "X-Sync-Key": [] }],
+        "description": "Pushes approximate observed-volume snapshots and compact once-read marker identities. The server derives readOnce atomically from ever-read state and returns marker acknowledgements plus authoritative affected aggregates. Agent credentials are rejected.",
         "requestBody": {
           "required": true,
           "content": {
@@ -307,7 +314,8 @@
     "/sync/stats/pull": {
       "get": {
         "summary": "Pull aggregate feed-reading statistics",
-        "description": "Returns aggregate rows and lifetime-read marker identities with row_at >= since. Uses an independent statistics cursor and contains no article content or event history. Authenticate with the X-Sync-Key header or Authorization: Bearer. Agent tokens need the `read` scope.",
+        "description": "Returns aggregate rows and lifetime-read marker identities with row_at >= since. Uses an independent statistics cursor and contains no article content or event history. Agent credentials need the `read` scope.",
+        "x-required-scope": "read",
         "parameters": [
           {
             "name": "since",
@@ -330,7 +338,8 @@
     "/sync/register": {
       "post": {
         "summary": "Register a sync key (master-key only)",
-        "description": "Idempotent user creation. Agent tokens are rejected with 401.",
+        "security": [{ "X-Sync-Key": [] }],
+        "description": "Idempotent user creation. Agent credentials are rejected with 401.",
         "responses": {
           "204": { "description": "Registered" },
           "401": { "description": "Invalid or token credential" },
@@ -342,6 +351,7 @@
     "/sync/account": {
       "delete": {
         "summary": "Delete the account and all its server-side data (master-key only)",
+        "security": [{ "X-Sync-Key": [] }],
         "description": "Deletes the user row and every row keyed by the sync key in one transaction: feeds (including tombstones), flags, feed statistics, agent tokens, pairing codes and the per-key rate-limit counters. Agent tokens and pairing codes stop working immediately, and when server polling is enabled, polled feed URLs and items that no other account subscribes to are removed. A repeat request returns 401 because the key no longer exists. Agent tokens are rejected with 401.",
         "responses": {
           "204": {
@@ -359,6 +369,7 @@
     "/sync/otp": {
       "post": {
         "summary": "Mint a device pairing code (master-key only)",
+        "security": [{ "X-Sync-Key": [] }],
         "description": "Issues an 8-character code another Sift browser redeems to join the sync group. Agent tokens are rejected with 401 — a device code redeems to the master key.",
         "responses": {
           "200": {
@@ -409,10 +420,111 @@
         }
       }
     },
+    "/sync/status": {
+      "get": {
+        "summary": "Get the sync group fingerprint",
+        "description": "Returns the short fingerprint Settings shows for the sync group, so an agent can confirm which account it is bound to. Any valid agent credential works; no particular scope is required.",
+        "responses": {
+          "200": {
+            "description": "Group fingerprint",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["groupFingerprint"], "properties": { "groupFingerprint": { "type": "string" } } }
+              }
+            }
+          },
+          "401": { "description": "Missing, revoked, or invalid credential" }
+        }
+      }
+    },
+    "/sync/items": {
+      "get": {
+        "summary": "Pull server-polled items",
+        "description": "Returns items retained by server-side polling for the caller's live subscriptions, up to the per-account polling cap, paginated by insertion sequence. Items are kept for seven days. Available only when polling is enabled (see GET /sync/capabilities); otherwise 404. Agent credentials need the `read` scope. Responses are Cache-Control: no-store.",
+        "x-required-scope": "read",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 0 },
+            "description": "Cursor from the previous response; 0 starts from the beginning."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "cursor", "more"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "seq": { "type": "integer" },
+                          "feed_id": { "type": "string" },
+                          "guid": { "type": "string" },
+                          "title": { "type": ["string", "null"] },
+                          "link": { "type": ["string", "null"] },
+                          "author": { "type": ["string", "null"] },
+                          "published_at": { "type": ["integer", "null"] },
+                          "excerpt": { "type": ["string", "null"] },
+                          "html": { "type": ["string", "null"] },
+                          "thumbnail": { "type": ["string", "null"] },
+                          "first_seen_at": { "type": "integer" }
+                        }
+                      }
+                    },
+                    "cursor": { "type": "integer", "description": "Pass as `after` on the next request." },
+                    "more": { "type": "boolean", "description": "True when another page is available." }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid `after` parameter" },
+          "401": { "description": "Missing, revoked, or invalid credential" },
+          "403": { "description": "Token lacks the `read` scope" },
+          "404": { "description": "Server-side polling is not enabled" },
+          "429": { "description": "Rate limited (per sync key, or per token for OAuth tokens)" }
+        }
+      }
+    },
+    "/sync/connections": {
+      "post": {
+        "summary": "Mint a single-use connection URL (master-key only)",
+        "security": [{ "X-Sync-Key": [] }],
+        "description": "Creates a connection ID, valid for ten minutes, bound to this sync group. The returned URL (<origin>/mcp/c/<connectionId>) is pasted into an MCP client as a custom connector. The client then discovers OAuth through /.well-known/oauth-protected-resource and the user approves with one Allow on the consent page, which consumes the ID. The URL is a bearer secret until it is used or expires. Agent credentials are rejected with 401.",
+        "responses": {
+          "200": {
+            "description": "Connection issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["connectionId", "url", "expiresAt"],
+                  "properties": {
+                    "connectionId": { "type": "string", "description": "32-character URL-safe identifier." },
+                    "url": { "type": "string", "description": "The MCP URL to give the client." },
+                    "expiresAt": { "type": "integer", "description": "Milliseconds since epoch." }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid or token credential" },
+          "429": { "description": "Rate limited (20 per hour per sync key)" }
+        }
+      }
+    },
     "/sync/tokens": {
       "post": {
         "summary": "Mint an agent pairing code (master-key only)",
-        "description": "Issues an 8-character code that POST /sync/tokens/redeem exchanges for a revocable agent token. Agent tokens are rejected with 401.",
+        "security": [{ "X-Sync-Key": [] }],
+        "description": "Issues an 8-character code, valid for five minutes, that POST /sync/tokens/redeem exchanges for a revocable siftctl token. MCP and OAuth clients do not use this route; they connect through POST /sync/connections or OAuth discovery. Agent credentials are rejected with 401.",
         "responses": {
           "200": {
             "description": "Code issued",
@@ -435,7 +547,8 @@
       },
       "get": {
         "summary": "List agent tokens (master-key only)",
-        "description": "Metadata only — raw tokens are never returned. Use the fingerprint to match a token shown by your tool.",
+        "security": [{ "X-Sync-Key": [] }],
+        "description": "Metadata only — raw tokens are never returned. Lists siftctl tokens (origin `paired`) and OAuth grants (origin `oauth`), one row per grant. OAuth grants show the client name and granted scopes; use `label` for a user-chosen name and the fingerprint to match a token shown by your tool.",
         "responses": {
           "200": {
             "description": "Token metadata",
@@ -453,7 +566,8 @@
         }
       },
       "patch": {
-        "summary": "Rename an agent token (master-key only)",
+        "summary": "Rename an agent token or OAuth grant (master-key only)",
+        "security": [{ "X-Sync-Key": [] }],
         "description": "Sets the display label. An empty string clears it. Labels are trimmed and at most 64 characters.",
         "requestBody": {
           "required": true,
@@ -471,8 +585,9 @@
         }
       },
       "delete": {
-        "summary": "Revoke an agent token (master-key only)",
-        "description": "Revocation is immediate; the token stops working on the next request.",
+        "summary": "Revoke an agent token or OAuth grant (master-key only)",
+        "security": [{ "X-Sync-Key": [] }],
+        "description": "Revocation is immediate. For an OAuth grant, the access and refresh tokens are deleted together and the agent must be connected again.",
         "requestBody": {
           "required": true,
           "content": {
