@@ -38,7 +38,7 @@ const token = {
   unverified: true,
   scopes: 'read write',
   created_at: Date.now() - 3 * 86_400_000,
-  last_seen_at: null,
+  last_seen_at: null as number | null,
 };
 
 let calls: Call[];
@@ -121,12 +121,17 @@ function typeInto(input: HTMLInputElement, value: string) {
 }
 
 describe('Agents screen', () => {
-  it('shows only the connect and approve actions when there are no agents', async () => {
+  it('shows only the connect action and a quiet approval link when there are no agents', async () => {
     await mount();
-    expect(document.body.textContent).toContain('Connect an agent');
-    expect(document.body.textContent).toContain('Approve a connection');
-    expect(document.body.textContent).not.toContain('Connected agents');
-    expect(document.body.textContent).not.toContain('siftctl');
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Connect an agent');
+    expect(text).toContain('Have an approval code?');
+    expect(document.querySelector('input[aria-label="Approval code"]')).toBeNull();
+    expect(document.querySelector('.agents-row')).toBeNull();
+    expect(text).not.toContain('siftctl');
+    expect(text).not.toContain('/mcp');
+    expect(document.querySelector('a[href="/openapi.json"]')).toBeNull();
+    expect(document.querySelector('h3')).toBeNull();
   });
 
   it('mints a connection URL, copies it and shows the guidance and countdown', async () => {
@@ -138,15 +143,13 @@ describe('Agents screen', () => {
     expect(mint?.method).toBe('POST');
     expect(mint?.headers['X-Sync-Key']).toBe(KEY);
     const text = document.body.textContent ?? '';
-    expect(text).toContain('Paste this into your agent as a custom connector or remote MCP server, then tap Allow.');
+    expect(text).toContain('Copied. Paste it into your agent, then tap Allow.');
     expect(text).toContain('Expires in 10 min');
-    expect(text).toContain('https://sift.example/mcp');
-    expect(document.querySelector('a[href="/openapi.json"]')).not.toBeNull();
-    expect(document.querySelector('a[href="/llms.txt"]')).not.toBeNull();
   });
 
   it('approves a connection by a pasted code, ignoring case, spaces and hyphens', async () => {
     await mount();
+    button('Have an approval code?').click();
     typeInto(document.querySelector<HTMLInputElement>('input[aria-label="Approval code"]')!, ' ABCD-23 45 ');
     button('Look up').click();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Approve Me'));
@@ -163,6 +166,7 @@ describe('Agents screen', () => {
 
   it('reports an unknown code', async () => {
     await mount();
+    button('Have an approval code?').click();
     typeInto(document.querySelector<HTMLInputElement>('input[aria-label="Approval code"]')!, 'zzzzzzzz');
     button('Look up').click();
     await vi.waitFor(() => expect(document.body.textContent).toContain('No request matches that code'));
@@ -171,10 +175,10 @@ describe('Agents screen', () => {
   it('renames an agent and restores the default with an empty value', async () => {
     tokens = [{ ...token }];
     await mount();
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Connected agents'));
-    expect(document.body.textContent).toContain('Test Agent');
-    expect(document.body.textContent).toContain('client.example');
-    expect(document.body.textContent).toContain('Read and change');
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Test Agent'));
+    const detail = document.querySelector('.agents-row__detail')?.textContent ?? '';
+    expect(detail).toBe('client.example · Not used yet');
+    expect(document.body.textContent).not.toContain('AB12');
     button('Rename Test Agent').click();
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Agent name"]')!;
     expect(input.maxLength).toBe(64);
@@ -206,6 +210,13 @@ describe('Agents screen', () => {
     await modal.onConfirm();
     const del = calls.find((c) => c.method === 'DELETE');
     expect(JSON.parse(del?.body ?? '{}')).toEqual({ token_id: 't1' });
+  });
+
+  it('keeps the detail line to what identifies the agent', async () => {
+    tokens = [{ ...token, label: 'Work laptop', unverified: false, scopes: 'read', last_seen_at: Date.now() - 2 * 3_600_000 }];
+    await mount();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Work laptop'));
+    expect(document.querySelector('.agents-row__detail')?.textContent).toBe('Test Agent · Read only · Last used 2h ago');
   });
 
   it('labels legacy paired tokens', async () => {

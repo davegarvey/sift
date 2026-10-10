@@ -249,13 +249,17 @@ Requests authenticated with an OAuth access token SHALL draw from per-token rate
 
 ### Requirement: Connect an agent screen
 
-Settings → Sync → Agents SHALL offer:
+Settings → Sync → Agent access SHALL show only what connecting and managing agents needs:
 
-- Connect an agent, which mints and copies a connection URL, with client-neutral guidance
-- the plain `<origin>/mcp` URL
-- an HTTP section linking the OpenAPI document and `llms.txt`
-- Approve a connection, accepting a code or a QR scan
+- one sentence of explanation and a Connect an agent button, which mints and copies a connection URL and shows its expiry
 - connected agents (see Connected agent identity), each with inline rename and a confirmed Revoke
+- a "Have an approval code?" link that reveals code entry with a QR scan option
+
+It SHALL NOT show the plain `/mcp` address, links to machine-readable documents, or section headings.
+
+#### Scenario: Approval code entry is secondary
+- **WHEN** the user opens the screen
+- **THEN** the approval-code field SHALL be hidden until the user taps "Have an approval code?"
 
 #### Scenario: Revoke a connected agent
 - **WHEN** the user confirms Revoke on an OAuth grant
@@ -267,14 +271,12 @@ Settings → Sync → Agents SHALL offer:
 
 ### Requirement: Connected agent identity
 
-Each connected-agent row SHALL show the user's label if set, otherwise the client name. It SHALL also show:
+Each connected-agent row SHALL show the user's label if set, otherwise the client name, with an "unverified" mark for self-asserted names. One detail line SHALL follow, containing only:
 
 - the client name, when a label hides it
-- the client website host, or the redirect host when the client has no website
-- an "unverified" mark for names from dynamic registration
-- access ("Read only" or "Read and change"), connected date and last used
-
-The fingerprint SHALL be secondary detail.
+- the client website host, for unverified clients only
+- "Read only", when the grant cannot change anything
+- when the agent was last used, or "Not used yet"
 
 #### Scenario: Two connections from the same client
 - **WHEN** the user connects the same client twice and renames one to "Claude on phone"

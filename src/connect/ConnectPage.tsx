@@ -203,7 +203,7 @@ export function ConnectPage(props: { requestId?: string | null; navigate?: (url:
               </div>
               <div class="connect__qr" innerHTML={renderSyncKeyQr(view()!.approvalCode!)} aria-label="QR code of the approval code" />
             </Show>
-            <p>Open Sift on the device where you use it, go to Settings → Sync → Agent access → Approve a connection, and enter this code.</p>
+            <p>Open Sift on the device where you use it, go to Settings → Sync → Agent access, tap “Have an approval code?” and enter this code.</p>
             <p class="connect__muted">Approval needs Sift with sync turned on. This page continues by itself once you approve.</p>
             <Show when={problem()}>
               <p class="error" role="alert">{problem()}</p>

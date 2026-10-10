@@ -133,7 +133,7 @@ describe('consent page', () => {
     });
     const navigate = mount();
     await vi.waitFor(() => expect(document.body.textContent).toContain('abcd-2345'));
-    expect(document.body.textContent).toContain('Settings → Sync → Agent access → Approve a connection');
+    expect(document.body.textContent).toContain('tap “Have an approval code?” and enter this code');
     expect(document.querySelector('.connect__qr svg')).not.toBeNull();
     expect(button('Copy code')).toBeTruthy();
     await vi.waitFor(() => expect(pendingPolls).toBeGreaterThanOrEqual(2), { timeout: 10_000 });
