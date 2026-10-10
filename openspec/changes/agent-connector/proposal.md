@@ -31,7 +31,8 @@ The common fault is that each path makes the agent reach Sift through a channel 
   Writes go through the same merge path as device sync, so every device picks them up.
 - Accept OAuth-issued tokens as `Authorization: Bearer` on the REST sync API, and publish `/llms.txt` describing how to connect. This covers agents that use OpenAPI or HTTP rather than MCP, with the same consent and scopes.
 - Replace the Agents modal with a client-neutral **Connect an agent** screen: a button that mints and copies a connection URL, an "Approve a connection" code entry for the fallback, a terminal and HTTP section, and a list of connected agents showing the client name, scopes and last use, each with a revoke action.
-- **BREAKING** (pre-production, forward-only): remove the copied chat prompt, code authentication on `GET /sync/pull`, `?intent=add` handling, the local MCP server, the `/api/events` SSE relay, `/api/capabilities` and `MCP_ENABLED`. `siftctl pair <code>` remains for terminal use.
+- **BREAKING** (pre-production, forward-only): remove the copied chat prompt, code authentication on `GET /sync/pull`, `?intent=add` handling, the local MCP server, the `/api/events` SSE relay, `/api/capabilities` and `MCP_ENABLED`. `siftctl pair <code>` remains for terminal use until the final phase.
+- **BREAKING**, final phase, after the connector is verified with real clients: retire `siftctl`, agent pairing codes and paired tokens. Coding agents connect through remote MCP like any other client. The npm package is marked deprecated.
 
 ## Capabilities
 
@@ -40,6 +41,9 @@ The common fault is that each path makes the agent reach Sift through a channel 
 - `agent-connector`: the remote MCP server, its OAuth authorisation server and consent flow, tool surface, data exposure rules, and agent onboarding UI.
 
 ### Modified Capabilities
+
+- `agent-cli`: removed entirely (all requirements).
+- `device-sync`: the `siftctl` group-code requirement is removed.
 
 - `agent-tokens`: tokens gain an origin (paired or OAuth), a client name, scopes, and refresh-token rotation. Bearer authentication is added. Code authentication on pull is removed. The Settings UI is replaced by the agent-connector onboarding UI.
 - `feed-service`: the MCP SSE relay requirement is removed.

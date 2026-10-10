@@ -267,15 +267,24 @@ Settings → Sync → Agents SHALL offer:
 
 ### Requirement: Connected agent identity
 
-Each connected-agents row SHALL show a title (the user's label, else the client name, else "Paired token"), the client name when a label hides it, the client website host where known, an unverified mark where the client name is self-asserted, "Read only" or "Read and change", the connected time, the last-used time and the token fingerprint as secondary detail. `GET /sync/tokens` SHALL return `label`, `client_name`, `client_host` and `unverified` for this purpose. The user SHALL be able to rename a grant inline with `PATCH /sync/tokens`; the label SHALL be limited to 64 characters and an empty value SHALL restore the default title.
+Each connected-agent row SHALL show the user's label if set, otherwise the client name. It SHALL also show:
 
-#### Scenario: Rename an agent
-- **WHEN** the user renames an agent to "Work laptop"
-- **THEN** the row title SHALL read "Work laptop" and the client name SHALL appear beneath it
+- the client name, when a label hides it
+- the client website host, or the redirect host when the client has no website
+- an "unverified" mark for names from dynamic registration
+- access ("Read only" or "Read and change"), connected date and last used
 
-#### Scenario: Restore the default name
-- **WHEN** the user saves an empty name
-- **THEN** the row title SHALL return to the client name
+The fingerprint SHALL be secondary detail.
+
+#### Scenario: Two connections from the same client
+- **WHEN** the user connects the same client twice and renames one to "Claude on phone"
+- **THEN** the rows SHALL read "Claude on phone" (with "Claude" beneath) and "Claude"
+
+#### Scenario: Rename
+- **WHEN** the user renames a connected agent
+- **THEN** the new label SHALL be stored server-side, trimmed and at most 64 characters
+- **AND** it SHALL appear on every synced device's Agents screen
+- **AND** an empty label SHALL restore the default name
 
 ### Requirement: Consent page isolation
 
