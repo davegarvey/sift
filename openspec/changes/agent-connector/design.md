@@ -202,6 +202,19 @@ The final phase therefore removes:
 
 It is sequenced last, so that `siftctl` remains a working agent route until the connector is proven. The user marks the npm package deprecated from their own npm account. The Agents screen built in phase 4 already omits the pairing and terminal section, so existing `siftctl` pairings keep working until this phase deletes them, but no new ones can be made.
 
+#### If a CLI is wanted later
+
+Many services offer a CLI alongside MCP, mainly for people working in a terminal, for scripts and CI that run without a model, and for composable bulk operations. Sift has no current need for any of these.
+
+For coding agents, a CLI is the weaker route. It runs inside the agent's sandbox, which may block network access to Sift: the failure that prompted this change. MCP calls are made by the agent's host instead.
+
+If a concrete need for scripting without an agent arises, build the CLI as a thin client of `/mcp`, not as a revival of `siftctl`:
+
+- `login` takes a connection URL minted in the app and completes the same OAuth flow as any other agent.
+- Each command calls the matching MCP tool and prints its `structuredContent` as JSON.
+
+That keeps one server surface and one credential system, with no duplicated logic. Do not reintroduce agent pairing codes, non-expiring tokens, or client-side computation over raw sync data.
+
 ## Risks / Trade-offs
 
 - **Hand-written OAuth carries implementation risk.** Mitigation: a narrow surface (public clients, PKCE only, two grants), conformance tests for every validation branch, and a security review before merge.
