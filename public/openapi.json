@@ -3,7 +3,7 @@
   "info": {
     "title": "Sift Sync API",
     "version": "0.49.6",
-    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags) and aggregate feed-reading statistics for AI agents and other tools. Agents are first-class sync devices: they authenticate with a scoped, revocable agent token and can read your feeds and change subscriptions.\n\nGet started: open Sift Settings → Sync → Agents → pair an agent, then redeem the 8-character code via POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the X-Sync-Key header.\n\nHosted chat tools (ChatGPT, Claude web) cannot POST or send headers. They can read with the pairing code directly: GET /sync/pull?code=<code> works with no headers and stays valid until the code's 5-minute expiry. To add a feed, such agents propose a link of the form /?intent=add&url=<feed-url> (URL-encoded) — the user clicks it and approves the add in the app; the agent never writes directly.\n\nSecurity notes:\n- Agent tokens can only call GET /sync/pull, GET /sync/stats/pull, and POST /sync/push. Statistics writes are master-key-only.\n- Aggregate statistics contain feed identities, counters, and lifetime-read marker identities only; they do not contain article content or reading-event history.\n- A token grants read/write of the subscriptions it is bound to. Revoke it anytime from Settings; revocation takes effect immediately. Rotating the sync key orphans all tokens.\n- A pairing code on GET /sync/pull or GET /sync/stats/pull is read-only and expires in 5 minutes; it can appear in chat history — treat it as a short-lived read capability.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
+    "description": "Sift is a browser-first RSS reader. This API exposes your subscription state (feeds, read/starred flags) and aggregate feed-reading statistics for AI agents and other tools. Agents are first-class sync devices: they authenticate with a scoped, revocable agent token and can read your feeds and change subscriptions.\n\nGet started: open Sift Settings → Sync → Agents → pair an agent, then redeem the 8-character code via POST /sync/tokens/redeem to obtain a token (23 characters, starts with 't'). Send it in the Authorization: Bearer header or the X-Sync-Key header.\n\nSecurity notes:\n- Agent tokens carry scopes. `read` allows GET /sync/pull, GET /sync/stats/pull and GET /sync/items. `write` additionally allows POST /sync/push (403 without it). Statistics writes are master-key-only.\n- Aggregate statistics contain feed identities, counters, and lifetime-read marker identities only; they do not contain article content or reading-event history.\n- A token grants read/write of the subscriptions it is bound to. Revoke it anytime from Settings; revocation takes effect immediately. Rotating the sync key orphans all tokens.\n- Writes carry NO timestamps: the server stamps every write with its own monotonic time. Send bare field values.",
     "contact": {
       "name": "Sift"
     }
@@ -24,7 +24,12 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-Sync-Key",
-        "description": "The agent token (23 chars, starts with 't') obtained from POST /sync/tokens/redeem, or the master sync key. Agent tokens work only on pull and push."
+        "description": "The agent token (23 chars, starts with 't') obtained from POST /sync/tokens/redeem, or the master sync key. Agent tokens work only on routes that accept their scopes: `read` for pull, stats pull and items, `write` additionally for push."
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An agent token sent as Authorization: Bearer. Master sync keys are not accepted here."
       }
     },
     "schemas": {
@@ -161,6 +166,10 @@
           "token_id": { "type": "string" },
           "fingerprint": { "type": "string", "description": "4-char display fingerprint (SHA-256, first 20 bits, Crockford base32)." },
           "scope": { "type": "string", "enum": ["rw"] },
+          "origin": { "type": "string", "enum": ["paired", "oauth"] },
+          "label": { "type": ["string", "null"], "description": "User-chosen display name." },
+          "client_name": { "type": ["string", "null"], "description": "OAuth client name; null for paired tokens." },
+          "scopes": { "type": "string", "description": "Space-separated: read, write." },
           "created_at": { "type": "integer" },
           "last_seen_at": { "type": ["integer", "null"] }
         }
@@ -193,7 +202,7 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "required": ["code"], "properties": { "code": { "type": "string", "minLength": 8, "maxLength": 8 } } }
+              "schema": { "type": "object", "required": ["code"], "properties": { "code": { "type": "string", "minLength": 8, "maxLength": 8 }, "label": { "type": "string", "maxLength": 64, "description": "Optional display name, trimmed." } } }
             }
           }
         },
@@ -206,7 +215,7 @@
               }
             }
           },
-          "400": { "description": "Malformed code" },
+          "400": { "description": "Malformed code or label" },
           "404": { "description": "Unknown, expired, or already-redeemed code" },
           "429": { "description": "Rate limited (per IP)" }
         }
@@ -215,19 +224,13 @@
     "/sync/pull": {
       "get": {
         "summary": "Pull changes since a cursor",
-        "description": "Returns feeds and flags with row_at >= since, plus the new serverTime to use as the next cursor. since=0 returns everything. Authenticate with the X-Sync-Key header (master key or agent token), or — for hosted chat agents that cannot send headers — pass the 8-character agent pairing code in the `code` query parameter. A code authenticates read-only, is multi-use until its 5-minute expiry, and is brute-force guarded per IP. Responses are Cache-Control: no-store.",
+        "description": "Returns feeds and flags with row_at >= since, plus the new serverTime to use as the next cursor. since=0 returns everything. Authenticate with the X-Sync-Key header (master key or agent token) or Authorization: Bearer (agent token). Agent tokens need the `read` scope (403 without it). Pairing codes are not accepted. Responses are Cache-Control: no-store.",
         "parameters": [
           {
             "name": "since",
             "in": "query",
             "schema": { "type": "integer", "minimum": 0 },
             "description": "Cursor from the previous pull's serverTime; 0 for the full dump."
-          },
-          {
-            "name": "code",
-            "in": "query",
-            "schema": { "type": "string", "minLength": 8, "maxLength": 8 },
-            "description": "Agent pairing code from Settings → Sync → Agents. Alternative to the X-Sync-Key header; read-only; valid until expiry. Mutually exclusive with the header."
           }
         ],
         "responses": {
@@ -240,8 +243,8 @@
             }
           },
           "401": { "description": "Missing, revoked, or invalid credential" },
-          "404": { "description": "Unknown, expired, or non-agent `code`" },
-          "429": { "description": "Rate limited (per sync key, or per IP for code pulls)" }
+          "403": { "description": "Token lacks the `read` scope" },
+          "429": { "description": "Rate limited (per sync key, or per token for OAuth tokens)" }
         }
       }
     },
@@ -304,19 +307,13 @@
     "/sync/stats/pull": {
       "get": {
         "summary": "Pull aggregate feed-reading statistics",
-        "description": "Returns aggregate rows and lifetime-read marker identities with row_at >= since. Uses an independent statistics cursor and contains no article content or event history. Authenticate with the X-Sync-Key header or an agent pairing code.",
+        "description": "Returns aggregate rows and lifetime-read marker identities with row_at >= since. Uses an independent statistics cursor and contains no article content or event history. Authenticate with the X-Sync-Key header or Authorization: Bearer. Agent tokens need the `read` scope.",
         "parameters": [
           {
             "name": "since",
             "in": "query",
             "schema": { "type": "integer", "minimum": 0 },
             "description": "Statistics cursor from the previous response; 0 for the full baseline."
-          },
-          {
-            "name": "code",
-            "in": "query",
-            "schema": { "type": "string", "minLength": 8, "maxLength": 8 },
-            "description": "Agent pairing code alternative to X-Sync-Key; read-only until expiry."
           }
         ],
         "responses": {
@@ -325,7 +322,7 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatsPullResponse" } } }
           },
           "401": { "description": "Missing, revoked, or invalid credential" },
-          "404": { "description": "Unknown, expired, or non-agent code" },
+          "403": { "description": "Token lacks the `read` scope" },
           "429": { "description": "Rate limited" }
         }
       }
@@ -453,6 +450,24 @@
             }
           },
           "401": { "description": "Invalid or token credential" }
+        }
+      },
+      "patch": {
+        "summary": "Rename an agent token (master-key only)",
+        "description": "Sets the display label. An empty string clears it. Labels are trimmed and at most 64 characters.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["tokenId", "label"], "properties": { "tokenId": { "type": "string" }, "label": { "type": "string", "maxLength": 64 } } }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Renamed" },
+          "400": { "description": "Missing tokenId or invalid label" },
+          "401": { "description": "Invalid or token credential" },
+          "404": { "description": "Unknown token" }
         }
       },
       "delete": {

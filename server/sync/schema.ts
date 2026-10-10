@@ -59,6 +59,47 @@ export async function ensureSchema(db: D1Database): Promise<void> {
       last_seen_at     INTEGER,
       last_seen_minute INTEGER
     )`,
+    `CREATE TABLE IF NOT EXISTS oauth_clients (
+      client_id     TEXT PRIMARY KEY,
+      client_name   TEXT NOT NULL,
+      redirect_uris TEXT NOT NULL,
+      kind          TEXT NOT NULL,
+      created_at    INTEGER NOT NULL,
+      expires_at    INTEGER
+    )`,
+    `CREATE TABLE IF NOT EXISTS oauth_connections (
+      connection_id TEXT PRIMARY KEY,
+      sync_key      TEXT NOT NULL,
+      created_at    INTEGER NOT NULL,
+      expires_at    INTEGER NOT NULL,
+      used_at       INTEGER
+    )`,
+    `CREATE TABLE IF NOT EXISTS oauth_requests (
+      request_id     TEXT PRIMARY KEY,
+      approval_code  TEXT NOT NULL UNIQUE,
+      client_id      TEXT NOT NULL,
+      redirect_uri   TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      scopes         TEXT NOT NULL,
+      state          TEXT,
+      resource       TEXT,
+      connection_id  TEXT,
+      decision       TEXT,
+      sync_key       TEXT,
+      created_at     INTEGER NOT NULL,
+      expires_at     INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS oauth_codes (
+      code_hash      TEXT PRIMARY KEY,
+      client_id      TEXT NOT NULL,
+      redirect_uri   TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      scopes         TEXT NOT NULL,
+      resource       TEXT,
+      sync_key       TEXT NOT NULL,
+      created_at     INTEGER NOT NULL,
+      expires_at     INTEGER NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS counters (
       name  TEXT PRIMARY KEY,
       value INTEGER NOT NULL
@@ -76,6 +117,11 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_pairing_expires ON pairing_codes(expires_at)`,
     `CREATE INDEX IF NOT EXISTS idx_tokens_sync_key ON tokens(sync_key)`,
     `CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
+    `CREATE INDEX IF NOT EXISTS idx_oauth_connections_expires ON oauth_connections(expires_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_oauth_connections_sync_key ON oauth_connections(sync_key)`,
+    `CREATE INDEX IF NOT EXISTS idx_oauth_requests_expires ON oauth_requests(expires_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires ON oauth_codes(expires_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_oauth_codes_sync_key ON oauth_codes(sync_key)`,
   ];
   await db.batch(statements.map((sql) => db.prepare(sql)));
 
@@ -87,6 +133,16 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     `ALTER TABLE users ADD COLUMN rotated_at INTEGER`,
     `ALTER TABLE flags ADD COLUMN ever_read INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE users ADD COLUMN last_active_at INTEGER`,
+    `ALTER TABLE tokens ADD COLUMN origin TEXT NOT NULL DEFAULT 'paired'`,
+    `ALTER TABLE tokens ADD COLUMN client_id TEXT`,
+    `ALTER TABLE tokens ADD COLUMN client_name TEXT`,
+    `ALTER TABLE tokens ADD COLUMN scopes TEXT NOT NULL DEFAULT 'read write'`,
+    `ALTER TABLE tokens ADD COLUMN refresh_hash TEXT`,
+    `ALTER TABLE tokens ADD COLUMN prev_refresh_hash TEXT`,
+    `ALTER TABLE tokens ADD COLUMN refresh_expires_at INTEGER`,
+    `ALTER TABLE tokens ADD COLUMN expires_at INTEGER`,
+    `ALTER TABLE tokens ADD COLUMN family_id TEXT`,
+    `ALTER TABLE tokens ADD COLUMN label TEXT`,
   ];
   for (const sql of migrations) {
     try {
@@ -111,5 +167,12 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     await db.prepare('CREATE INDEX IF NOT EXISTS idx_feeds_live_feed_url ON feeds(feed_url) WHERE deleted = 0 AND feed_url IS NOT NULL').run();
   } catch {
     // Account deletion still works without the index; it only scans feeds.
+  }
+  for (const column of ['refresh_hash', 'prev_refresh_hash', 'family_id', 'refresh_expires_at']) {
+    try {
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tokens_${column} ON tokens(${column})`).run();
+    } catch {
+      // Token columns missing on an unsupported legacy schema.
+    }
   }
 }

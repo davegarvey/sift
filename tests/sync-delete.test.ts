@@ -254,15 +254,15 @@ describe('DELETE /sync/account', () => {
     const mf = await createMf();
     try {
       const alice = makeSyncKey('tok-alice');
-      const { token, agentCode } = await seedAccount(mf, alice, 'alice');
+      const { token } = await seedAccount(mf, alice, 'alice');
       expect((await api(mf, 'GET', '/sync/pull?since=0', token)).status).toBe(200);
-      expect((await api(mf, 'GET', `/sync/pull?since=0&code=${agentCode}`, null)).status).toBe(200);
+      expect((await accountRows(mf, alice)).pairingCodes).toBeGreaterThan(0);
 
       expect((await api(mf, 'DELETE', '/sync/account', alice)).status).toBe(204);
 
       expect((await api(mf, 'GET', '/sync/pull?since=0', token)).status).toBe(401);
       expect((await api(mf, 'POST', '/sync/push', token, { feeds: [] })).status).toBe(401);
-      expect((await api(mf, 'GET', `/sync/pull?since=0&code=${agentCode}`, null)).status).toBe(404);
+      expect((await accountRows(mf, alice)).pairingCodes).toBe(0);
       expect((await accountRows(mf, alice)).tokens).toBe(0);
     } finally {
       await mf.dispose();
@@ -292,6 +292,8 @@ describe('DELETE /sync/account', () => {
     const source = readFileSync(path.resolve(__dirname, '../server/sync/routes.ts'), 'utf8');
     const prefixes = new Set<string>();
     for (const match of source.matchAll(/`([a-z][a-z:-]*):\$\{(?:syncKey|oldKey)\}`/g)) prefixes.add(match[1]);
+    for (const match of source.matchAll(/rateLimitKey\(ctx, '([a-z][a-z:-]*)'\)/g)) prefixes.add(match[1]);
+    prefixes.add('discover');
     expect([...prefixes].sort()).toEqual([...KEYED_RATE_LIMIT_PREFIXES].sort());
   });
 });

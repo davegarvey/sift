@@ -3,6 +3,9 @@
  *
  * - Deletes tombstoned feeds older than 30 days.
  * - Deletes expired pairing codes (older than 1 day past expiry).
+ * - Deletes expired OAuth connection IDs, authorisation requests and codes, and
+ *   OAuth grants whose refresh token has expired, plus expired cached client
+ *   metadata that no grant references.
  * - Deletes rate-limit rows outside the largest window.
  * - Deletes expired shared feed failure rows.
  * - Deletes idle origin reservation rows after their cooldown and retention expire.
@@ -56,6 +59,7 @@ export async function runSyncCron(db: D1Database, scheduledTime: number = Date.n
   const now = scheduledTime;
   const tombstoneCutoff = now - TOMBSTONE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const pairingCutoff = Math.floor(now / 1000) - PAIRING_GRACE_DAYS * 24 * 60 * 60;
+  const nowSeconds = Math.floor(now / 1000);
   const rateLimitCutoff = Math.floor(now / 1000) - RATE_LIMIT_MAX_WINDOW_SECONDS;
 
   await db.batch([
@@ -63,6 +67,15 @@ export async function runSyncCron(db: D1Database, scheduledTime: number = Date.n
       .prepare('DELETE FROM feeds WHERE deleted = 1 AND deleted_at < ?')
       .bind(tombstoneCutoff),
     db.prepare('DELETE FROM pairing_codes WHERE expires_at < ?').bind(pairingCutoff),
+    db.prepare('DELETE FROM oauth_connections WHERE expires_at < ?').bind(nowSeconds),
+    db.prepare('DELETE FROM oauth_requests WHERE expires_at < ?').bind(nowSeconds),
+    db.prepare('DELETE FROM oauth_codes WHERE expires_at < ?').bind(nowSeconds),
+    db
+      .prepare('DELETE FROM oauth_clients WHERE expires_at IS NOT NULL AND expires_at < ? AND client_id NOT IN (SELECT client_id FROM tokens WHERE client_id IS NOT NULL)')
+      .bind(nowSeconds),
+    db
+      .prepare("DELETE FROM tokens WHERE origin = 'oauth' AND refresh_expires_at IS NOT NULL AND refresh_expires_at < ?")
+      .bind(nowSeconds),
     db
       .prepare('DELETE FROM rate_limits WHERE window_start < ?')
       .bind(rateLimitCutoff),

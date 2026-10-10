@@ -19,6 +19,9 @@ export function accountDeletionStatements(
     db.prepare('DELETE FROM feeds WHERE sync_key = ?').bind(syncKey),
     db.prepare('DELETE FROM tokens WHERE sync_key = ?').bind(syncKey),
     db.prepare('DELETE FROM pairing_codes WHERE sync_key = ?').bind(syncKey),
+    db.prepare('DELETE FROM oauth_connections WHERE sync_key = ?').bind(syncKey),
+    db.prepare('DELETE FROM oauth_requests WHERE sync_key = ?').bind(syncKey),
+    db.prepare('DELETE FROM oauth_codes WHERE sync_key = ?').bind(syncKey),
   ];
   if (options.rateLimits) {
     for (const prefix of KEYED_RATE_LIMIT_PREFIXES) {

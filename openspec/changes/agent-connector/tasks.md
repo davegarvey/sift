@@ -1,9 +1,9 @@
 ## 1. Storage and authentication
 
-- [ ] 1.1 Add a sync-database migration for `oauth_clients`, `oauth_connections` (single-use connection IDs), `oauth_requests` (pending authorisation plus approval code) and `oauth_codes`, and the `tokens` columns `origin`, `client_id`, `client_name`, `scopes`, `refresh_hash`, `refresh_expires_at`, `expires_at` and `family_id`; backfill existing tokens as `paired` with `read write`
-- [ ] 1.2 Extend `server/sync/auth.ts`: accept `Authorization: Bearer`, carry scopes on the principal, reject expired OAuth tokens, enforce `read`/`write` per route, and remove code authentication on pull
-- [ ] 1.3 Add per-token rate-limit buckets for OAuth principals and a per-account `discover` bucket
-- [ ] 1.4 Extend the scheduled cleanup to sweep expired OAuth requests, codes and refresh-expired grants
+- [x] 1.1 Add a sync-database migration for `oauth_clients`, `oauth_connections` (single-use connection IDs), `oauth_requests` (pending authorisation plus approval code) and `oauth_codes`, and the `tokens` columns `origin`, `client_id`, `client_name`, `scopes`, `refresh_hash`, `refresh_expires_at`, `expires_at` and `family_id`; backfill existing tokens as `paired` with `read write`
+- [x] 1.2 Extend `server/sync/auth.ts`: accept `Authorization: Bearer`, carry scopes on the principal, reject expired OAuth tokens, enforce `read`/`write` per route, and remove code authentication on pull
+- [x] 1.3 Add per-token rate-limit buckets for OAuth principals and a per-account `discover` bucket
+- [x] 1.4 Extend the scheduled cleanup to sweep expired OAuth requests, codes and refresh-expired grants
 
 ## 2. OAuth authorisation server
 
@@ -18,7 +18,7 @@
 
 ## 3. MCP server and tools
 
-- [ ] 3.1 Factor the `/sync/push` merge into a shared server function used by the route and the write tools
+- [x] 3.1 Factor the `/sync/push` merge into a shared server function used by the route and the write tools
 - [ ] 3.2 Add the stateless Streamable HTTP handler at `/mcp` with the 401 discovery header and server `instructions`
 - [ ] 3.3 Implement `list_subscriptions` and `get_reading_stats` with URL redaction
 - [ ] 3.4 Implement `list_items` and `get_item` over the poll database and flags, including HTML-to-Markdown conversion and truncation; omit them when polling is unavailable

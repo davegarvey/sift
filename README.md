@@ -366,9 +366,9 @@ Hosted chat tools cannot POST or send auth headers, but they can fetch plain
 GET URLs. Settings → Sync → Agents → "Copy prompt" gives a prompt built for
 them:
 
-- **Reads**: the agent fetches `GET /sync/pull?code=<code>`. The code is the
-  credential — read-only, multi-use, valid until its 5-minute expiry, and
-  rate-limited per IP. No token is minted, so nothing to revoke.
+- **Reads**: pairing codes no longer authenticate `GET /sync/pull`; the
+  server answers 401. Agents authenticate with a token (`Authorization: Bearer`
+  or `X-Sync-Key`).
 - **Writes**: the agent proposes adds as clickable links
   `…/?intent=add&url=<feed-url>`. Clicking opens the app's add-feed modal
   prefilled; you approve by running discovery and subscribing. The agent
@@ -379,11 +379,13 @@ them:
 - Pairing: Settings → Sync → Agents → "Pair an agent" mints an 8-character
   code (5-minute expiry), embedded in the copied prompt and the `siftctl pair`
   command. `siftctl pair` or `POST /sync/tokens/redeem` exchange it for a
-  token. The same code works on `GET /sync/pull` as a read-only credential
-  for hosted chat agents.
+  token.
 - Tokens are 23-character credentials starting with `t` — distinct from the
-  master sync key, which never leaves your browser. Tokens can call
-  `/sync/pull`, `/sync/stats/pull`, and `/sync/push`; statistics writes remain
+  master sync key, which never leaves your browser. Send them as
+  `Authorization: Bearer <token>` or in `X-Sync-Key`. Each token carries
+  scopes: `read` allows `/sync/pull`, `/sync/stats/pull` and `/sync/items`;
+  `write` additionally allows `/sync/push` (403 without it). Paired tokens
+  hold both scopes. Statistics writes remain
   master-key-only. They cannot mint device codes, register, or manage tokens
   (a device code would redeem to the master key).
 - **Revocation**: Settings → Sync → Agents lists every token (by fingerprint)
@@ -397,10 +399,10 @@ them:
   immediately.
 - **Warning**: a token grants read/write of your subscriptions to whoever
   holds it. Treat it like a password; if you paste it into a third-party
-  service, you are trusting that service with it. Revoke it when done. A
-  pairing code pasted into a chat tool is far less dangerous — read-only and
-  dead in 5 minutes — but agents share your per-sync-key pull budget with
-  your browsers, so a runaway agent can slow your devices' sync.
+  service, you are trusting that service with it. Revoke it when done. Paired
+  tokens share your per-sync-key pull budget with your browsers, so a runaway
+  agent can slow your devices' sync. OAuth-issued tokens draw from their own
+  per-token budgets.
 
 ## Known v0 limitations
 

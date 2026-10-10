@@ -110,7 +110,12 @@ OAuth grants extend the existing `tokens` table rather than creating a parallel 
 - `scopes` (space-separated)
 - `refresh_hash`
 - `refresh_expires_at`
+- `expires_at` (access token expiry)
 - `family_id`
+- `prev_refresh_hash` (the hash just replaced, so that presenting it again is detected as reuse)
+- `label` (user-chosen display name)
+
+An OAuth grant is one row: a refresh rotates `token_hash` and `refresh_hash` in place and keeps `token_id` and `family_id`, so the connected-agents list, per-token rate-limit buckets and `last_seen` stay stable across rotation.
 
 Access tokens keep the existing opaque format and SHA-256 storage, with a one-hour lifetime. Refresh tokens expire after 365 days without use, on a sliding window, and rotate on every use. Reuse of a rotated refresh token revokes the whole family. The long idle limit is deliberate: a connection should survive ordinary gaps in use, so the user connects once. Rotation with reuse detection limits the value of a leaked refresh token, and the connected-agents list shows the last use, so stale grants can be revoked by hand.
 
