@@ -54,7 +54,7 @@
 ## 8. Retire siftctl (after 7.3)
 
 - [ ] 8.1 Delete `packages/siftctl`, `tests/siftctl.test.ts`, and the siftctl steps in `.github/workflows/ci.yml` and `release.yml`; update the workspace `package.json` and lockfile
-- [ ] 8.2 Remove `POST /sync/tokens` and `POST /sync/tokens/redeem`, agent pairing-code handling and the `paired` origin from the server and client
+- [ ] 8.2 Remove `POST /sync/tokens` and `POST /sync/tokens/redeem`, agent pairing-code handling and the `paired` origin from the server and client; stop accepting agent tokens in `X-Sync-Key` (bearer only); derive fingerprints from the grant identifier
 - [ ] 8.3 Add a migration deleting paired tokens and agent pairing codes and dropping `tokens.origin`; mirror it in `server/sync/schema.ts`
 - [ ] 8.4 Remove `siftctl` from the README and `public/openapi.json`
 - [ ] 8.5 Ask the user to run `npm deprecate siftctl "Use the Sift MCP connector: <origin>/mcp"` from their npm account
