@@ -112,7 +112,7 @@ OAuth grants extend the existing `tokens` table rather than creating a parallel 
 - `refresh_expires_at`
 - `family_id`
 
-Access tokens keep the existing opaque format and SHA-256 storage, with a one-hour lifetime. Refresh tokens last 30 days on a sliding window and rotate on every use. Reuse of a rotated refresh token revokes the whole family.
+Access tokens keep the existing opaque format and SHA-256 storage, with a one-hour lifetime. Refresh tokens expire after 365 days without use, on a sliding window, and rotate on every use. Reuse of a rotated refresh token revokes the whole family. The long idle limit is deliberate: a connection should survive ordinary gaps in use, so the user connects once. Rotation with reuse detection limits the value of a leaked refresh token, and the connected-agents list shows the last use, so stale grants can be revoked by hand.
 
 Tokens from `siftctl pair` become `origin = paired`, `scopes = read write`, with no expiry, which matches current behaviour.
 

@@ -174,11 +174,15 @@ When the consent request has no usable connection ID, the consent screen SHALL s
 
 ### Requirement: Refresh token rotation
 
-`POST /oauth/token` SHALL support the `refresh_token` grant. Refresh tokens SHALL expire 30 days after their last use and SHALL rotate on every use. Presenting an already-rotated refresh token SHALL revoke every token in that grant. `POST /oauth/revoke` SHALL revoke a presented access or refresh token.
+`POST /oauth/token` SHALL support the `refresh_token` grant. Refresh tokens SHALL expire 365 days after their last use and SHALL rotate on every use. Presenting an already-rotated refresh token SHALL revoke every token in that grant. `POST /oauth/revoke` SHALL revoke a presented access or refresh token.
 
 #### Scenario: Refresh
 - **WHEN** a client presents a current refresh token
 - **THEN** the server SHALL return a new access token and a new refresh token, and SHALL invalidate the old refresh token
+
+#### Scenario: Occasional use keeps the connection
+- **WHEN** an agent is unused for several months and then refreshes with its current refresh token
+- **THEN** the server SHALL issue new tokens without user interaction
 
 #### Scenario: Refresh token reuse
 - **WHEN** a refresh token that has already been rotated is presented
