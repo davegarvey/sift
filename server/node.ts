@@ -29,6 +29,7 @@ const app = createApp({
 for (const page of ['about', 'privacy', 'terms']) {
   app.get(`/${page}`, serveStatic({ path: `./dist/${page}.html` }));
 }
+app.get('/connect', serveStatic({ path: './dist/connect.html' }));
 app.use('/assets/*', serveStatic({ root: './dist/assets' }));
 app.use('*', serveStatic({ root: './dist' }));
 

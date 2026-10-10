@@ -276,7 +276,7 @@ The sync API treats an AI agent as just another sync device. Agents read
 feeds and change subscriptions through the same D1-backed, multi-tenant,
 conflict-merged sync the browsers use — no gateway process.
 
-A remote MCP connector is coming; see `openspec/changes/agent-connector`.
+A remote MCP connector is coming; see `openspec/changes/agent-connector`. Settings → Sync → Agent access connects agents with a single-use link, approves them by code, and lists, renames and revokes them.
 
 ### Via `siftctl` (recommended)
 
@@ -284,7 +284,7 @@ Published to npm on each release. Install and pair:
 
 ```sh
 npm i -g siftctl        # or: npx siftctl
-siftctl pair <code>     # code from Settings → Sync → Agents
+siftctl pair <code>     # code from POST /sync/tokens (master key)
 siftctl feeds
 siftctl feed add https://example.com/feed.xml
 siftctl feed edit https://example.com/feed.xml --title "Example" --tags "tech, reading"
@@ -350,8 +350,9 @@ Writes carry no timestamps — the server stamps everything.
 
 ### Pairing and tokens
 
-- Pairing: Settings → Sync → Agent access → "Pair siftctl" mints an 8-character
-  code (5-minute expiry) for the `siftctl pair` command. `siftctl pair` or
+- Pairing: `POST /sync/tokens` (master key) mints an 8-character code
+  (5-minute expiry) for the `siftctl pair` command; Settings → Sync → Agent
+  access no longer offers it, because the screen now connects MCP agents. `siftctl pair` or
   `POST /sync/tokens/redeem` exchange it for a token. Pairing codes do not
   authenticate `GET /sync/pull`; agents authenticate with a token
   (`Authorization: Bearer` or `X-Sync-Key`).
@@ -363,8 +364,8 @@ Writes carry no timestamps — the server stamps everything.
   hold both scopes. Statistics writes remain
   master-key-only. They cannot mint device codes, register, or manage tokens
   (a device code would redeem to the master key).
-- **Revocation**: Settings → Sync → Agents lists every token (by fingerprint)
-  with a revoke button. Revocation is immediate and does not affect your
+- **Revocation**: Settings → Sync → Agents lists every grant (by name, or
+  fingerprint for paired tokens) with rename and revoke buttons. Revocation is immediate and does not affect your
   devices. Regenerating the sync key (Settings → Sync → Regenerate) is the
   kill switch: the old key is marked dead server-side — every agent token
   stops working instantly, `register` refuses to resurrect the old key, and

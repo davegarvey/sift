@@ -28,9 +28,10 @@
 
 ## 4. Client
 
-- [ ] 4.1 Build the consent route: client details, full-access wording, single Allow for connection-ID and same-browser approval, fallback approval code with copy and QR, status polling, sync-not-enabled state, and `frame-ancestors 'none'`
-- [ ] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: mint-and-copy connection URL with countdown, plain `/mcp` URL, HTTP/OpenAPI and `siftctl` section, Approve a connection (code entry and QR scan), and the connected-agents list with revoke
-- [ ] 4.3 Component tests for consent and approval flows
+- [x] 4.1 Build the consent route: client details, full-access wording, single Allow for connection-ID and same-browser approval, fallback approval code with copy and QR, status polling, sync-not-enabled state, and `frame-ancestors 'none'`
+- [x] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: mint-and-copy connection URL with countdown, plain `/mcp` URL, an HTTP/OpenAPI section, Approve a connection (code entry and QR scan), and the connected-agents list with rename and revoke
+- [x] 4.2a Show connected-agent identity (label or client name, client website host, unverified mark, access level, dates, fingerprint) with inline rename through `PATCH /sync/tokens`
+- [x] 4.3 Component tests for consent and approval flows
 
 ## 5. Removals
 

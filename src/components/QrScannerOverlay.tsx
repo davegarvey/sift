@@ -5,7 +5,7 @@ import { redeemCode } from '../sync/client';
 
 type ScanState = 'scanning' | 'pairing' | 'error';
 
-export function QrScannerOverlay(props: { onClose: (paired?: boolean) => void }) {
+export function QrScannerOverlay(props: { onClose: (paired?: boolean) => void; onText?: (text: string) => boolean }) {
   const ctx = useApp();
   const [state, setState] = createSignal<ScanState>('scanning');
   const [errorMsg, setErrorMsg] = createSignal('');
@@ -53,6 +53,13 @@ export function QrScannerOverlay(props: { onClose: (paired?: boolean) => void })
       const { default: jsQR } = await import('jsqr');
       const result = jsQR(imageData.data, imageData.width, imageData.height);
       if (!result) return;
+      if (props.onText) {
+        if (props.onText(result.data)) {
+          if (frameTimer) clearInterval(frameTimer);
+          frameTimer = undefined;
+        }
+        return;
+      }
       let url: URL;
       try {
         url = new URL(result.data);
@@ -95,13 +102,13 @@ export function QrScannerOverlay(props: { onClose: (paired?: boolean) => void })
       if (err.name === 'NotAllowedError') {
         setErrorMsg('Camera permission denied. Grant access in your browser settings or enter the code manually.');
       } else if (err.name === 'NotFoundError') {
-        setErrorMsg('No camera found on this device. Enter the pairing code manually.');
+        setErrorMsg('No camera found on this device. Enter the code manually.');
       } else if (err.name === 'NotReadableError') {
         setErrorMsg('Camera is busy (e.g., in use by another app). Close other apps that use the camera and try again.');
       } else if (err.name === 'AbortError') {
         setErrorMsg('Camera permission prompt was dismissed. Tap "Scan QR" to try again.');
       } else {
-        setErrorMsg('Camera error. Enter the pairing code manually.');
+        setErrorMsg('Camera error. Enter the code manually.');
       }
       setState('error');
     }

@@ -61,7 +61,7 @@ The server SHALL record `last_seen` on authentication, throttled to once per min
 
 ### Requirement: Agent token revocation and listing
 
-The system SHALL provide `GET /sync/tokens` and `DELETE /sync/tokens`, both master-key-only. They list and revoke the sync key's agent grants. The list SHALL return metadata only: identifier, origin, client name (for OAuth grants), fingerprint (for paired tokens), scopes, creation time and last-seen time. Revoking an OAuth grant SHALL invalidate its access and refresh tokens together, immediately, and SHALL NOT affect other grants or devices.
+The system SHALL provide `GET /sync/tokens` and `DELETE /sync/tokens`, both master-key-only. They list and revoke the sync key's agent grants, and `PATCH /sync/tokens` renames one. The list SHALL return metadata only: identifier, origin, label, client name and website host (for OAuth grants), whether the client is unverified, fingerprint, scopes, creation time and last-seen time. Revoking an OAuth grant SHALL invalidate its access and refresh tokens together, immediately, and SHALL NOT affect other grants or devices.
 
 #### Scenario: Revoke a token
 - **WHEN** the master key calls `DELETE /sync/tokens` with a token's opaque identifier
@@ -98,26 +98,22 @@ The system SHALL provide `GET /sync/tokens` and `DELETE /sync/tokens`, both mast
 
 ### Requirement: Agent pairing UI in Settings
 
-Agent pairing and management in Settings SHALL be provided by the agent-connector "Connect an agent" screen. Paired tokens for `siftctl` SHALL be minted from that screen's terminal section, and SHALL appear in its connected-agents list. The UI SHALL NOT display or store raw tokens, and SHALL NOT offer a copyable chat prompt.
+Agent management in Settings SHALL be provided by the agent-connector "Connect an agent" screen. The screen SHALL NOT offer `siftctl` pairing codes, SHALL NOT display or store raw tokens, and SHALL NOT offer a copyable chat prompt. Existing paired tokens SHALL appear in its connected-agents list as "Paired token" until they are revoked.
 
 #### Scenario: Pair an agent
 - **WHEN** the user opens Settings → Agents
 - **THEN** the screen SHALL offer Connect an agent, which mints and copies a single-use connection URL
-- **AND** SHALL NOT show a chat prompt or a pairing code until the terminal section requests one
+- **AND** SHALL NOT show a chat prompt or a pairing code
 
 #### Scenario: List and revoke agents
 - **WHEN** the user opens the Agents screen with active grants or paired tokens
-- **THEN** the screen SHALL list each one's client name or fingerprint, scopes, creation time and last-seen time
+- **THEN** the screen SHALL list each one's identity, access level, connected time and last-used time
 - **AND** revoking SHALL require an explicit confirmation step
 - **AND** after revocation the list SHALL reflect the revocation
 
 #### Scenario: No agents paired
 - **WHEN** the user opens the Agents screen and no grants or tokens exist
 - **THEN** the screen SHALL show Connect an agent and the approval entry, with no connected-agents list
-
-#### Scenario: Pair siftctl
-- **WHEN** the user opens the terminal section and requests a pairing code
-- **THEN** the screen SHALL show `siftctl pair <code>` with a copy action and a five-minute expiry countdown
 
 ### Requirement: OpenAPI document served at a stable URL
 

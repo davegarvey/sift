@@ -37,7 +37,7 @@ function buildApp(env: WorkerBindings) {
     const assets = c.env.ASSETS;
     if (assets && typeof assets.fetch === 'function') {
       const requestUrl = new URL(c.req.url);
-      if (['/about', '/privacy', '/terms'].includes(requestUrl.pathname)) {
+      if (['/about', '/privacy', '/terms', '/connect'].includes(requestUrl.pathname)) {
         requestUrl.pathname += '.html';
       }
       return assets.fetch(new Request(requestUrl, c.req.raw));

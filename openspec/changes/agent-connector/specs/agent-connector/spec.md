@@ -253,9 +253,9 @@ Settings → Sync → Agents SHALL offer:
 
 - Connect an agent, which mints and copies a connection URL, with client-neutral guidance
 - the plain `<origin>/mcp` URL
-- a terminal and HTTP section (`siftctl` pairing, OpenAPI, `llms.txt`)
+- an HTTP section linking the OpenAPI document and `llms.txt`
 - Approve a connection, accepting a code or a QR scan
-- connected agents (name or fingerprint, scopes, created, last used), each with a confirmed Revoke
+- connected agents (see Connected agent identity), each with inline rename and a confirmed Revoke
 
 #### Scenario: Revoke a connected agent
 - **WHEN** the user confirms Revoke on an OAuth grant
@@ -264,6 +264,26 @@ Settings → Sync → Agents SHALL offer:
 #### Scenario: New connection appears
 - **WHEN** an agent completes authorisation and the user reopens the Agents screen
 - **THEN** the agent SHALL appear in the connected-agents list under its client name
+
+### Requirement: Connected agent identity
+
+Each connected-agents row SHALL show a title (the user's label, else the client name, else "Paired token"), the client name when a label hides it, the client website host where known, an unverified mark where the client name is self-asserted, "Read only" or "Read and change", the connected time, the last-used time and the token fingerprint as secondary detail. `GET /sync/tokens` SHALL return `label`, `client_name`, `client_host` and `unverified` for this purpose. The user SHALL be able to rename a grant inline with `PATCH /sync/tokens`; the label SHALL be limited to 64 characters and an empty value SHALL restore the default title.
+
+#### Scenario: Rename an agent
+- **WHEN** the user renames an agent to "Work laptop"
+- **THEN** the row title SHALL read "Work laptop" and the client name SHALL appear beneath it
+
+#### Scenario: Restore the default name
+- **WHEN** the user saves an empty name
+- **THEN** the row title SHALL return to the client name
+
+### Requirement: Consent page isolation
+
+The consent page at `/connect` SHALL be a standalone page. It SHALL NOT start sync, register a sync key, refresh feeds or create IndexedDB databases, local storage entries or service worker registrations in a browser that holds no Sift data.
+
+#### Scenario: Fresh browser
+- **WHEN** the consent page opens in a browser that has never run Sift
+- **THEN** the browser SHALL hold no Sift IndexedDB database afterwards
 
 ### Requirement: Agent connection discovery document
 

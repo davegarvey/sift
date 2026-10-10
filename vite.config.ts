@@ -43,7 +43,10 @@ function honoDevMiddleware() {
             url.startsWith('/article') ||
             url.startsWith('/img') ||
             url.startsWith('/api') ||
-            url.startsWith('/sync')
+            url.startsWith('/sync') ||
+            url.startsWith('/oauth') ||
+            url.startsWith('/mcp') ||
+            url.startsWith('/.well-known')
           ) {
               try {
                 const host = req.headers.host ?? 'localhost';
@@ -80,8 +83,8 @@ function honoDevMiddleware() {
             }
             return;
           }
-          if (/^\/(about|privacy|terms)(\?.*)?$/.test(url)) {
-            req.url = url.replace(/^(\/about|\/privacy|\/terms)/, '$1.html');
+          if (/^\/(about|privacy|terms|connect)(\?.*)?$/.test(url)) {
+            req.url = url.replace(/^(\/about|\/privacy|\/terms|\/connect)/, '$1.html');
           }
           next();
         },
@@ -96,6 +99,7 @@ export default defineConfig({
     solid(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: false,
       manifest: {
         name: 'Sift',
         short_name: 'Sift',
@@ -138,12 +142,23 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/(?:about|privacy|terms)(?:\.html)?\/?$/],
+        navigateFallbackDenylist: [
+          /^\/(?:about|privacy|terms)(?:\.html)?\/?$/,
+          /^\/oauth\//,
+          /^\/\.well-known\//,
+          /^\/mcp(?:\/|$)/,
+          /^\/sync\//,
+          /^\/llms\.txt$/,
+          /^\/openapi\.json$/,
+        ],
       },
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png'],
     }),
   ],
   build: {
+    rollupOptions: {
+      input: { index: 'index.html', connect: 'connect.html' },
+    },
     target: 'esnext',
     outDir: 'dist',
     assetsDir: 'assets',

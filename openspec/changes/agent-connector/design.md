@@ -192,9 +192,11 @@ Agent requests draw from per-token buckets that are separate from the per-sync-k
 Settings → Sync → Agents becomes **Connect an agent**:
 
 - **Connect an agent.** A primary button that mints a single-use connection URL (`<origin>/mcp/c/<id>`), copies it, and shows it with a ten-minute countdown. One line of client-neutral guidance: "Paste this into your agent as a custom connector or remote MCP server, then tap Allow." The plain `<origin>/mcp` URL is shown underneath for clients configured by hand, which then approve through a fallback.
-- **Using a terminal or HTTP?** An expandable section with a `siftctl pair` code, the OpenAPI document and `llms.txt`.
+- **Using HTTP?** An expandable section linking the OpenAPI document and `llms.txt`. There is no pairing-code or terminal section: `siftctl` is being retired and its pairing is no longer offered in the UI.
 - **Approve a connection.** A code field (paste or type) plus a scan button, for the fallback path.
-- **Connected agents.** One row per grant: client name (or token fingerprint for paired tokens), scopes, created, last used, and Revoke.
+- **Connected agents.** One row per grant. The title is the user's label, else the client name ("Paired token" for legacy tokens). Beneath it: the client name when a label hides it, the client website host, an unverified mark, "Read only" or "Read and change", connected and last-used times, and the fingerprint as secondary detail. Rename is inline (64 characters, empty restores the default); Revoke asks for confirmation.
+
+The consent page is a separate HTML entry (`connect.html`) so that opening it in a browser that has never run Sift registers no service worker and creates no IndexedDB database. It reads an existing sync key with a raw IndexedDB open that aborts rather than creating the database. In browsers where Sift's service worker is installed, `/connect` is answered by the SPA fallback and `main.tsx` renders the same page without the app provider. The service worker's navigation fallback excludes `/oauth/`, `/.well-known/`, `/mcp`, `/sync/`, `/llms.txt` and `/openapi.json`, so those navigations reach the server.
 
 `/llms.txt` is published as a static asset describing Sift, the MCP URL, the OAuth discovery URLs, the OpenAPI document and the scopes, so an agent pointed at the Sift origin can work out how to connect.
 

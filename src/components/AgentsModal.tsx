@@ -1,173 +1,368 @@
 import { createSignal, onCleanup, createResource, Show, For } from 'solid-js';
-import { Check, Copy, Trash2 } from 'lucide-solid';
+import { Check, ChevronRight, Copy, Pencil, Plug, ScanLine, Trash2, X } from 'lucide-solid';
 import { useApp } from '../state';
-import { mintAgentCode, listAgentTokens, revokeAgentToken, type AgentTokenInfo } from '../sync/client';
-import { expiryLabel } from '../util/time';
+import {
+  mintAgentConnection,
+  listAgentTokens,
+  renameAgentToken,
+  revokeAgentToken,
+  SyncClientError,
+  type AgentTokenInfo,
+} from '../sync/client';
+import { decideApproval, lookupApproval } from '../agents/api';
+import {
+  AgentApiError,
+  accessLabel,
+  displayApprovalCode,
+  normaliseApprovalCode,
+  type AccessView,
+} from '../agents/approval';
+import { ClientSummary } from '../agents/ClientSummary';
+import { QrScannerOverlay } from './QrScannerOverlay';
+import { expiryLabel, humanRelativeTime } from '../util/time';
 
-function relativeTime(t: number | null): string {
-  if (t === null) return 'never';
-  const diff = Date.now() - t;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+const CONNECTION_TTL_MS = 10 * 60 * 1000;
+const LABEL_MAX = 64;
+
+function approvalErrorMessage(e: unknown): string {
+  if (e instanceof AgentApiError) {
+    if (e.status === 404) return 'No request matches that code. Check it and try again.';
+    if (e.status === 410) return 'That request has expired. Restart the connection from your agent.';
+    if (e.status === 409) return 'That request has already been decided.';
+    if (e.status === 429) return 'Too many attempts. Wait a minute and try again.';
+    if (e.status === 401) return 'Sift could not confirm your account. Check that sync is on.';
+  }
+  return 'Could not reach Sift. Try again.';
+}
+
+function titleOf(token: AgentTokenInfo): string {
+  return token.label || token.client_name || 'Paired token';
 }
 
 export function AgentsModal() {
   const ctx = useApp();
-  const [code, setCode] = createSignal<string | null>(null);
+  const [connectUrl, setConnectUrl] = createSignal<string | null>(null);
   const [expiresAt, setExpiresAt] = createSignal<number | null>(null);
-  const [copiedInstall, setCopiedInstall] = createSignal(false);
-  const [copiedCmd, setCopiedCmd] = createSignal(false);
+  const [now, setNow] = createSignal(Date.now());
+  const [connectBusy, setConnectBusy] = createSignal(false);
+  const [copiedUrl, setCopiedUrl] = createSignal(false);
+  const [copiedMcp, setCopiedMcp] = createSignal(false);
+  const [autoCopied, setAutoCopied] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [ringFraction, setRingFraction] = createSignal(1);
-  let ringTimer: ReturnType<typeof setInterval> | undefined;
 
-  const [tokens] = createResource(() => listAgentTokens());
+  const [codeInput, setCodeInput] = createSignal('');
+  const [lookup, setLookup] = createSignal<{ code: string; view: AccessView } | null>(null);
+  const [approvalBusy, setApprovalBusy] = createSignal(false);
+  const [approvalMessage, setApprovalMessage] = createSignal<string | null>(null);
+  const [approvalError, setApprovalError] = createSignal<string | null>(null);
+  const [scanning, setScanning] = createSignal(false);
 
-  const expired = () => expiresAt() !== null && Date.now() >= expiresAt()!;
+  const [renaming, setRenaming] = createSignal<string | null>(null);
+  const [renameValue, setRenameValue] = createSignal('');
 
-  const startRingTimer = (exp: number) => {
-    clearInterval(ringTimer);
-    setRingFraction(1);
-    ringTimer = setInterval(() => {
-      const remaining = exp - Date.now();
-      setRingFraction(Math.max(0, remaining / (5 * 60 * 1000)));
-    }, 1000);
-  };
+  const [tokens, { refetch }] = createResource(() => listAgentTokens().catch((e: unknown) => {
+    console.error('Failed to list agents:', e);
+    return [] as AgentTokenInfo[];
+  }));
 
-  const generateCode = async () => {
+  const timer = setInterval(() => setNow(Date.now()), 1000);
+  onCleanup(() => clearInterval(timer));
+
+  const expired = () => expiresAt() !== null && now() >= expiresAt()!;
+  const fraction = () => (expiresAt() === null ? 0 : Math.max(0, Math.min(1, (expiresAt()! - now()) / CONNECTION_TTL_MS)));
+  const mcpUrl = () => `${connectUrl() ? new URL(connectUrl()!).origin : window.location.origin}/mcp`;
+
+  const connect = async () => {
+    if (connectBusy()) return;
+    setConnectBusy(true);
     setError(null);
+    setAutoCopied(false);
     try {
-      const res = await mintAgentCode();
-      setCode(res.code);
+      const res = await mintAgentConnection();
+      setConnectUrl(res.url);
       setExpiresAt(res.expiresAt);
-      startRingTimer(res.expiresAt);
+      setNow(Date.now());
+      try {
+        await navigator.clipboard.writeText(res.url);
+        setAutoCopied(true);
+      } catch {
+        setAutoCopied(false);
+      }
     } catch (e) {
-      setCode(null);
-      setExpiresAt(null);
-      console.error('Failed to create a code:', e);
-      setError('Failed to create a code. Try again.');
+      console.error('Failed to create a connection link:', e);
+      setError(
+        e instanceof SyncClientError && e.status === 429
+          ? 'Too many links created recently. Try again shortly.'
+          : 'Could not create a connection link. Try again.',
+      );
+    } finally {
+      setConnectBusy(false);
     }
   };
 
-  const copyInstall = async () => {
-    await navigator.clipboard.writeText('npm i -g siftctl');
-    setCopiedInstall(true);
-    setTimeout(() => setCopiedInstall(false), 2000);
+  const copy = async (text: string, flag: (v: boolean) => void) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      flag(true);
+      setTimeout(() => flag(false), 2000);
+    } catch {
+      setError('Could not copy. Select the text and copy it by hand.');
+    }
   };
 
-  const copyCommand = async () => {
-    const c = code();
-    if (!c) return;
-    await navigator.clipboard.writeText(`siftctl pair ${c}`);
-    setCopiedCmd(true);
-    setTimeout(() => setCopiedCmd(false), 2000);
+  const findRequest = async (raw: string) => {
+    setApprovalMessage(null);
+    setApprovalError(null);
+    setLookup(null);
+    const code = normaliseApprovalCode(raw);
+    if (!code) {
+      setApprovalError('Enter the 8-character code shown on the connection page.');
+      return false;
+    }
+    setApprovalBusy(true);
+    try {
+      const view = await lookupApproval(code);
+      if (view.status === 'expired') setApprovalError('That request has expired. Restart the connection from your agent.');
+      else if (view.status !== 'pending') setApprovalError('That request has already been decided.');
+      else setLookup({ code, view });
+      return true;
+    } catch (e) {
+      setApprovalError(approvalErrorMessage(e));
+      return true;
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
+
+  const decide = async (decision: 'approve' | 'deny') => {
+    const current = lookup();
+    if (!current || approvalBusy()) return;
+    setApprovalBusy(true);
+    setApprovalError(null);
+    try {
+      await decideApproval(current.code, decision);
+      setApprovalMessage(decision === 'approve' ? `${current.view.clientName} is now connected.` : `Denied ${current.view.clientName}.`);
+      setLookup(null);
+      setCodeInput('');
+      if (decision === 'approve') void refetch();
+    } catch (e) {
+      setApprovalError(approvalErrorMessage(e));
+      if (e instanceof AgentApiError && (e.status === 409 || e.status === 410)) setLookup(null);
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
+
+  const onScanned = (text: string): boolean => {
+    const code = normaliseApprovalCode(text);
+    if (!code) return false;
+    setScanning(false);
+    setCodeInput(displayApprovalCode(code));
+    void findRequest(code);
+    return true;
+  };
+
+  const startRename = (token: AgentTokenInfo) => {
+    setRenaming(token.token_id);
+    setRenameValue(token.label ?? '');
+  };
+
+  const saveRename = async (token: AgentTokenInfo) => {
+    setError(null);
+    try {
+      await renameAgentToken(token.token_id, renameValue().trim());
+      setRenaming(null);
+      void refetch();
+    } catch (e) {
+      console.error('Failed to rename agent:', e);
+      setError('Could not rename. Try again.');
+    }
   };
 
   const revoke = (token: AgentTokenInfo) => {
     ctx.openModal({
       kind: 'confirm',
       title: 'Revoke agent',
-      message: `Revoke access for ${token.fingerprint}?`,
-      hint: 'The agent will lose access immediately. It can be paired again later.',
+      message: `Revoke access for ${titleOf(token)}?`,
+      hint: 'The agent loses access immediately. It can be connected again later.',
       confirmLabel: 'Revoke',
       danger: true,
       returnTo: { kind: 'agents' },
       onConfirm: async () => {
-        setError(null);
         try {
           await revokeAgentToken(token.token_id);
         } catch (e) {
           console.error('Failed to revoke agent:', e);
-          setError('Failed to revoke. Try again.');
         }
       },
     });
   };
 
-  onCleanup(() => {
-    clearInterval(ringTimer);
-  });
-
   return (
     <div class="modal modal-center">
-      <div class="modal-header">Pair siftctl</div>
+      <div class="modal-header">Agents</div>
       <div class="modal-body">
-        <Show when={!code()}>
-          <div style="margin-bottom: 10px; font-size: 14px; color: var(--subtext)">
-            Pair the siftctl command-line tool to manage your subscriptions from a terminal.
-          </div>
-        </Show>
-        <Show when={!code() && !error()}>
-          <button class="btn" onClick={() => void generateCode()}>Create a pairing code</button>
-        </Show>
-        <Show when={code()}>
-          <Show when={!expired()}>
-            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px">
-              <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--subtext)">
+        <Show when={!scanning()} fallback={<QrScannerOverlay onClose={() => setScanning(false)} onText={onScanned} />}>
+          <section class="agents-section">
+            <h3>Connect an agent</h3>
+            <button class="btn primary agents-button" disabled={connectBusy()} onClick={() => void connect()}>
+              <Plug size={14} />
+              {connectUrl() && expired() ? 'Create a new link' : 'Connect an agent'}
+            </button>
+            <Show when={connectUrl() && !expired()}>
+              <div class="codeblock">
+                <code class="agents-url">{connectUrl()}</code>
+                <button class="codeblock__copy" onClick={() => void copy(connectUrl()!, setCopiedUrl)} aria-label="Copy connection link">
+                  {copiedUrl() ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+              <div class="agents-timer">
                 <svg class="code-timer" viewBox="0 0 24 24" aria-hidden="true">
                   <circle class="code-timer__bg" cx="12" cy="12" r="10" />
                   <circle
                     class="code-timer__progress"
                     cx="12" cy="12" r="10"
                     stroke-dasharray={`${2 * Math.PI * 10}`}
-                    stroke-dashoffset={`${2 * Math.PI * 10 * (1 - ringFraction())}`}
-                    style={{ stroke: ringFraction() > 0.1 ? undefined : 'var(--red)' }}
+                    stroke-dashoffset={`${2 * Math.PI * 10 * (1 - fraction())}`}
+                    style={{ stroke: fraction() > 0.1 ? undefined : 'var(--red)' }}
                   />
                 </svg>
-                {`Expires in ${expiryLabel(expiresAt()!)}`}
+                {`${autoCopied() ? 'Copied. ' : ''}Expires in ${expiryLabel(expiresAt()!)}`}
               </div>
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 13px; color: var(--subtext)">
-              <div>Install <code style="font-size: 13px">siftctl</code> and pair it to manage your subscriptions from the terminal.</div>
-              <div class="codeblock">
-                <code>npm i -g siftctl</code>
-                <button class="codeblock__copy" onClick={() => void copyInstall()} aria-label="Copy install command">
-                  {copiedInstall() ? <Check size={14} /> : <Copy size={14} />}
-                </button>
-              </div>
-              <div class="codeblock">
-                <code>siftctl pair {code() ?? '&lt;code&gt;'}</code>
-                <button class="codeblock__copy" onClick={() => void copyCommand()} aria-label="Copy siftctl pair command">
-                  {copiedCmd() ? <Check size={14} /> : <Copy size={14} />}
+              <p class="agents-note">Paste this into your agent as a custom connector or remote MCP server, then tap Allow.</p>
+            </Show>
+            <Show when={connectUrl() && expired()}>
+              <p class="agents-note">That link has expired. Create a new one.</p>
+            </Show>
+            <div class="agents-note agents-small">
+              For clients you configure by hand, the plain server address is:
+              <div class="codeblock" style="margin-top: 4px">
+                <code class="agents-url">{mcpUrl()}</code>
+                <button class="codeblock__copy" onClick={() => void copy(mcpUrl(), setCopiedMcp)} aria-label="Copy MCP address">
+                  {copiedMcp() ? <Check size={14} /> : <Copy size={14} />}
                 </button>
               </div>
             </div>
-          </Show>
-          <Show when={expired()}>
-            <p style="margin: 0 0 8px; font-size: 14px; color: var(--subtext)">The code expired.</p>
-            <button class="btn" onClick={() => void generateCode()}>Get a new code</button>
-          </Show>
-        </Show>
-        <Show when={error()}>
-          <p class="error">{error()}</p>
-        </Show>
-        <Show when={!tokens.loading && tokens() && tokens()!.length > 0}>
-          <div style="margin-top: 16px; padding-top: 4px; border-top: 1px solid var(--hairline)">
-            <div style="font-size: 14px; display: flex; flex-direction: column">
-              <For each={tokens()}>
-                {(token) => (
-                  <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline)">
-                    <div style="flex: 1; min-width: 0">
-                      <div style="font-weight: 600">{token.fingerprint}</div>
-                      <div style="font-size: 13px; color: var(--subtext)">
-                        {token.scope} · created {relativeTime(token.created_at)} · last seen {token.last_seen_at === null ? 'not seen yet' : relativeTime(token.last_seen_at)}
+            <Show when={error()}>
+              <p class="error" role="alert">{error()}</p>
+            </Show>
+          </section>
+
+          <section class="agents-section">
+            <details class="agents-details">
+              <summary><ChevronRight size={14} />Using HTTP?</summary>
+              <div class="agents-note">
+                Agents that call Sift over HTTP can read the <a href="/openapi.json" target="_blank" rel="noopener">OpenAPI description</a> and the <a href="/llms.txt" target="_blank" rel="noopener">llms.txt guide</a>.
+              </div>
+            </details>
+          </section>
+
+          <section class="agents-section">
+            <h3>Approve a connection</h3>
+            <p class="agents-note">If an agent shows an approval code, enter it here, or scan its QR code.</p>
+            <form
+              class="agents-form"
+              onSubmit={(e) => { e.preventDefault(); void findRequest(codeInput()); }}
+            >
+              <input
+                class="agents-input agents-input--code"
+                type="text"
+                value={codeInput()}
+                onInput={(e) => setCodeInput(e.currentTarget.value)}
+                placeholder="abcd-efgh"
+                aria-label="Approval code"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck={false}
+                disabled={approvalBusy()}
+              />
+              <button class="btn" type="submit" disabled={approvalBusy() || !codeInput().trim()}>Look up</button>
+              <button class="btn" type="button" onClick={() => setScanning(true)} aria-label="Scan a QR code">
+                <ScanLine size={14} />
+              </button>
+            </form>
+            <Show when={approvalError()}>
+              <p class="error" role="alert">{approvalError()}</p>
+            </Show>
+            <Show when={approvalMessage()}>
+              <p class="success" role="status">{approvalMessage()}</p>
+            </Show>
+            <Show when={lookup()}>
+              {(found) => (
+                <>
+                  <p class="agents-note">Connect this agent to your Sift?</p>
+                  <ClientSummary view={found().view} />
+                  <div class="agents-button-row">
+                    <button class="btn primary" disabled={approvalBusy()} onClick={() => void decide('approve')}>Approve</button>
+                    <button class="btn subtle" disabled={approvalBusy()} onClick={() => void decide('deny')}>Deny</button>
+                  </div>
+                </>
+              )}
+            </Show>
+          </section>
+
+          <Show when={!tokens.loading && (tokens()?.length ?? 0) > 0}>
+            <section class="agents-section">
+              <h3>Connected agents</h3>
+              <div class="agents-list">
+                <For each={tokens()}>
+                  {(token) => (
+                    <div class="agents-row">
+                      <div class="agents-row__main">
+                        <Show
+                          when={renaming() === token.token_id}
+                          fallback={
+                            <div class="agents-row__title">
+                              <span>{titleOf(token)}</span>
+                              <Show when={token.unverified}><span class="unverified-mark">unverified</span></Show>
+                            </div>
+                          }
+                        >
+                          <form
+                            class="agents-form"
+                            onSubmit={(e) => { e.preventDefault(); void saveRename(token); }}
+                          >
+                            <input
+                              class="agents-input"
+                              type="text"
+                              maxLength={LABEL_MAX}
+                              value={renameValue()}
+                              placeholder={token.client_name ?? 'Paired token'}
+                              aria-label="Agent name"
+                              onInput={(e) => setRenameValue(e.currentTarget.value)}
+                              onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRenaming(null); } }}
+                              ref={(el) => queueMicrotask(() => el.focus())}
+                            />
+                            <button class="btn" type="submit" aria-label="Save name"><Check size={14} /></button>
+                            <button class="btn subtle" type="button" aria-label="Cancel rename" onClick={() => setRenaming(null)}><X size={14} /></button>
+                          </form>
+                        </Show>
+                        <Show when={token.label && token.client_name}>
+                          <div class="agents-row__detail">{token.client_name}</div>
+                        </Show>
+                        <Show when={token.client_host}>
+                          <div class="agents-row__detail">{token.client_host}</div>
+                        </Show>
+                        <div class="agents-row__detail">
+                          {accessLabel(token.scopes)} · connected {humanRelativeTime(new Date(token.created_at))} · last used {token.last_seen_at === null ? 'never' : humanRelativeTime(new Date(token.last_seen_at))}
+                        </div>
+                        <div class="agents-row__secondary">ID {token.fingerprint}</div>
+                      </div>
+                      <div class="agents-row__actions">
+                        <button class="btn subtle" aria-label={`Rename ${titleOf(token)}`} onClick={() => startRename(token)}>
+                          <Pencil size={14} />
+                        </button>
+                        <button class="btn subtle" aria-label={`Revoke ${titleOf(token)}`} onClick={() => revoke(token)}>
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
-                    <button
-                      class="btn"
-                      style="flex-shrink: 0"
-                      onClick={() => revoke(token)}
-                    >
-                      <Trash2 size={14} />
-                      Revoke
-                    </button>
-                  </div>
-                )}
-              </For>
-            </div>
-          </div>
+                  )}
+                </For>
+              </div>
+            </section>
+          </Show>
         </Show>
       </div>
       <div class="modal-footer">

@@ -32,6 +32,15 @@ import { MAX_POLLED_FEEDS_PER_ACCOUNT, registerPolledFeeds, removeUnsubscribedPo
 import { accountFeedUrls, deleteAccount } from './account';
 
 const TOKEN_LABEL_MAX = 64;
+
+function hostOfUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
 const PAIRING_TTL_SECONDS = 5 * 60;
 const MAX_USERS = 100_000;
 const ITEMS_PAGE_SIZE = 200;
@@ -501,15 +510,24 @@ export function createSyncRoutes(db: D1Database, opts: SyncRoutesOptions = {}): 
     const { syncKey } = getSyncKeyContext(c);
 
     const res = await db
-      .prepare('SELECT token_id, fingerprint, scope, origin, label, client_name, scopes, created_at, last_seen_at FROM tokens WHERE sync_key = ? ORDER BY created_at ASC')
+      .prepare(
+        `SELECT t.token_id, t.fingerprint, t.scope, t.origin, t.label, t.client_name, t.scopes, t.created_at, t.last_seen_at,
+                o.client_uri AS client_uri, o.kind AS client_kind
+           FROM tokens t LEFT JOIN oauth_clients o ON o.client_id = t.client_id
+          WHERE t.sync_key = ? ORDER BY t.created_at ASC`,
+      )
       .bind(syncKey)
       .all();
     // created_at is stored in epoch seconds (now()); the API reports
     // epoch milliseconds, matching last_seen_at and the OTP expiresAt.
-    const tokens = (res.results as Array<{ created_at: number }>).map((r) => ({
-      ...r,
-      created_at: r.created_at * 1000,
-    }));
+    const tokens = (res.results as Array<{ created_at: number; origin: string; client_uri: string | null; client_kind: string | null }>).map(
+      ({ client_uri, client_kind, ...r }) => ({
+        ...r,
+        created_at: r.created_at * 1000,
+        client_host: hostOfUrl(client_uri),
+        unverified: r.origin === 'oauth' && client_kind !== 'metadata',
+      }),
+    );
     return c.json({ tokens });
   });
 
