@@ -19,12 +19,12 @@
 ## 3. MCP server and tools
 
 - [x] 3.1 Factor the `/sync/push` merge into a shared server function used by the route and the write tools
-- [ ] 3.2 Add the stateless Streamable HTTP handler at `/mcp` with the 401 discovery header and server `instructions`
-- [ ] 3.3 Implement `list_subscriptions` and `get_reading_stats` with URL redaction
-- [ ] 3.4 Implement `list_items` and `get_item` over the poll database and flags, including HTML-to-Markdown conversion and truncation; omit them when polling is unavailable
-- [ ] 3.5 Implement `discover_feeds` reusing `parseFeed`/`findAlternateFeeds` with bounded conventional-path probing
-- [ ] 3.6 Implement `subscribe`, `update_subscription`, `unsubscribe` and `set_item_state` with annotations and scope checks
-- [ ] 3.7 Tool tests: output-schema conformance, scope filtering, redaction, idempotency, and an end-to-end write that a device pull observes
+- [x] 3.2 Add the stateless Streamable HTTP handler at `/mcp` with the 401 discovery header and server `instructions`
+- [x] 3.3 Implement `list_subscriptions` and `get_reading_stats` with URL redaction
+- [x] 3.4 Implement `list_items` and `get_item` over the poll database and flags, including HTML-to-Markdown conversion and truncation; omit them when polling is unavailable
+- [x] 3.5 Implement `discover_feeds` reusing `parseFeed`/`findAlternateFeeds` with bounded conventional-path probing
+- [x] 3.6 Implement `subscribe`, `update_subscription`, `unsubscribe` and `set_item_state` with annotations and scope checks
+- [x] 3.7 Tool tests: output-schema conformance, scope filtering, redaction, idempotency, and an end-to-end write that a device pull observes
 
 ## 4. Client
 

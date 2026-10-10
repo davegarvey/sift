@@ -64,6 +64,7 @@ export const RATE_LIMITS = {
   itemsPull: { windowSeconds: 60, limit: 120 },
   accountDelete: { windowSeconds: 3600, limit: 10 },
   discover: { windowSeconds: 60, limit: 20 },
+  mcp: { windowSeconds: 60, limit: 120 },
 } as const;
 
 export const KEYED_RATE_LIMIT_PREFIXES = [
