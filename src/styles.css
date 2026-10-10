@@ -2194,15 +2194,37 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
 }
 
+.settings-footer-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-right: auto;
+  font-size: 13px;
+  color: var(--overlay);
+}
+
+.settings-footer-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .settings-legal-links {
   display: flex;
   gap: 12px;
-  margin-right: 12px;
-  font-size: 12px;
 }
 
-.settings-legal-links a {
+.settings-footer-meta a {
+  display: inline-flex;
   color: var(--overlay);
+  text-decoration: none;
+}
+
+.settings-footer-meta a:hover,
+.settings-footer-meta a:focus-visible {
+  color: var(--subtext);
+  text-decoration: underline;
 }
 
 .empty-state .primary-cta:hover {

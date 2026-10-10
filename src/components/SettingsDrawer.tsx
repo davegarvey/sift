@@ -141,23 +141,24 @@ export function SettingsDrawer() {
 
       </div>
       <div class="modal-footer">
-        <nav class="settings-legal-links" aria-label="Legal information">
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-        </nav>
-        <span style={{ display: 'flex', 'align-items': 'center', gap: '6px', color: 'var(--overlay)', 'margin-right': 'auto' }}>
-          <span>v{version}</span>
-          <a
-            href="https://github.com/davegarvey/sift"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Sift on GitHub"
-            aria-label="Sift on GitHub"
-            style={{ display: 'inline-flex', color: 'var(--overlay)' }}
-          >
-            <ExternalLink size={14} />
-          </a>
-        </span>
+        <div class="settings-footer-meta">
+          <span class="settings-footer-version">
+            <span>v{version}</span>
+            <a
+              href="https://github.com/davegarvey/sift"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Sift on GitHub"
+              aria-label="Sift on GitHub"
+            >
+              <ExternalLink size={14} />
+            </a>
+          </span>
+          <nav class="settings-legal-links" aria-label="Legal information">
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+          </nav>
+        </div>
         <button class="btn primary" onClick={() => ctx.closeModal()}>Done</button>
       </div>
     </div>
