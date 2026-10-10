@@ -249,7 +249,7 @@ Settings → Sync → Agents SHALL offer:
 
 - Connect an agent, which mints and copies a connection URL, with client-neutral guidance
 - the plain `<origin>/mcp` URL
-- a terminal and HTTP section (`siftctl` pairing, OpenAPI, `llms.txt`)
+- an HTTP section (OpenAPI document, `llms.txt`)
 - Approve a connection, accepting a code or a QR scan
 - connected agents, each with Rename and a confirmed Revoke
 
@@ -263,7 +263,7 @@ Settings → Sync → Agents SHALL offer:
 
 ### Requirement: Connected agent identity
 
-Each connected-agent row SHALL show the user's label if set, otherwise the client name (OAuth) or "siftctl" (paired). It SHALL also show:
+Each connected-agent row SHALL show the user's label if set, otherwise the client name. It SHALL also show:
 
 - the client name, when a label hides it
 - the client website host, or the redirect host when the client has no website

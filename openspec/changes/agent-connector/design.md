@@ -115,7 +115,7 @@ OAuth grants extend the existing `tokens` table rather than creating a parallel 
 
 Access tokens keep the existing opaque format and SHA-256 storage, with a one-hour lifetime. Refresh tokens expire after 365 days without use, on a sliding window, and rotate on every use. Reuse of a rotated refresh token revokes the whole family. The long idle limit is deliberate: a connection should survive ordinary gaps in use, so the user connects once. Rotation with reuse detection limits the value of a leaked refresh token, and the connected-agents list shows the last use, so stale grants can be revoked by hand.
 
-Tokens from `siftctl pair` become `origin = paired`, `scopes = read write`, with no expiry, which matches current behaviour.
+Tokens from `siftctl pair` become `origin = paired`, `scopes = read write`, with no expiry, until the final phase retires `siftctl` and deletes them (section 9).
 
 Authentication accepts `Authorization: Bearer <token>` as well as the existing `X-Sync-Key`. Scope enforcement:
 
@@ -133,7 +133,7 @@ Every tool returns `structuredContent` that conforms to a declared `outputSchema
 | Tool | Scope | Annotations | Purpose |
 |---|---|---|---|
 | `list_subscriptions` | read | read-only | Live feeds with `feedId`, title, site URL, redacted feed URL, tags, and the statistics summary (`totalSeen`, `readOnce`, `readRate`, `readIndex`, `backlog`), sortable by engagement. |
-| `get_reading_stats` | read | read-only | The account summary and per-feed statistics, as `siftctl stats --json` returns them. |
+| `get_reading_stats` | read | read-only | The account summary and per-feed statistics (`summary` and `feeds`, in the shape `siftctl stats --json` used). |
 | `list_items` | read | read-only | Recent polled items, filterable by `feedIds`, `tag`, `since`, `unread`, `starred` and `query` (case-insensitive substring over title and excerpt). Returns metadata, excerpt and flags, newest first, with cursor pagination. |
 | `get_item` | read | read-only | One item's content converted from HTML to Markdown, truncated at `maxChars` (default 20,000) with a `truncated` flag and the original link. |
 | `discover_feeds` | read | read-only, open-world | Given a site, page or feed URL, fetches it through the upstream policy, parses it as a feed or looks for alternate feed links, probes a bounded set of conventional paths (`/feed`, `/rss.xml`, `/atom.xml`, `/index.xml`, `/feed.xml`), and returns candidates with title, site URL, item count, newest date and up to three sample titles. It reports whether each candidate is already subscribed. |
@@ -170,9 +170,9 @@ Agent requests draw from per-token buckets that are separate from the per-sync-k
 Settings → Sync → Agents becomes **Connect an agent**:
 
 - **Connect an agent.** A primary button that mints a single-use connection URL (`<origin>/mcp/c/<id>`), copies it, and shows it with a ten-minute countdown. One line of client-neutral guidance: "Paste this into your agent as a custom connector or remote MCP server, then tap Allow." The plain `<origin>/mcp` URL is shown underneath for clients configured by hand, which then approve through a fallback.
-- **Using a terminal or HTTP?** An expandable section with a `siftctl pair` code, the OpenAPI document and `llms.txt`.
+- **Using HTTP?** An expandable section linking the OpenAPI document and `llms.txt`. There is no pairing code or terminal section.
 - **Approve a connection.** A code field (paste or type) plus a scan button, for the fallback path.
-- **Connected agents.** One row per grant. The title is the user's label, else the client name (OAuth) or "siftctl" (paired). Beneath it: the client name when relabelled, the client website host (or redirect host), an "unverified" mark for self-registered names, "Read only" or "Read and change", connected date and last used. Each row has Rename and Revoke. Labels are stored server-side, so they appear on every device. `siftctl pair` sends a default label of `siftctl on <hostname>`. Client logos are not shown: they would mean loading images from arbitrary third-party URLs for little gain over a clear name.
+- **Connected agents.** One row per grant. The title is the user's label, else the client name. Beneath it: the client name when relabelled, the client website host (or redirect host), an "unverified" mark for self-registered names, "Read only" or "Read and change", connected date and last used. Each row has Rename and Revoke. Labels are stored server-side, so they appear on every device. Client logos are not shown: they would mean loading images from arbitrary third-party URLs for little gain over a clear name.
 
 `/llms.txt` is published as a static asset describing Sift, the MCP URL, the OAuth discovery URLs, the OpenAPI document and the scopes, so an agent pointed at the Sift origin can work out how to connect.
 
@@ -187,7 +187,20 @@ The following are deleted:
 - code authentication on `GET /sync/pull`
 - the copied chat prompt
 
-Existing paired tokens are migrated in place and continue to work. The openspec requirement "MCP handlers use context methods" is removed.
+Existing paired tokens are migrated in place and continue to work until `siftctl` is retired. The openspec requirement "MCP handlers use context methods" is removed.
+
+### 10. Retiring siftctl (final phase)
+
+Once remote MCP is verified with real clients (task 7.3), `siftctl` is redundant: coding agents such as Claude Code and Codex can add a remote MCP server directly, and get the same tools and consent flow as every other client. Keeping it would mean a second credential system (agent pairing codes, redemption, paired tokens), an npm package with its own release step, and a separate spec. Scripting without an agent is the one use it uniquely served. Nothing current needs it, and Settings-issued personal access tokens would be a cheaper answer if that changes.
+
+The final phase therefore removes:
+
+- `packages/siftctl`, its tests, CI step and npm publish step
+- agent pairing-code minting (`POST /sync/tokens`) and redemption (`POST /sync/tokens/redeem`)
+- paired tokens: a migration deletes rows with `origin = 'paired'`, deletes `pairing_codes` rows of kind `agent`, and drops the `origin` column
+- the `agent-cli` specification and the `siftctl` group-code requirement
+
+It is sequenced last, so that `siftctl` remains a working agent route until the connector is proven. The user marks the npm package deprecated from their own npm account. The Agents screen built in phase 4 already omits the pairing and terminal section, so existing `siftctl` pairings keep working until this phase deletes them, but no new ones can be made.
 
 ## Risks / Trade-offs
 
@@ -203,7 +216,8 @@ Existing paired tokens are migrated in place and continue to work. The openspec 
 
 1. Sync-database migration: add the OAuth tables (`oauth_clients`, `oauth_connections`, `oauth_requests`, `oauth_codes`) and the new `tokens` columns. Backfill existing tokens as `origin = 'paired'`, `scopes = 'read write'`.
 2. Ship the server endpoints, consent route and new Agents screen together with the removals in one release. There is no dual-path period.
-3. Rollback: revert the release. The added columns and tables are inert to the previous code.
+3. After task 7.3, a separate release retires `siftctl` and deletes paired tokens (section 10). This is irreversible for paired tokens; holders reconnect through OAuth.
+4. Rollback: revert the release. The added columns and tables are inert to the previous code.
 
 ## Open Questions
 

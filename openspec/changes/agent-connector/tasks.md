@@ -29,9 +29,8 @@
 ## 4. Client
 
 - [ ] 4.1 Build the consent route: client details, full-access wording, single Allow for connection-ID and same-browser approval, fallback approval code with copy and QR, status polling, sync-not-enabled state, and `frame-ancestors 'none'`
-- [ ] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: mint-and-copy connection URL with countdown, plain `/mcp` URL, HTTP/OpenAPI and `siftctl` section, Approve a connection (code entry and QR scan), and the connected-agents list with revoke
+- [ ] 4.2 Rewrite `AgentsModal.tsx` as Connect an agent: mint-and-copy connection URL with countdown, plain `/mcp` URL, HTTP/OpenAPI section (no pairing or terminal section), Approve a connection (code entry and QR scan), and the connected-agents list with revoke
 - [ ] 4.2a Show connected-agent identity (label, client name, website host, unverified mark, access, connected, last used) with Rename
-- [ ] 4.2b Make `siftctl pair` send a default label `siftctl on <hostname>`, with a `--label` override
 - [ ] 4.3 Component tests for consent and approval flows
 
 ## 5. Removals
@@ -51,3 +50,11 @@
 - [ ] 7.1 Run `openspec validate agent-connector`, `npm run typecheck`, `npm run lint` and `npm test`
 - [ ] 7.2 Run a security review of the OAuth and consent code before merge
 - [ ] 7.3 Connect at least two independent MCP clients against a preview deployment, including connecting from a Chrome PWA whose system default browser is Firefox, and from an installed PWA on a phone, and record the results in the PR
+
+## 8. Retire siftctl (after 7.3)
+
+- [ ] 8.1 Delete `packages/siftctl`, `tests/siftctl.test.ts`, and the siftctl steps in `.github/workflows/ci.yml` and `release.yml`; update the workspace `package.json` and lockfile
+- [ ] 8.2 Remove `POST /sync/tokens` and `POST /sync/tokens/redeem`, agent pairing-code handling and the `paired` origin from the server and client
+- [ ] 8.3 Add a migration deleting paired tokens and agent pairing codes and dropping `tokens.origin`; mirror it in `server/sync/schema.ts`
+- [ ] 8.4 Remove `siftctl` from the README and `public/openapi.json`
+- [ ] 8.5 Ask the user to run `npm deprecate siftctl "Use the Sift MCP connector: <origin>/mcp"` from their npm account
