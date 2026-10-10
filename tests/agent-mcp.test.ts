@@ -13,7 +13,7 @@ import { validateSchema, type Schema } from '../server/agent/mcp/schema';
 import { redactUrl } from '../server/agent/mcp/redact';
 import { htmlToMarkdown } from '../server/agent/mcp/markdown';
 import { publicOrigin } from '../server/agent/origin';
-import { buildStats } from '../packages/siftctl/src/stats';
+import { buildStats } from '../server/agent/mcp/stats';
 
 const SITE = 'http://93.184.216.34';
 const SYNC_KEY = 'a'.repeat(22);

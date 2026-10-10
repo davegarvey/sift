@@ -1,5 +1,5 @@
 import { ToolError, type ToolContext } from './types';
-import type { StatsFeedInput } from '../../../packages/siftctl/src/stats';
+import type { StatsFeedInput } from './stats';
 
 export interface FeedRow extends StatsFeedInput {
   html_url: string | null;

@@ -1,4 +1,4 @@
-import { buildStats, type FeedStatsView } from '../../../packages/siftctl/src/stats';
+import { buildStats, type FeedStatsView } from './stats';
 import { decodeItemId, encodeItemId } from '../../../src/sync/itemId';
 import { htmlToMarkdown } from './markdown';
 import { isoDate, liveFeeds, loadFeedRows, loadLiveFeeds, type LiveFeed } from './data';
@@ -151,7 +151,7 @@ const getReadingStats: ToolDefinition = {
   name: 'get_reading_stats',
   title: 'Get reading statistics',
   description:
-    'Reading statistics for the account: overall seen and read counts, and per-feed read rate, read index (1.0 is average engagement) and unread backlog. Matches `siftctl stats --json`. Counts are approximate.',
+    'Reading statistics for the account: overall seen and read counts, and per-feed read rate, read index (1.0 is average engagement) and unread backlog. Counts are approximate.',
   scope: 'read',
   annotations: READ_ONLY,
   inputSchema: { type: 'object', properties: {} },

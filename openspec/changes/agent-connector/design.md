@@ -165,6 +165,8 @@ Feed URLs can contain credentials for private feeds. Returning them would send t
 
 `subscribe` accepts credentials the agent supplies. They are not echoed back.
 
+Item IDs (`<feedId>::<guid>`) are not redacted because they are handles the agent must pass back unchanged. A feed whose GUIDs embed secrets would expose them there. This is an accepted limitation.
+
 Tool calls are never logged with arguments or URLs, which is consistent with the existing logging rules.
 
 ### 7. Rate limits
