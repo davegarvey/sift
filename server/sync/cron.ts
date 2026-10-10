@@ -5,7 +5,8 @@
  * - Deletes expired pairing codes (older than 1 day past expiry).
  * - Deletes expired OAuth connection IDs, authorisation requests and codes, and
  *   OAuth grants whose refresh token has expired, plus expired cached client
- *   metadata that no grant references.
+ *   metadata that no grant references, and registered clients older than 30
+ *   days that no grant or pending request references.
  * - Deletes rate-limit rows outside the largest window.
  * - Deletes expired shared feed failure rows.
  * - Deletes idle origin reservation rows after their cooldown and retention expire.
@@ -21,6 +22,7 @@ import { STATE_RETENTION_MS } from '../origin-governor';
 
 const TOMBSTONE_RETENTION_DAYS = 30;
 const PAIRING_GRACE_DAYS = 1;
+const REGISTERED_CLIENT_RETENTION_DAYS = 30;
 const RATE_LIMIT_MAX_WINDOW_SECONDS = 24 * 60 * 60; // the daily register:global window
 export const ROTATED_ACCOUNT_RETENTION_DAYS = 30;
 export const INACTIVE_ACCOUNT_RETENTION_DAYS = 365;
@@ -73,6 +75,13 @@ export async function runSyncCron(db: D1Database, scheduledTime: number = Date.n
     db
       .prepare('DELETE FROM oauth_clients WHERE expires_at IS NOT NULL AND expires_at < ? AND client_id NOT IN (SELECT client_id FROM tokens WHERE client_id IS NOT NULL)')
       .bind(nowSeconds),
+    db
+      .prepare(
+        "DELETE FROM oauth_clients WHERE kind = 'registered' AND created_at < ? " +
+          'AND client_id NOT IN (SELECT client_id FROM tokens WHERE client_id IS NOT NULL) ' +
+          'AND client_id NOT IN (SELECT client_id FROM oauth_requests)',
+      )
+      .bind(nowSeconds - REGISTERED_CLIENT_RETENTION_DAYS * 24 * 60 * 60),
     db
       .prepare("DELETE FROM tokens WHERE origin = 'oauth' AND refresh_expires_at IS NOT NULL AND refresh_expires_at < ?")
       .bind(nowSeconds),

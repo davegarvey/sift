@@ -568,7 +568,8 @@ describe('scheduled cleanup and account deletion', () => {
       const idleAccess = await oauthToken(db, key, { expiresAt: nowSeconds() - 5000, refreshExpiresAt: nowSeconds() + 3600 });
       await db.prepare("INSERT INTO oauth_clients (client_id, client_name, redirect_uris, kind, created_at, expires_at) VALUES ('c-expired', 'X', '[]', 'metadata', 1, ?)").bind(nowSeconds() - 10).run();
       await db.prepare("INSERT INTO oauth_clients (client_id, client_name, redirect_uris, kind, created_at, expires_at) VALUES ('client-1', 'Y', '[]', 'metadata', 1, ?)").bind(nowSeconds() - 10).run();
-      await db.prepare("INSERT INTO oauth_clients (client_id, client_name, redirect_uris, kind, created_at) VALUES ('c-registered', 'Z', '[]', 'registered', 1)").run();
+      await db.prepare("INSERT INTO oauth_clients (client_id, client_name, redirect_uris, kind, created_at) VALUES ('c-registered', 'Z', '[]', 'registered', ?)").bind(nowSeconds()).run();
+      await db.prepare("INSERT INTO oauth_clients (client_id, client_name, redirect_uris, kind, created_at) VALUES ('c-registered-old', 'Z', '[]', 'registered', 1)").run();
 
       await runCron(mf);
 
@@ -584,6 +585,7 @@ describe('scheduled cleanup and account deletion', () => {
       expect(await count(db, "SELECT COUNT(*) AS n FROM oauth_clients WHERE client_id = 'c-expired'")).toBe(0);
       expect(await count(db, "SELECT COUNT(*) AS n FROM oauth_clients WHERE client_id = 'client-1'")).toBe(1);
       expect(await count(db, "SELECT COUNT(*) AS n FROM oauth_clients WHERE client_id = 'c-registered'")).toBe(1);
+      expect(await count(db, "SELECT COUNT(*) AS n FROM oauth_clients WHERE client_id = 'c-registered-old'")).toBe(0);
       expect((await pull(mf, bearer(paired))).status).toBe(200);
     } finally {
       await mf.dispose();
