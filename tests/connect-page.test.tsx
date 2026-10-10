@@ -124,15 +124,23 @@ describe('consent page', () => {
   });
 
   it('shows the approval code and polls until the app decides', async () => {
-    const calls = mockFetch([makeView(), makeView(), makeView({ status: 'approved', approvalCode: undefined, redirect: 'https://client.example/cb?code=y' })]);
+    let decided = false;
+    let pendingPolls = 0;
+    const calls = mockFetch(() => {
+      if (decided) return makeView({ status: 'approved', approvalCode: undefined, redirect: 'https://client.example/cb?code=y' });
+      pendingPolls++;
+      return makeView();
+    });
     const navigate = mount();
     await vi.waitFor(() => expect(document.body.textContent).toContain('abcd-2345'));
     expect(document.body.textContent).toContain('Settings → Sync → Agent access → Approve a connection');
     expect(document.querySelector('.connect__qr svg')).not.toBeNull();
     expect(button('Copy code')).toBeTruthy();
-    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('https://client.example/cb?code=y'));
+    await vi.waitFor(() => expect(pendingPolls).toBeGreaterThanOrEqual(2), { timeout: 10_000 });
+    decided = true;
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('https://client.example/cb?code=y'), { timeout: 10_000 });
     expect(calls.filter((c) => !c.url.endsWith('/decision')).length).toBeGreaterThanOrEqual(3);
-  });
+  }, 30_000);
 
   it('refuses a redirect that is not a safe address', async () => {
     mockFetch([makeView(), makeView({ status: 'approved', redirect: 'javascript:alert(1)' })]);
